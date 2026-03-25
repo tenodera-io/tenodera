@@ -1,153 +1,138 @@
 # Tenodera
 
-A self-hosted Linux server administration panel with real-time monitoring, terminal access, and multi-host management — all from a single web interface.
+A self-hosted Linux server administration panel with real-time monitoring,
+terminal access, and multi-host management -- all from a single web interface.
 
 ```
-Browser ──WSS──▶ Gateway (:9090) ──spawn──▶ Bridge (per-user, localhost)
-                                  ──WS/WSS──▶ Agent (:9091) on remote host
+Browser ──WS──> Gateway (:9090) ──SSH──> tenodera-bridge (remote host)
+                                 ──spawn──> tenodera-bridge (localhost)
 ```
 
-## Components
+No daemon, no open ports, no API keys on managed hosts.
+The gateway connects via SSH and spawns the bridge process on demand.
 
-| Component | Description |
-|-----------|-------------|
-| **Tenodera Panel** | Central server: gateway (auth + WebSocket routing), per-user bridge processes, and React web UI |
-| **Tenodera Agent** | Lightweight daemon installed on each managed host — exposes system data over WebSocket |
+![MIT License](https://img.shields.io/badge/license-MIT-blue)
 
-### What you get
+## Features
 
-- **Dashboard** — CPU, RAM, disk, network in real-time (streaming metrics)
-- **Terminal** — Full PTY shell in the browser (xterm.js)
-- **Services** — systemd unit management (start/stop/restart/enable/disable)
-- **Packages** — View installed packages, check for updates
-- **Storage** — Disk usage, mount points, block devices
-- **Networking** — Interfaces, addresses, connections, firewall
-- **Containers** — Docker/Podman container listing
-- **Files** — Remote file browser
-- **Logs** — Live journald log viewer with filtering
-- **Log Files** — Browse and search `/var/log` files with keyword search, context lines, and date+time range filtering
-- **Kernel Dump** — View kdump status, crash kernel config, and browse crash dumps with dmesg output
-- **Multi-host** — Manage multiple servers from one panel
+| Category | Capabilities |
+|----------|-------------|
+| **Dashboard** | CPU, RAM, swap, disk I/O, network I/O -- real-time streaming charts |
+| **Terminal** | Full PTY shell in the browser (xterm.js) |
+| **Services** | systemd unit management -- start / stop / restart / enable / disable |
+| **Packages** | Installed packages, search, install, update (apt, dnf, pacman) |
+| **Storage** | Block devices, mount points, partition usage, I/O charts |
+| **Networking** | Interfaces, traffic, firewall (ufw/firewalld/nftables), bridges, VLANs, VPN |
+| **Containers** | Docker / Podman -- containers, images, create, logs |
+| **Files** | Remote file browser with sudo fallback |
+| **Logs** | Live journald viewer with unit/priority filters |
+| **Log Files** | Browse `/var/log` with keyword search, context lines, date/time range |
+| **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
+| **Multi-host** | Manage multiple servers from one panel |
 
-## Requirements
+## Quick Start
 
-- **OS:** Linux (Debian/Ubuntu, Fedora/RHEL, Arch)
-- **Rust:** Installed automatically via `make deps`
-- **Node.js 18+:** Installed automatically via `make deps` (Panel only)
-- **System libs:** `build-essential`, `pkg-config`, `libssl-dev`, `libpam0g-dev`
-- **Make:** `sudo apt install make` / `sudo dnf install make` / included on Arch
+### Prerequisites
 
-## Installation
-
-### Panel (central server)
+- Linux (Debian/Ubuntu, Fedora/RHEL, Arch)
+- `make` and `sudo`
+- `sshpass` on the gateway host (for remote host management)
 
 ```bash
-cd "Tenodera Panel"
-sudo make all
+sudo apt install make sshpass    # Debian/Ubuntu
+sudo dnf install make sshpass    # Fedora/RHEL
 ```
 
-This runs `deps` → `build` → `install` in one step:
-- Installs Rust, Node.js, and system dependencies
-- Compiles gateway + bridge (Rust) and UI (React/Vite)
-- Installs binaries to `/usr/local/bin/`
-- Deploys UI to `/usr/share/tenodera/ui/`
-- Creates config dir `/etc/tenodera/tls/`
-- Enables and starts `tenodera-gateway.service` on port **9090**
+Everything else (Rust, Node.js, system libraries) is installed automatically
+by `make deps`.
 
-Individual steps if preferred:
+### Install the Panel (central server)
 
 ```bash
-make deps      # install build dependencies
-make build     # compile backend + frontend
-sudo make install   # install and start service
+cd panel
+make deps
+make build
+sudo make install
 ```
 
-### Agent (on each managed host)
+The panel is now running at `https://<your-ip>:9090`.
+Login with any PAM user (system credentials).
+
+> For development without TLS, set `TENODERA_ALLOW_UNENCRYPTED=1` via
+> `systemctl edit tenodera-gateway`.
+
+### Install the Bridge (each managed host)
+
+Copy the `bridge/` and `protocol/` directories to the target host, then:
 
 ```bash
-cd "Tenodera Agent"
-sudo make all PANEL_HOST=<panel-ip>
+cd bridge
+make deps
+make build
+sudo make install
 ```
 
-This runs `deps` → `build` → `install` → `register` in one step:
-- Installs Rust and system dependencies
-- Compiles the agent in release mode
-- Installs binary, config, systemd service on port **9091** (all interfaces)
-- Generates a 256-bit API key and registers the agent with the panel
+No service to configure -- the gateway spawns the bridge over SSH when needed.
 
-Individual steps:
+### Add a Remote Host
 
-```bash
-make deps      # install Rust + system libs
-make build     # compile agent
-sudo make install   # install binary, config, start service
-sudo make register PANEL_HOST=<panel-ip>   # register with panel
+Open the panel UI, navigate to the **Hosts** page, and add the host by
+IP or hostname. The gateway will SSH to it and run `tenodera-bridge`
+automatically.
+
+**Requirement:** the PAM user you logged in with must be able to SSH into
+the managed host with password authentication.
+
+## Architecture
+
+```
+[ Browser ]
+     |
+     | WebSocket (channel-multiplexed JSON)
+     v
+[ Gateway ]   Axum HTTP/WS server, PAM auth, session management
+     |
+     |--- localhost: spawns tenodera-bridge directly
+     |--- remote:    ssh user@host tenodera-bridge  (via sshpass)
+     v
+[ Bridge ]    stdin/stdout newline-delimited JSON, per-user process
+     |
+     |--- 19 handler modules (system, services, packages, terminal, ...)
 ```
 
-#### Registration parameters
+- **Gateway** authenticates users via PAM, manages sessions, serves the
+  React UI, and routes WebSocket channels to bridge processes.
+- **Bridge** is a stateless binary that handles system operations.
+  It communicates via newline-delimited JSON over stdin/stdout -- the same
+  protocol for local and remote hosts.
+- **Protocol** is a shared Rust crate defining the message types used by
+  both gateway and bridge.
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `PANEL_HOST` | *(required)* | Panel IP or hostname |
-| `PANEL_USER` | Current user | SSH user for panel host |
-| `AGENT_NAME` | `hostname -s` | Friendly name shown in UI |
-| `AGENT_IP` | Auto-detect via routing table | Agent IP as seen by panel |
-| `AGENT_PORT` | `9091` | Agent listen port |
-| `TRANSPORT` | `agent` | `agent` (WebSocket + API key) or `ssh` |
-
-With `TRANSPORT=agent` (default), `make register`:
-1. Generates a random API key (`openssl rand -hex 32`)
-2. Writes it to the local `/etc/tenodera/agent.toml`
-3. Restarts the agent service
-4. Adds the agent (with key) to `/etc/tenodera/hosts.json` on the panel via SSH
-
-### Uninstall
-
-```bash
-# Panel
-cd "Tenodera Panel"
-sudo make uninstall
-
-# Agent
-cd "Tenodera Agent"
-sudo make uninstall
-```
+No agent daemon runs on managed hosts. No ports need to be opened.
+The bridge binary just needs to exist at `/usr/local/bin/tenodera-bridge`.
 
 ## Configuration
 
-### Agent — `/etc/tenodera/agent.toml`
-
-```toml
-# Address to listen on
-bind = "0.0.0.0:9091"
-
-# API key for panel authentication (auto-generated by `make register`)
-# Empty = allow all connections — NOT for production
-api_key = ""
-
-# TLS (optional, recommended for production)
-# tls_cert = "/etc/tenodera/cert.pem"
-# tls_key  = "/etc/tenodera/key.pem"
-
-# Allow running without TLS
-allow_unencrypted = true
-```
-
-> **Note:** When you run `make register PANEL_HOST=...` with `TRANSPORT=agent`, the `api_key` field is automatically populated with a random 256-bit key. The same key is stored in the panel's `hosts.json`. You do not need to set it manually.
-
-### Panel — Environment variables
+### Environment Variables
 
 Set via `systemctl edit tenodera-gateway`:
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TENODERA_BIND` | Listen address | `0.0.0.0:9090` |
-| `TENODERA_BRIDGE_BIN` | Path to bridge binary | `/usr/local/bin/tenodera-bridge` |
-| `TENODERA_UI_DIR` | Path to built UI | `/usr/share/tenodera/ui` |
-| `TENODERA_TLS_CERT` | TLS certificate path | *(unset — plain HTTP)* |
-| `TENODERA_TLS_KEY` | TLS private key path | *(unset — plain HTTP)* |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TENODERA_BIND_ADDR` | `0.0.0.0` | Listen address |
+| `TENODERA_BIND_PORT` | `9090` | Listen port |
+| `TENODERA_BRIDGE_BIN` | `/usr/local/bin/tenodera-bridge` | Path to bridge binary |
+| `TENODERA_UI_DIR` | `/usr/share/tenodera/ui` | Path to built UI assets |
+| `TENODERA_TLS_CERT` | *(none)* | TLS certificate path (PEM) |
+| `TENODERA_TLS_KEY` | *(none)* | TLS private key path (PEM) |
+| `TENODERA_ALLOW_UNENCRYPTED` | `false` | Allow HTTP without TLS |
+| `TENODERA_IDLE_TIMEOUT` | `900` | Session idle timeout (seconds) |
+| `TENODERA_MAX_STARTUPS` | `20` | Max concurrent unauthenticated connections |
+| `RUST_LOG` | *(none)* | Log filter (e.g. `tenodera_gateway=debug`) |
 
-### TLS (production)
+### TLS
+
+TLS is **required by default**. To configure:
 
 ```bash
 sudo systemctl edit tenodera-gateway
@@ -163,170 +148,88 @@ Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
 sudo systemctl restart tenodera-gateway
 ```
 
+### Managed Hosts
+
+Hosts are stored in `/etc/tenodera/hosts.json` (managed via the panel UI).
+
 ## Authentication & Permissions
 
-### Login
+The panel authenticates against **PAM** -- you log in with any valid
+Linux user credentials on the gateway host.
 
-The panel authenticates against **PAM** — you log in with any valid Linux system user credentials on the gateway host.
-
-### Required user permissions
-
-| Action | Permission needed |
-|--------|-------------------|
-| View dashboard, metrics, logs | Any authenticated user |
-| Terminal (PTY) | Any authenticated user |
+| Action | Permission |
+|--------|-----------|
+| Dashboard, metrics, logs, terminal | Any authenticated user |
 | Start/stop/restart systemd services | Superuser verification (password re-entry) |
-| Install/update packages | Superuser verification (password re-entry) |
+| Install/update packages | Superuser verification |
+| Container operations (remove, pull, create) | Superuser verification |
 | Browse files | Read permissions on the target host |
 
-### How it works
+### How it Works
 
 1. User logs in via PAM on the gateway
-2. Gateway spawns a **per-user bridge process** for localhost operations
-3. For remote hosts, gateway connects directly to the **Tenodera Agent** via WebSocket — authenticated with a per-agent API key (auto-generated during registration) and optional TLS
-4. Privileged operations (systemd actions, package updates) are executed directly — the bridge runs as root and verifies user credentials via `unix_chkpwd` before escalation
+2. Gateway spawns a per-user bridge for localhost operations
+3. For remote hosts, gateway connects via SSH using the session password
+   and spawns `tenodera-bridge`
+4. Privileged operations require password re-verification via `sudo`
 
-### Audit logging
+### Audit Logging
 
-All security-relevant actions are logged to `/var/log/tenodera_audit.log` with structured JSON entries:
-- Login/logout events
-- Host management (add, edit, remove)
-- Superuser password verification attempts
-- Agent-side privileged operations
+All security-relevant actions are logged to `/var/log/tenodera_audit.log`
+with structured JSON entries: login/logout, WebSocket sessions,
+host management, bridge spawning, and superuser verification attempts.
 
-Log rotation is configured via `logrotate` (installed by `make install`).
-
-## Service management
+## Service Management
 
 ```bash
-# Panel
 sudo systemctl status tenodera-gateway
 sudo systemctl restart tenodera-gateway
 journalctl -u tenodera-gateway -f
-
-# Agent
-sudo systemctl status tenodera-agent
-sudo systemctl restart tenodera-agent
-journalctl -u tenodera-agent -f
 ```
 
-## Development (Vagrant)
-
-A Vagrantfile is included for local testing with 6 Debian VMs:
+## Uninstall
 
 ```bash
-cd "Tenodera Panel"
-export TENODERA_USER="tenodera"
-export TENODERA_PASS="your-password"
-vagrant up
+# Panel (on the gateway host)
+cd panel && sudo make uninstall
+
+# Bridge (on each managed host)
+cd bridge && sudo make uninstall
 ```
 
-Each VM gets: Rust toolchain, SSH with password auth, sudo access.
-
-| VM | IP |
-|----|----|
-| tenodera-remote-1 | 192.168.56.10 |
-| tenodera-remote-2 | 192.168.56.11 |
-| tenodera-remote-3 | 192.168.56.12 |
-| tenodera-remote-4 | 192.168.56.13 |
-| tenodera-remote-5 | 192.168.56.14 |
-| tenodera-remote-6 | 192.168.56.15 |
-
-## Optional: Kernel Dump (kdump) setup
-
-The **Kernel Dump** page in the panel shows crash dump status from managed hosts. It works out of the box (showing "not installed" if kdump is absent), but to get full functionality you need to install and configure kdump on the target hosts.
-
-### Debian / Ubuntu
+## Development
 
 ```bash
-sudo apt install -y kdump-tools crash kexec-tools makedumpfile
+# Gateway
+cd panel
+cargo clippy && cargo build
 
-# Add crashkernel parameter to GRUB
-sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 crashkernel=256M"/' /etc/default/grub
-sudo update-grub
+# Frontend
+cd panel/ui
+npm ci && npm run dev       # dev server on :3000, proxies /api to :9090
 
-# Enable the service and reboot
-sudo systemctl enable kdump-tools
-sudo reboot
+# Bridge
+cd bridge
+cargo clippy && cargo build
 ```
 
-### Fedora / RHEL / CentOS
-
-```bash
-sudo dnf install -y kexec-tools crash
-
-# Set crashkernel (Fedora 35+)
-sudo kdumpctl reset-crashkernel
-# Or manually:
-# sudo grubby --args="crashkernel=256M" --update-kernel=ALL
-
-# Enable the service and reboot
-sudo systemctl enable kdump
-sudo reboot
-```
-
-### Arch Linux
-
-kdump on Arch requires AUR packages and manual kernel parameter setup:
-
-```bash
-# Install from AUR (using yay or paru)
-yay -S simple-kdump   # or: yay -S kdumpst
-
-# Install crash analysis tool (official repo)
-sudo pacman -S crash
-
-# Add crashkernel parameter (512M recommended on Arch)
-# Edit your boot loader config and append: crashkernel=512M
-# For GRUB:
-sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT="\(.*\)"/GRUB_CMDLINE_LINUX_DEFAULT="\1 crashkernel=512M"/' /etc/default/grub
-sudo grub-mkconfig -o /boot/grub/grub.cfg
-
-# Enable the service (simple-kdump) and reboot
-sudo systemctl enable simple-kdump-setup
-sudo reboot
-```
-
-### Verify
-
-After reboot, confirm kdump is working:
-
-```bash
-# Should return "1"
-cat /sys/kernel/kexec_crash_loaded
-
-# Should show reserved memory (> 0)
-cat /sys/kernel/kexec_crash_size
-
-# Check service status
-systemctl status kdump-tools   # Debian/Ubuntu
-systemctl status kdump         # Fedora/RHEL
-```
-
-Crash dumps are saved to `/var/crash/` (all distros) or `/var/lib/kdump/`.
-
-## Project structure
+## Project Structure
 
 ```
-Tenodera Agent/          Remote host agent
-├── src/                 Rust source (handlers, protocol, TLS, auth, audit)
-├── systemd/             Service file
-├── logrotate/           Log rotation config
-├── config.example.toml  Example configuration
-└── Makefile             Build & install
+panel/                   Central server (gateway + UI)
+  crates/gateway/        Axum HTTP/WS gateway, PAM auth, SSH transport
+  ui/                    React 19 + TypeScript SPA (Vite 6)
+  systemd/               systemd service file
+  logrotate/             Log rotation config
+  Makefile               Build & install
 
-Tenodera Panel/          Central server
-├── crates/
-│   ├── gateway/         HTTP/WebSocket gateway + PAM auth + audit logging
-│   ├── bridge/          Per-user bridge with 17 handler types + audit logging
-│   └── protocol/        Shared message types & payloads
-├── ui/                  React + TypeScript SPA (Vite)
-├── systemd/             Service files
-├── logrotate/           Log rotation config
-├── Vagrantfile          Dev environment (6 Debian VMs)
-└── Makefile             Build & install
+bridge/                  Standalone bridge binary (deployed to managed hosts)
+  src/handlers/          19 handler modules
+  Makefile               Build & install
+
+protocol/                Shared message types (Rust library crate)
 ```
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+[MIT](LICENSE)

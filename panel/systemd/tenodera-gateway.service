@@ -1,0 +1,35 @@
+[Unit]
+Description=Tenodera Web Console Gateway
+Documentation=https://github.com/tenodera
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tenodera-gateway
+Environment=RUST_LOG=tenodera_gateway=info
+Environment=TENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge
+Environment=TENODERA_UI_DIR=/usr/share/tenodera/ui
+# TLS — uncomment and set paths for production:
+# Environment=TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
+# Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+# Environment=TENODERA_ALLOW_UNENCRYPTED=0
+
+# Security hardening
+ProtectSystem=strict
+ReadWritePaths=/etc/tenodera /var/log
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictSUIDSGID=yes
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,12 +1,19 @@
 # Build artifacts
 **/target/
-
-# Vagrant
-**/.vagrant/
+**/dist/
 
 # Node
 **/node_modules/
-**/dist/
+
+# TypeScript build cache
+**/tsconfig.tsbuildinfo
+
+# Vagrant
+**/.vagrant/
+**/Vagrantfile
+
+# Internal documents (not for public repo)
+SECURITY_AUDIT.md
 
 # Environment & secrets
 .env
