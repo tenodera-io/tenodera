@@ -3,29 +3,23 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use zeroize::Zeroize;
+use zeroize::Zeroizing;
 
 /// A live user session.
 ///
 /// Stores the user's password for the lifetime of the session so that the
-/// gateway can open SSH tunnels to remote hosts on behalf of the user
-/// (same model as Cockpit).
+/// gateway can open SSH tunnels to remote hosts on behalf of the user.
 ///
-/// Password is zeroized (overwritten with zeros) when the session is dropped,
-/// preventing credentials from lingering in freed memory.
+/// Password is wrapped in `Zeroizing<String>` which automatically overwrites
+/// memory with zeros on drop — every clone of the session (WS handler,
+/// SSH connect, etc.) is also zeroized when it goes out of scope.
 #[derive(Clone)]
 pub struct Session {
     pub id: String,
     pub user: String,
-    pub password: String,
+    pub password: Zeroizing<String>,
     pub created_at: std::time::Instant,
     pub last_activity: std::time::Instant,
-}
-
-impl Drop for Session {
-    fn drop(&mut self) {
-        self.password.zeroize();
-    }
 }
 
 impl std::fmt::Debug for Session {
@@ -60,7 +54,7 @@ impl SessionStore {
         let session = Session {
             id: Uuid::new_v4().to_string(),
             user,
-            password,
+            password: Zeroizing::new(password),
             created_at: now,
             last_activity: now,
         };

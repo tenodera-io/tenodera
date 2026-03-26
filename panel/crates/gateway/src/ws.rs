@@ -9,6 +9,7 @@ use axum::{
 use futures::{SinkExt, StreamExt};
 use serde::Deserialize;
 use tokio::sync::{mpsc, Mutex};
+use zeroize::Zeroizing;
 
 use tenodera_protocol::message;
 
@@ -63,7 +64,7 @@ pub async fn ws_upgrade(
     state.sessions.touch(&session_id).await;
 
     let user = session.user.clone();
-    let password = session.password.clone();
+    let password = session.password.clone(); // Zeroizing<String> — zeroized on drop
     tracing::info!(user = %user, "WS upgrade authorized");
 
     Ok(ws.on_upgrade(move |socket| handle_socket(state, socket, session_id, user, password)))
@@ -93,7 +94,7 @@ fn spawn_bridge_forwarder(
     });
 }
 
-async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: String, user: String, password: String) {
+async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: String, user: String, password: Zeroizing<String>) {
     let (sink, mut stream) = socket.split();
 
     tracing::debug!(user = %user, "new WebSocket connection");
