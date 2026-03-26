@@ -98,10 +98,15 @@ install: $(GATEWAY_BIN) ui/dist/index.html
 	fi
 	@echo "==> Installing systemd services..."
 	sudo cp systemd/tenodera-gateway.service $(SYSTEMDDIR)/
-	@# Override bind to 0.0.0.0 for production
+	@# Create override if not already customized by the user
 	sudo mkdir -p $(SYSTEMDDIR)/tenodera-gateway.service.d
-	@printf '[Service]\nEnvironment=TENODERA_BIND=0.0.0.0:9090\n' \
-		| sudo tee $(SYSTEMDDIR)/tenodera-gateway.service.d/bind.conf > /dev/null
+	@if [ ! -f $(SYSTEMDDIR)/tenodera-gateway.service.d/override.conf ]; then \
+		printf '[Service]\nEnvironment=TENODERA_BIND=0.0.0.0:9090\nEnvironment=TENODERA_ALLOW_UNENCRYPTED=1\n' \
+			| sudo tee $(SYSTEMDDIR)/tenodera-gateway.service.d/override.conf > /dev/null; \
+		echo "    Created override.conf (HTTP mode — configure TLS for production)"; \
+	else \
+		echo "    override.conf already exists — skipping (preserving your TLS config)"; \
+	fi
 	sudo systemctl daemon-reload
 	sudo systemctl enable --now tenodera-gateway
 	@echo "==> Installing logrotate config..."

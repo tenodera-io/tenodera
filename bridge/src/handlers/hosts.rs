@@ -19,6 +19,10 @@ struct HostEntry {
     #[serde(default = "default_ssh_port")]
     ssh_port: u16,
     added_at: String,
+    /// Full SSH host key line (e.g. "192.168.56.11 ssh-ed25519 AAAA...").
+    /// Used by the gateway for StrictHostKeyChecking against a known key.
+    #[serde(default)]
+    host_key: String,
 }
 
 fn default_ssh_port() -> u16 {
@@ -82,6 +86,14 @@ impl ChannelHandler for HostsManageHandler {
 
         let result = match action {
             "list" => action_list(),
+            "keyscan" => {
+                let address = data.get("address").and_then(|v| v.as_str()).unwrap_or("");
+                let ssh_port = data
+                    .get("ssh_port")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(22) as u16;
+                action_keyscan(address, ssh_port).await
+            }
             "add" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let address = data.get("address").and_then(|v| v.as_str()).unwrap_or("");
@@ -90,7 +102,8 @@ impl ChannelHandler for HostsManageHandler {
                     .get("ssh_port")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(22) as u16;
-                let r = action_add(name, address, user_field, ssh_port);
+                let host_key = data.get("host_key").and_then(|v| v.as_str()).unwrap_or("");
+                let r = action_add(name, address, user_field, ssh_port, host_key);
                 let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 crate::audit::log(user, "host.add", address, ok, name);
                 r
@@ -104,7 +117,8 @@ impl ChannelHandler for HostsManageHandler {
                     .get("ssh_port")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(22) as u16;
-                let r = action_edit(id, name, address, user_field, ssh_port);
+                let host_key = data.get("host_key").and_then(|v| v.as_str()).unwrap_or("");
+                let r = action_edit(id, name, address, user_field, ssh_port, host_key);
                 let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 crate::audit::log(user, "host.edit", address, ok, name);
                 r
@@ -133,7 +147,7 @@ fn action_list() -> Value {
     json!({ "action": "list", "hosts": config.hosts })
 }
 
-fn action_add(name: &str, address: &str, user: &str, ssh_port: u16) -> Value {
+fn action_add(name: &str, address: &str, user: &str, ssh_port: u16, host_key: &str) -> Value {
     if name.is_empty() || address.is_empty() {
         return json!({ "action": "add", "ok": false, "error": "name and address are required" });
     }
@@ -146,6 +160,7 @@ fn action_add(name: &str, address: &str, user: &str, ssh_port: u16) -> Value {
         user: user.to_string(),
         ssh_port,
         added_at: chrono::Utc::now().to_rfc3339(),
+        host_key: host_key.to_string(),
     };
     let id = entry.id.clone();
     config.hosts.push(entry);
@@ -156,7 +171,7 @@ fn action_add(name: &str, address: &str, user: &str, ssh_port: u16) -> Value {
     }
 }
 
-fn action_edit(id: &str, name: &str, address: &str, user: &str, ssh_port: u16) -> Value {
+fn action_edit(id: &str, name: &str, address: &str, user: &str, ssh_port: u16, host_key: &str) -> Value {
     if id.is_empty() || name.is_empty() || address.is_empty() {
         return json!({ "action": "edit", "ok": false, "error": "id, name and address are required" });
     }
@@ -170,6 +185,9 @@ fn action_edit(id: &str, name: &str, address: &str, user: &str, ssh_port: u16) -
     entry.address = address.to_string();
     entry.user = user.to_string();
     entry.ssh_port = ssh_port;
+    if !host_key.is_empty() {
+        entry.host_key = host_key.to_string();
+    }
 
     match save_config(&config) {
         Ok(()) => json!({ "action": "edit", "ok": true }),
@@ -190,4 +208,84 @@ fn action_remove(id: &str) -> Value {
         Ok(()) => json!({ "action": "remove", "ok": true }),
         Err(e) => json!({ "action": "remove", "ok": false, "error": e }),
     }
+}
+
+// ── SSH keyscan ─────────────────────────────────────────────────
+
+/// Run `ssh-keyscan` against a host and return the host key line + fingerprint.
+/// The host key line is stored in hosts.json for later verification by the gateway.
+/// The fingerprint (human-readable) is shown to the admin for confirmation.
+async fn action_keyscan(address: &str, ssh_port: u16) -> Value {
+    if address.is_empty() {
+        return json!({ "action": "keyscan", "ok": false, "error": "address is required" });
+    }
+
+    // Validate address: only allow alphanumeric, dots, hyphens, colons (IPv6), brackets
+    if !address.chars().all(|c| c.is_alphanumeric() || ".-:[]:".contains(c)) {
+        return json!({ "action": "keyscan", "ok": false, "error": "invalid address" });
+    }
+
+    // Run ssh-keyscan to get the host's public key
+    let output = tokio::process::Command::new("ssh-keyscan")
+        .args(["-p", &ssh_port.to_string(), "-T", "5", "--", address])
+        .output()
+        .await;
+
+    let output = match output {
+        Ok(o) => o,
+        Err(e) => {
+            return json!({ "action": "keyscan", "ok": false, "error": format!("ssh-keyscan failed: {e}") });
+        }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout.lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+        .collect();
+
+    if lines.is_empty() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return json!({
+            "action": "keyscan", "ok": false,
+            "error": format!("no host keys found (is SSH running on {address}:{ssh_port}?): {stderr}")
+        });
+    }
+
+    // Prefer ed25519 > ecdsa > rsa
+    let preferred = ["ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"];
+    let host_key_line = preferred.iter()
+        .find_map(|alg| lines.iter().find(|l| l.contains(alg)))
+        .unwrap_or(&lines[0]);
+
+    // Get human-readable fingerprint via ssh-keygen
+    let fp_output = tokio::process::Command::new("ssh-keygen")
+        .args(["-l", "-f", "-"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+
+    let fingerprint = match fp_output {
+        Ok(mut child) => {
+            if let Some(ref mut stdin) = child.stdin {
+                use tokio::io::AsyncWriteExt;
+                let _ = stdin.write_all(host_key_line.as_bytes()).await;
+                let _ = stdin.write_all(b"\n").await;
+            }
+            // Close stdin by dropping it
+            child.stdin.take();
+            match child.wait_with_output().await {
+                Ok(o) => String::from_utf8_lossy(&o.stdout).trim().to_string(),
+                Err(_) => String::new(),
+            }
+        }
+        Err(_) => String::new(),
+    };
+
+    json!({
+        "action": "keyscan",
+        "ok": true,
+        "host_key": host_key_line.to_string(),
+        "fingerprint": fingerprint,
+    })
 }

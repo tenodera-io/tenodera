@@ -50,6 +50,7 @@ futures = "0.3"
 tokio-stream = "0.1"
 bytes = "1"
 zeroize = "1"
+tempfile = "3"
 
 # Internal crates
 tenodera-protocol = { path = "../protocol" }

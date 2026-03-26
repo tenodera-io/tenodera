@@ -14,6 +14,10 @@ pub struct HostEntry {
     pub user: String,
     #[serde(default = "default_ssh_port")]
     pub ssh_port: u16,
+    /// Full SSH host key line for strict host key verification.
+    /// Written by the bridge during host enrollment (ssh-keyscan).
+    #[serde(default)]
+    pub host_key: String,
 }
 
 impl HostEntry {

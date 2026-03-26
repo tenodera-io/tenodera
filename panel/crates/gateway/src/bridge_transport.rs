@@ -14,34 +14,71 @@ pub struct BridgeProcess {
     pub to_bridge: mpsc::Sender<Message>,
     /// Receive messages FROM the bridge (bridge stdout -> gateway)
     pub from_bridge: mpsc::Receiver<Message>,
+    /// Keep temp known_hosts file alive for the lifetime of the SSH process.
+    /// The file is deleted automatically when BridgeProcess is dropped
+    /// (i.e., when the SSH connection ends). This prevents a race condition
+    /// where the temp file could be deleted before SSH reads it.
+    pub _temp_known_hosts: Option<tempfile::NamedTempFile>,
 }
 
 impl BridgeProcess {
     /// Spawn a local tenodera-bridge process.
     pub async fn spawn(bridge_bin: &str) -> anyhow::Result<Self> {
         let cmd = Command::new(bridge_bin);
-        Self::spawn_command(cmd).await
+        Self::spawn_command(cmd, None).await
     }
 
     /// Spawn tenodera-bridge on a remote host via SSH.
     /// Uses sshpass to pass the session password securely via the SSHPASS
     /// environment variable. The bridge communicates over SSH stdin/stdout
     /// using the same newline-delimited JSON protocol as a local bridge.
+    ///
+    /// If `host_key` is provided, SSH will use StrictHostKeyChecking=yes
+    /// with a temporary known_hosts file containing the verified key.
+    /// If empty, falls back to accept-new (TOFU).
     pub async fn spawn_remote(
         ssh_user: &str,
         password: &str,
         address: &str,
         ssh_port: u16,
         bridge_bin: &str,
+        host_key: &str,
     ) -> anyhow::Result<Self> {
         tracing::info!(
             %ssh_user, %address, %ssh_port, %bridge_bin,
+            host_key_present = !host_key.is_empty(),
             "spawning remote bridge via SSH"
         );
 
         let mut cmd = Command::new("sshpass");
-        cmd.env("SSHPASS", password)
-            .args([
+        cmd.env("SSHPASS", password);
+
+        // Build a temporary known_hosts file if we have a verified host key.
+        // This enables StrictHostKeyChecking=yes instead of TOFU accept-new.
+        let temp_known_hosts = if !host_key.is_empty() {
+            let tmp = tempfile::NamedTempFile::new()
+                .map_err(|e| anyhow::anyhow!("failed to create temp known_hosts: {e}"))?;
+            std::fs::write(tmp.path(), format!("{host_key}\n"))
+                .map_err(|e| anyhow::anyhow!("failed to write temp known_hosts: {e}"))?;
+            cmd.args([
+                "-e",
+                "ssh",
+                "-o", "StrictHostKeyChecking=yes",
+                "-o", &format!("UserKnownHostsFile={}", tmp.path().display()),
+                "-o", "BatchMode=no",
+                "-p", &ssh_port.to_string(),
+                &format!("{ssh_user}@{address}"),
+                bridge_bin,
+            ]);
+            Some(tmp)
+        } else {
+            // No host key stored — fall back to TOFU (accept-new)
+            tracing::warn!(
+                %address,
+                "no host key on record — using accept-new (TOFU). \
+                 Re-scan the host key in the Hosts page to enable strict verification."
+            );
+            cmd.args([
                 "-e",
                 "ssh",
                 "-o", "StrictHostKeyChecking=accept-new",
@@ -50,13 +87,18 @@ impl BridgeProcess {
                 &format!("{ssh_user}@{address}"),
                 bridge_bin,
             ]);
+            None
+        };
 
-        Self::spawn_command(cmd).await.map_err(|e| {
+        Self::spawn_command(cmd, temp_known_hosts).await.map_err(|e| {
             anyhow::anyhow!("failed to spawn remote bridge on {address}: {e}")
         })
     }
 
-    async fn spawn_command(mut cmd: Command) -> anyhow::Result<Self> {
+    async fn spawn_command(
+        mut cmd: Command,
+        temp_known_hosts: Option<tempfile::NamedTempFile>,
+    ) -> anyhow::Result<Self> {
         let mut child = cmd
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -116,6 +158,7 @@ impl BridgeProcess {
             child,
             to_bridge: to_bridge_tx,
             from_bridge: from_bridge_rx,
+            _temp_known_hosts: temp_known_hosts,
         })
     }
 }

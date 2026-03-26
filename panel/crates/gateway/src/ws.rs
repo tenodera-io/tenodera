@@ -126,10 +126,13 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
     tracing::info!(bin = %bridge_bin, "local bridge spawned");
 
     // Decompose local bridge
-    let BridgeProcess { child: local_child, to_bridge: local_sender, from_bridge: local_receiver } = local_bridge;
+    let BridgeProcess { child: local_child, to_bridge: local_sender, from_bridge: local_receiver, .. } = local_bridge;
 
     // Keep all bridge child processes alive for the session
     let mut _children = vec![local_child];
+
+    // Keep temp known_hosts files alive for SSH connections
+    let mut _temp_files: Vec<tempfile::NamedTempFile> = Vec::new();
 
     // Shared WebSocket sink
     let sink = Arc::new(Mutex::new(sink));
@@ -171,8 +174,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
                                 match connect_remote(hid, &user, &password, bridge_bin).await {
                                     Ok(bridge) => {
                                         audit::log(&user, "bridge_spawn", hid, true, "remote bridge spawned via SSH");
-                                        let BridgeProcess { child, to_bridge: sender, from_bridge } = bridge;
+                                        let BridgeProcess { child, to_bridge: sender, from_bridge, _temp_known_hosts } = bridge;
                                         _children.push(child);
+                                        if let Some(tmp) = _temp_known_hosts {
+                                            _temp_files.push(tmp);
+                                        }
                                         spawn_bridge_forwarder(
                                             format!("remote:{hid}"),
                                             from_bridge,
@@ -296,6 +302,7 @@ async fn connect_remote(
         &host.address,
         host.ssh_port,
         bridge_bin,
+        &host.host_key,
     ).await
 }
 
