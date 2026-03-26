@@ -20,6 +20,7 @@ The gateway connects via SSH and spawns the bridge process on demand.
 | **Dashboard** | CPU, RAM, swap, disk I/O, network I/O -- real-time streaming charts |
 | **Terminal** | Full PTY shell in the browser (xterm.js) |
 | **Services** | systemd unit management -- start / stop / restart / enable / disable |
+| **Users & Groups** | User account CRUD, group management, lock/unlock, password policy |
 | **Packages** | Installed packages, search, install, update (apt, dnf, pacman) |
 | **Storage** | Block devices, mount points, partition usage, I/O charts |
 | **Networking** | Interfaces, traffic, firewall (ufw/firewalld/nftables), bridges, VLANs, VPN |
@@ -30,7 +31,7 @@ The gateway connects via SSH and spawns the bridge process on demand.
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
 | **Multi-host** | Manage multiple servers from one panel |
 
-## Quick Start
+## Installation
 
 ### Prerequisites
 
@@ -46,7 +47,7 @@ sudo dnf install make sshpass    # Fedora/RHEL
 Everything else (Rust, Node.js, system libraries) is installed automatically
 by `make deps`.
 
-### Install the Panel (central server)
+### Step 1: Install the Panel (central server)
 
 ```bash
 cd panel
@@ -55,15 +56,80 @@ make build
 sudo make install
 ```
 
+This installs the gateway binary, the UI assets, and the systemd service.
+
+### Step 2: Configure TLS or Plaintext
+
+The gateway **requires TLS by default**. Choose one of the two options below.
+
+#### Option A: TLS (recommended for production)
+
+Generate or obtain a certificate and key, then configure:
+
+```bash
+# Place certificate and key
+sudo mkdir -p /etc/tenodera/tls
+sudo cp fullchain.pem /etc/tenodera/tls/cert.pem
+sudo cp privkey.pem   /etc/tenodera/tls/key.pem
+sudo chmod 600 /etc/tenodera/tls/key.pem
+
+# Configure the gateway
+sudo systemctl edit tenodera-gateway
+```
+
+Add the following to the editor:
+
+```ini
+[Service]
+Environment=TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
+Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+```
+
+```bash
+sudo systemctl restart tenodera-gateway
+```
+
 The panel is now running at `https://<your-ip>:9090`.
-Login with any PAM user (system credentials).
 
-> For development without TLS, set `TENODERA_ALLOW_UNENCRYPTED=1` via
-> `systemctl edit tenodera-gateway`.
+To generate a self-signed certificate for testing:
 
-### Install the Bridge (each managed host)
+```bash
+openssl req -x509 -newkey rsa:4096 -nodes -days 365 \
+  -keyout /etc/tenodera/tls/key.pem \
+  -out /etc/tenodera/tls/cert.pem \
+  -subj "/CN=$(hostname)"
+```
 
-Copy the `bridge/` and `protocol/` directories to the target host, then:
+#### Option B: Plaintext HTTP (development only)
+
+```bash
+sudo systemctl edit tenodera-gateway
+```
+
+Add:
+
+```ini
+[Service]
+Environment=TENODERA_ALLOW_UNENCRYPTED=1
+```
+
+```bash
+sudo systemctl restart tenodera-gateway
+```
+
+The panel is now running at `http://<your-ip>:9090`.
+
+> **Warning:** Without TLS, passwords and session tokens are transmitted in
+> cleartext. Only use this on trusted networks or for local development.
+
+### Step 3: Log In
+
+Open the panel URL in your browser and log in with any PAM user
+(system credentials on the gateway host).
+
+### Step 4: Install the Bridge (each managed host)
+
+Copy the `bridge/` and `protocol/` directories to each target host, then:
 
 ```bash
 cd bridge
@@ -74,7 +140,7 @@ sudo make install
 
 No service to configure -- the gateway spawns the bridge over SSH when needed.
 
-### Add a Remote Host
+### Step 5: Add Remote Hosts
 
 Open the panel UI, navigate to the **Hosts** page, and add the host by
 IP or hostname. The gateway will SSH to it and run `tenodera-bridge`
@@ -97,7 +163,7 @@ the managed host with password authentication.
      v
 [ Bridge ]    stdin/stdout newline-delimited JSON, per-user process
      |
-     |--- 19 handler modules (system, services, packages, terminal, ...)
+     |--- 19 handler modules (system, services, packages, users, terminal, ...)
 ```
 
 - **Gateway** authenticates users via PAM, manages sessions, serves the
@@ -130,24 +196,6 @@ Set via `systemctl edit tenodera-gateway`:
 | `TENODERA_MAX_STARTUPS` | `20` | Max concurrent unauthenticated connections |
 | `RUST_LOG` | *(none)* | Log filter (e.g. `tenodera_gateway=debug`) |
 
-### TLS
-
-TLS is **required by default**. To configure:
-
-```bash
-sudo systemctl edit tenodera-gateway
-```
-
-```ini
-[Service]
-Environment=TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
-Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
-```
-
-```bash
-sudo systemctl restart tenodera-gateway
-```
-
 ### Managed Hosts
 
 Hosts are stored in `/etc/tenodera/hosts.json` (managed via the panel UI).
@@ -162,6 +210,7 @@ Linux user credentials on the gateway host.
 | Dashboard, metrics, logs, terminal | Any authenticated user |
 | Start/stop/restart systemd services | Superuser verification (password re-entry) |
 | Install/update packages | Superuser verification |
+| Create/modify/delete users and groups | Superuser verification |
 | Container operations (remove, pull, create) | Superuser verification |
 | Browse files | Read permissions on the target host |
 
@@ -177,7 +226,8 @@ Linux user credentials on the gateway host.
 
 All security-relevant actions are logged to `/var/log/tenodera_audit.log`
 with structured JSON entries: login/logout, WebSocket sessions,
-host management, bridge spawning, and superuser verification attempts.
+host management, bridge spawning, superuser verification, and
+user/group management operations.
 
 ## Service Management
 

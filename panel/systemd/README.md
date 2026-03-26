@@ -13,7 +13,7 @@ The service file includes the following hardening directives:
 | Directive | Description |
 |-----------|-------------|
 | `ProtectSystem=strict` | Entire filesystem read-only except explicit write paths |
-| `ReadWritePaths=/etc/tenodera /var/log` | Allow writes to config and audit logs |
+| `ReadWritePaths=/etc /var/log /home /var/mail` | Allow writes for user management, config, logs, and home dirs |
 | `PrivateTmp=yes` | Isolated `/tmp` namespace |
 | `NoNewPrivileges=yes` | Prevent privilege escalation via setuid/setgid |
 | `ProtectKernelTunables=yes` | Block writes to `/proc/sys` and `/sys` |
@@ -22,7 +22,13 @@ The service file includes the following hardening directives:
 | `RestrictNamespaces=yes` | Prevent namespace creation |
 | `LockPersonality=yes` | Block execution domain changes |
 | `MemoryDenyWriteExecute=yes` | Prevent W+X memory mappings |
-| `RestrictSUIDSGID=yes` | Block creation of SUID/SGID files |
+| `RestrictSUIDSGID=no` | Required for `useradd`/`groupadd` lock file management |
+
+**Note:** `ReadWritePaths` includes `/etc` because the bridge (spawned as a
+child of the gateway) needs to write to `/etc/passwd`, `/etc/shadow`,
+`/etc/group`, `/etc/gshadow`, and create lock files like `/etc/.pwd.lock`
+for user and group management operations. The `/home` path is needed for
+creating home directories when adding new users.
 
 ### Configuration
 
@@ -32,12 +38,29 @@ Override environment variables without editing the service file:
 sudo systemctl edit tenodera-gateway
 ```
 
+#### TLS (recommended for production)
+
 ```ini
 [Service]
 Environment=TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
 Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
-Environment=TENODERA_BIND_ADDR=0.0.0.0
 ```
+
+#### Plaintext HTTP (development only)
+
+```ini
+[Service]
+Environment=TENODERA_ALLOW_UNENCRYPTED=1
+```
+
+#### Custom bind address
+
+```ini
+[Service]
+Environment=TENODERA_BIND=0.0.0.0:9090
+```
+
+Then restart:
 
 ```bash
 sudo systemctl restart tenodera-gateway

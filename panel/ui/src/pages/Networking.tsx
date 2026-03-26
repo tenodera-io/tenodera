@@ -178,9 +178,19 @@ export function Networking() {
   const sendManage = useCallback((data: Record<string, unknown>): Promise<Record<string, unknown>> => {
     return new Promise((resolve) => {
       const ch = getManageChannel();
+      const sentAction = data.action as string | undefined;
+      let resolved = false;
       const handler = (msg: Message) => {
+        if (resolved) return;
         if (msg.type === 'data' && 'data' in msg) {
-          resolve(msg.data as Record<string, unknown>);
+          const res = msg.data as Record<string, unknown>;
+          // If we sent an action and the response has an action field, only resolve
+          // if they match — prevents cross-talk between concurrent requests
+          if (sentAction && typeof res.action === 'string' && res.action !== sentAction) {
+            return;
+          }
+          resolved = true;
+          resolve(res);
         }
       };
       ch.onMessage(handler);
@@ -425,7 +435,7 @@ export function Networking() {
               value={pwInput}
               onChange={e => setPwInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') pendingAction?.(); }}
-              style={S.input}
+              style={{ ...S.input, borderColor: pwInput ? '#7aa2f7' : '#9ece6a' }}
               autoFocus
               placeholder="Password"
             />
@@ -638,7 +648,7 @@ export function Networking() {
                     {fwAvailableBackends.length > 1 && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>Backend</span>
-                        <select style={S.input} value={ruleBackend} onChange={e => setRuleBackend(e.target.value)}>
+                        <select style={{ ...S.input, borderColor: ruleBackend ? '#7aa2f7' : '#9ece6a' }} value={ruleBackend} onChange={e => setRuleBackend(e.target.value)}>
                           {fwAvailableBackends.map(b => (
                             <option key={b} value={b}>{b}</option>
                           ))}
@@ -648,18 +658,18 @@ export function Networking() {
                     {ruleBackend === 'firewalld' && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>Service</span>
-                        <input style={S.input} value={ruleService} onChange={e => setRuleService(e.target.value)}
+                        <input style={{ ...S.input, borderColor: ruleService ? '#7aa2f7' : '#9ece6a' }} value={ruleService} onChange={e => setRuleService(e.target.value)}
                           placeholder="e.g. http, ssh" />
                       </label>
                     )}
                     <label style={S.formLabel}>
                       <span style={S.formLabelText}>Port</span>
-                      <input style={{ ...S.input, width: 90 }} value={rulePort} onChange={e => setRulePort(e.target.value)}
+                      <input style={{ ...S.input, width: 90, borderColor: rulePort ? '#7aa2f7' : '#9ece6a' }} value={rulePort} onChange={e => setRulePort(e.target.value)}
                         placeholder="e.g. 80" />
                     </label>
                     <label style={S.formLabel}>
                       <span style={S.formLabelText}>Protocol</span>
-                      <select style={S.input} value={ruleProto} onChange={e => setRuleProto(e.target.value)}>
+                      <select style={{ ...S.input, borderColor: ruleProto ? '#7aa2f7' : '#9ece6a' }} value={ruleProto} onChange={e => setRuleProto(e.target.value)}>
                         <option value="tcp">TCP</option>
                         <option value="udp">UDP</option>
                       </select>
@@ -667,7 +677,7 @@ export function Networking() {
                     {(ruleBackend === 'ufw' || ruleBackend === 'iptables' || ruleBackend === 'nftables') && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>Action</span>
-                        <select style={S.input} value={ruleAction} onChange={e => setRuleAction(e.target.value)}>
+                        <select style={{ ...S.input, borderColor: ruleAction ? '#7aa2f7' : '#9ece6a' }} value={ruleAction} onChange={e => setRuleAction(e.target.value)}>
                           <option value="allow">{ruleBackend === 'ufw' ? 'Allow' : 'Accept'}</option>
                           <option value="deny">{ruleBackend === 'ufw' ? 'Deny' : 'Drop'}</option>
                           <option value="reject">Reject</option>
@@ -677,7 +687,7 @@ export function Networking() {
                     {ruleBackend === 'ufw' && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>From</span>
-                        <input style={{ ...S.input, width: 120 }} value={ruleFrom} onChange={e => setRuleFrom(e.target.value)}
+                        <input style={{ ...S.input, width: 120, borderColor: ruleFrom ? '#7aa2f7' : '#9ece6a' }} value={ruleFrom} onChange={e => setRuleFrom(e.target.value)}
                           placeholder="any" />
                       </label>
                     )}
@@ -801,7 +811,7 @@ export function Networking() {
               <div style={S.formRow}>
                 <label style={S.formLabel}>
                   <span style={S.formLabelText}>Bridge name</span>
-                  <input style={S.input} value={bridgeName} onChange={e => setBridgeName(e.target.value)}
+                  <input style={{ ...S.input, borderColor: bridgeName ? '#7aa2f7' : '#9ece6a' }} value={bridgeName} onChange={e => setBridgeName(e.target.value)}
                     placeholder="e.g. br0" />
                 </label>
                 <button onClick={createBridge} style={{ ...S.btnPrimary, alignSelf: 'flex-end' }}>Create</button>
@@ -814,7 +824,7 @@ export function Networking() {
               <div style={S.formRow}>
                 <label style={S.formLabel}>
                   <span style={S.formLabelText}>Parent interface</span>
-                  <select style={S.input} value={vlanParent} onChange={e => setVlanParent(e.target.value)}>
+                  <select style={{ ...S.input, borderColor: vlanParent ? '#7aa2f7' : '#9ece6a' }} value={vlanParent} onChange={e => setVlanParent(e.target.value)}>
                     <option value="">Select…</option>
                     {interfaces.filter(i => i.iface_type === 'ethernet').map(i => (
                       <option key={i.name} value={i.name}>{i.name}</option>
@@ -823,7 +833,7 @@ export function Networking() {
                 </label>
                 <label style={S.formLabel}>
                   <span style={S.formLabelText}>VLAN ID</span>
-                  <input style={{ ...S.input, width: 80 }} value={vlanId} onChange={e => setVlanId(e.target.value)}
+                  <input style={{ ...S.input, width: 80, borderColor: vlanId ? '#7aa2f7' : '#9ece6a' }} value={vlanId} onChange={e => setVlanId(e.target.value)}
                     placeholder="1-4094" type="number" min={1} max={4094} />
                 </label>
                 <button onClick={createVlan} style={{ ...S.btnPrimary, alignSelf: 'flex-end' }}>Create</button>
@@ -1087,7 +1097,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   input: {
     background: '#1a1b26',
-    border: '1px solid #292e42',
+    border: '1px solid #9ece6a',
     borderRadius: 6,
     color: '#c0caf5',
     padding: '0.4rem 0.65rem',

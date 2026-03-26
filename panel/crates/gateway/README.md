@@ -75,6 +75,8 @@ sshpass -e ssh -o StrictHostKeyChecking=accept-new user@host tenodera-bridge
 - WebSocket Origin validation against Host header
 - Hardened systemd service (`ProtectSystem=strict`, `NoNewPrivileges=yes`, etc.)
 - Structured audit logging with file permission enforcement
+- All privileged operations (user management, package operations,
+  service control) require superuser password re-verification
 
 ## Dependencies
 

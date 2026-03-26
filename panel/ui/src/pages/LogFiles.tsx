@@ -256,7 +256,7 @@ export function LogFiles() {
             placeholder="Filter files..."
             value={fileFilter}
             onChange={(e) => setFileFilter(e.target.value)}
-            style={S.filterInput}
+            style={{ ...S.filterInput, borderColor: fileFilter ? '#7aa2f7' : '#9ece6a' }}
           />
           <div style={S.fileList}>
             {filesLoading ? (
@@ -317,7 +317,7 @@ export function LogFiles() {
                       <select
                         value={tailCount}
                         onChange={(e) => setTailCount(Number(e.target.value))}
-                        style={S.select}
+                        style={{ ...S.select, borderColor: '#7aa2f7' }}
                       >
                         <option value={50}>50</option>
                         <option value={100}>100</option>
@@ -358,14 +358,14 @@ export function LogFiles() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-                      style={{ ...S.input, flex: 2, minWidth: '200px' }}
+                      style={{ ...S.input, flex: 2, minWidth: '200px', borderColor: searchQuery ? '#7aa2f7' : '#9ece6a' }}
                     />
                     <label style={S.label}>
                       Max:
                       <select
                         value={searchMaxLines}
                         onChange={(e) => setSearchMaxLines(Number(e.target.value))}
-                        style={S.select}
+                        style={{ ...S.select, borderColor: '#7aa2f7' }}
                       >
                         <option value={50}>50</option>
                         <option value={100}>100</option>
@@ -384,7 +384,7 @@ export function LogFiles() {
                         max={50}
                         value={searchBefore}
                         onChange={(e) => setSearchBefore(Number(e.target.value))}
-                        style={{ ...S.input, width: '60px' }}
+                        style={{ ...S.input, width: '60px', borderColor: '#7aa2f7' }}
                       />
                     </label>
                     <label style={S.label}>
@@ -395,7 +395,7 @@ export function LogFiles() {
                         max={50}
                         value={searchAfter}
                         onChange={(e) => setSearchAfter(Number(e.target.value))}
-                        style={{ ...S.input, width: '60px' }}
+                        style={{ ...S.input, width: '60px', borderColor: '#7aa2f7' }}
                       />
                     </label>
                     <label style={S.label}>
@@ -404,13 +404,13 @@ export function LogFiles() {
                         type="date"
                         value={searchDateFrom}
                         onChange={(e) => setSearchDateFrom(e.target.value)}
-                        style={S.input}
+                        style={{ ...S.input, borderColor: searchDateFrom ? '#7aa2f7' : '#9ece6a' }}
                       />
                       <input
                         type="time"
                         value={searchTimeFrom}
                         onChange={(e) => setSearchTimeFrom(e.target.value)}
-                        style={{ ...S.input, width: '100px' }}
+                        style={{ ...S.input, width: '100px', borderColor: searchTimeFrom ? '#7aa2f7' : '#9ece6a' }}
                       />
                     </label>
                     <label style={S.label}>
@@ -419,13 +419,13 @@ export function LogFiles() {
                         type="date"
                         value={searchDateTo}
                         onChange={(e) => setSearchDateTo(e.target.value)}
-                        style={S.input}
+                        style={{ ...S.input, borderColor: searchDateTo ? '#7aa2f7' : '#9ece6a' }}
                       />
                       <input
                         type="time"
                         value={searchTimeTo}
                         onChange={(e) => setSearchTimeTo(e.target.value)}
-                        style={{ ...S.input, width: '100px' }}
+                        style={{ ...S.input, width: '100px', borderColor: searchTimeTo ? '#7aa2f7' : '#9ece6a' }}
                       />
                     </label>
                     <button onClick={runSearch} style={S.btn} disabled={searchLoading || (!searchQuery && !searchDateFrom && !searchDateTo)}>
@@ -537,7 +537,7 @@ const S: Record<string, React.CSSProperties> = {
   filterInput: {
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     fontSize: '0.85rem',
@@ -626,7 +626,7 @@ const S: Record<string, React.CSSProperties> = {
   input: {
     padding: '0.4rem',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     fontSize: '0.85rem',
@@ -634,7 +634,7 @@ const S: Record<string, React.CSSProperties> = {
   select: {
     padding: '0.4rem',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     fontSize: '0.85rem',

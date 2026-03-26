@@ -170,7 +170,7 @@ export function Files({ user }: FilesProps) {
             onChange={(e) => handlePathChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => path.includes('/') && fetchSuggestions(path)}
-            style={styles.pathInput}
+            style={{ ...styles.pathInput, borderColor: path ? '#7aa2f7' : '#9ece6a' }}
             spellCheck={false}
           />
           {showSuggestions && suggestions.length > 0 && (
@@ -270,7 +270,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     fontFamily: 'monospace',

@@ -19,11 +19,14 @@ and writes responses to stdout.
 
 ## Handler Modules
 
+21 handler structs across 19 source modules.
+
 ### One-shot (open -> ready + data + close)
 
 | Handler | Payload | Description |
 |---------|---------|-------------|
 | `SystemInfoHandler` | `system.info` | Hostname, OS, uptime, kernel |
+| `SystemdUnitsHandler` | `systemd.units` | List all systemd units |
 | `HardwareInfoHandler` | `hardware.info` | CPU, cores, MHz, temperature sensors |
 | `TopProcessesHandler` | `top.processes` | Top 15 processes by CPU usage |
 | `DiskUsageHandler` | `disk.usage` | Partition usage (total/used/free) |
@@ -39,7 +42,6 @@ and writes responses to stdout.
 | `MetricsStreamHandler` | `metrics.stream` | CPU, memory, swap, load, disk/net I/O |
 | `StorageStreamHandler` | `storage.stream` | Block device tree + I/O rates |
 | `NetworkStreamHandler` | `networking.stream` | Per-interface TX/RX rates |
-| `TerminalPtyHandler` | `terminal.pty` | Interactive PTY (fork + openpty) |
 
 ### Bidirectional (open -> ready, then data commands)
 
@@ -49,9 +51,24 @@ and writes responses to stdout.
 | `ContainersHandler` | `container.manage` | Docker/Podman operations |
 | `NetworkManageHandler` | `networking.manage` | Firewall, bridges, VLANs, VPN |
 | `PackagesHandler` | `packages.manage` | Package management (apt/dnf/pacman) |
+| `UsersManageHandler` | `users.manage` | User/group CRUD, lock/unlock, passwords |
 | `HostsManageHandler` | `hosts.manage` | Remote host CRUD |
 | `LogFilesHandler` | `log.files` | Log file browsing + search |
-| `KdumpHandler` | `kdump.info` | Kernel dump status + crash dumps |
+| `KdumpInfoHandler` | `kdump.info` | Kernel dump status + crash dumps |
+
+### Bidirectional + Streaming (open -> ready, stream + input)
+
+| Handler | Payload | Description |
+|---------|---------|-------------|
+| `TerminalPtyHandler` | `terminal.pty` | Interactive PTY (fork + openpty) |
+
+## Privilege Model
+
+The bridge detects whether it runs as root (`euid == 0`) or as a normal
+user. When running as root (local bridge spawned by the gateway systemd
+service), privileged commands like `useradd` are executed directly.
+When running as a non-root user (remote bridge spawned via SSH), the
+bridge uses `sudo -S` and pipes the user's password via stdin.
 
 ## Building
 
@@ -79,7 +96,7 @@ echo '{"type":"open","channel":"ch1","payload":"system.info"}' | tenodera-bridge
 - `tokio` -- async runtime
 - `serde` + `serde_json` -- JSON serialization
 - `nix` -- PTY, fork, setsid, ioctl
-- `libc` -- raw syscalls (statvfs, ioctl, fcntl)
+- `libc` -- raw syscalls (statvfs, ioctl, geteuid)
 - `async-trait` -- async trait methods
 - `chrono` -- timestamps
 - `tracing` -- structured logging

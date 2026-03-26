@@ -30,6 +30,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
   const [newUser, setNewUser] = useState('');
   const [newSshPort, setNewSshPort] = useState('22');
   const [formError, setFormError] = useState('');
+  const [tried, setTried] = useState(false);
 
   const chRef = useRef<Channel | null>(null);
 
@@ -39,6 +40,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
     setEditId('');
     setNewName(''); setNewAddr(''); setNewUser(''); setNewSshPort('22');
     setFormError('');
+    setTried(false);
   }, []);
 
   const refreshList = useCallback(() => {
@@ -88,6 +90,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    setTried(true);
     if (!newName || !newAddr) { setFormError('Name and address are required'); return; }
     const ssh_port = parseInt(newSshPort, 10) || 22;
     const common = {
@@ -151,19 +154,19 @@ export function Hosts({ onClose, onChange }: HostsProps) {
           {formError && <div style={S.modalError}>{formError}</div>}
 
           <label style={S.label}>Name</label>
-          <input style={S.input} placeholder="e.g. Debian 12 VM" value={newName}
+          <input style={{ ...S.input, borderColor: tried && !newName ? '#f7768e' : newName ? '#7aa2f7' : '#9ece6a' }} placeholder="e.g. Debian 12 VM" value={newName}
             onChange={e => setNewName(e.target.value)} autoFocus />
 
           <label style={S.label}>Address (IP or hostname)</label>
-          <input style={S.input} placeholder="e.g. 192.168.56.10" value={newAddr}
+          <input style={{ ...S.input, borderColor: tried && !newAddr ? '#f7768e' : newAddr ? '#7aa2f7' : '#9ece6a' }} placeholder="e.g. 192.168.56.10" value={newAddr}
             onChange={e => setNewAddr(e.target.value)} />
 
           <label style={S.label}>SSH User (empty = logged-in user)</label>
-          <input style={S.input} placeholder="leave empty for your login" value={newUser}
+          <input style={{ ...S.input, borderColor: newUser ? '#7aa2f7' : '#9ece6a' }} placeholder="leave empty for your login" value={newUser}
             onChange={e => setNewUser(e.target.value)} />
 
           <label style={S.label}>SSH Port</label>
-          <input style={S.input} placeholder="22" value={newSshPort}
+          <input style={{ ...S.input, borderColor: newSshPort && newSshPort !== '22' ? '#7aa2f7' : '#9ece6a' }} placeholder="22" value={newSshPort}
             onChange={e => setNewSshPort(e.target.value)} />
 
           <div style={S.modalActions}>
@@ -325,7 +328,7 @@ const S: Record<string, React.CSSProperties> = {
     width: '100%',
     padding: '0.5rem 0.6rem',
     borderRadius: 4,
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     fontSize: '0.88rem',

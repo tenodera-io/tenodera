@@ -22,6 +22,34 @@ WebSocket (browser <-> gateway) and stdin/stdout (gateway <-> bridge).
 | `Ping` | Bidirectional | Heartbeat |
 | `Pong` | Bidirectional | Heartbeat response |
 
+## Payload Types
+
+Known payload types registered in the `Payload` enum:
+
+| Payload | Handler | Description |
+|---------|---------|-------------|
+| `system.info` | `SystemInfoHandler` | System overview |
+| `systemd.units` | `SystemdUnitsHandler` | List systemd units |
+| `systemd.manage` | `SystemdManageHandler` | Manage systemd services |
+| `journal.query` | `JournalQueryHandler` | Query journald |
+| `file.list` | `FileListHandler` | Directory listing |
+| `terminal.pty` | `TerminalPtyHandler` | Interactive PTY |
+| `metrics.stream` | `MetricsStreamHandler` | Real-time system metrics |
+| `disk.usage` | `DiskUsageHandler` | Partition usage |
+| `network.stats` | `NetworkStatsHandler` | Interface statistics |
+| `networking.stream` | `NetworkStreamHandler` | Network I/O streaming |
+| `networking.manage` | `NetworkManageHandler` | Firewall, bridges, VPN |
+| `storage.stream` | `StorageStreamHandler` | Block device I/O streaming |
+| `container.manage` | `ContainersHandler` | Docker/Podman operations |
+| `packages.manage` | `PackagesHandler` | Package management |
+| `users.manage` | `UsersManageHandler` | User/group management |
+| `hosts.manage` | `HostsManageHandler` | Remote host CRUD |
+| `log.files` | `LogFilesHandler` | Log file browsing |
+| `kdump.info` | `KdumpInfoHandler` | Kernel dump status |
+| `superuser.verify` | `SuperuserVerifyHandler` | Password verification |
+| `hardware.info` | `HardwareInfoHandler` | Hardware details |
+| `top.processes` | `TopProcessesHandler` | Top processes by CPU |
+
 ## Wire Format
 
 Each message is a single JSON object with a `type` field:

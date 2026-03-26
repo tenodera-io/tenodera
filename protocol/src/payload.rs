@@ -22,6 +22,7 @@ pub enum Payload {
     ContainerList,
     KdumpInfo,
     LogFiles,
+    UsersManage,
     /// Escape hatch for unknown / future / plugin payloads.
     Custom(String),
 }
@@ -48,6 +49,7 @@ impl Payload {
             "container.list" => Self::ContainerList,
             "kdump.info" => Self::KdumpInfo,
             "log.files" => Self::LogFiles,
+            "users.manage" => Self::UsersManage,
             other => Self::Custom(other.to_string()),
         }
     }
@@ -73,6 +75,7 @@ impl Payload {
             Self::ContainerList => "container.list",
             Self::KdumpInfo => "kdump.info",
             Self::LogFiles => "log.files",
+            Self::UsersManage => "users.manage",
             Self::Custom(s) => s.as_str(),
         }
     }

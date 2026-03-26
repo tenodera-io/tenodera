@@ -102,9 +102,19 @@ export function Packages() {
   const sendManage = useCallback((data: Record<string, unknown>): Promise<Record<string, unknown>> => {
     return new Promise((resolve) => {
       const ch = getManageChannel();
+      const sentAction = data.action as string | undefined;
+      let resolved = false;
       const handler = (msg: Message) => {
+        if (resolved) return;
         if (msg.type === 'data' && 'data' in msg) {
-          resolve(msg.data as Record<string, unknown>);
+          const res = msg.data as Record<string, unknown>;
+          // If we sent an action and the response has an action field, only resolve
+          // if they match — prevents cross-talk between concurrent requests
+          if (sentAction && typeof res.action === 'string' && res.action !== sentAction) {
+            return;
+          }
+          resolved = true;
+          resolve(res);
         }
       };
       ch.onMessage(handler);
@@ -286,7 +296,7 @@ export function Packages() {
                 placeholder="Filter installed packages..."
                 value={installedFilter}
                 onChange={e => setInstalledFilter(e.target.value)}
-                style={S.input}
+                style={{ ...S.input, borderColor: installedFilter ? '#7aa2f7' : '#9ece6a' }}
               />
               <button onClick={loadInstalled} style={S.btn} disabled={loading}>
                 {loading ? '⏳' : '🔄'} Refresh
@@ -333,7 +343,7 @@ export function Packages() {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && doSearch()}
-                style={{ ...S.input, flex: 1 }}
+                style={{ ...S.input, flex: 1, borderColor: searchQuery ? '#7aa2f7' : '#9ece6a' }}
               />
               <button onClick={doSearch} style={S.btn} disabled={loading || !searchQuery.trim()}>
                 {loading ? '⏳' : '🔍'} Search
@@ -447,7 +457,7 @@ export function Packages() {
                     placeholder="Repository name"
                     value={newRepoName}
                     onChange={e => setNewRepoName(e.target.value)}
-                    style={{ ...S.input, width: 200 }}
+                    style={{ ...S.input, width: 200, borderColor: newRepoName ? '#7aa2f7' : '#9ece6a' }}
                   />
                 )}
                 <input
@@ -459,7 +469,7 @@ export function Packages() {
                   }
                   value={newRepoUrl}
                   onChange={e => setNewRepoUrl(e.target.value)}
-                  style={{ ...S.input, flex: 1 }}
+                  style={{ ...S.input, flex: 1, borderColor: newRepoUrl ? '#7aa2f7' : '#9ece6a' }}
                 />
                 <button onClick={addRepo} style={S.btnSuccess} disabled={!newRepoUrl.trim()}>
                   ➕ Add
@@ -538,7 +548,7 @@ export function Packages() {
               placeholder="Password"
               value={pwInput}
               onChange={e => setPwInput(e.target.value)}
-              style={S.modalInput}
+              style={{ ...S.modalInput, borderColor: pwInput ? '#7aa2f7' : '#9ece6a' }}
               autoFocus
               autoComplete="current-password"
             />
@@ -651,7 +661,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   input: {
     background: 'var(--bg-card)',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     color: 'var(--text-primary)',
     padding: '6px 12px',
     borderRadius: 6,
@@ -817,7 +827,7 @@ const S: Record<string, React.CSSProperties> = {
   modalInput: {
     width: '100%',
     background: 'var(--bg-base)',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     color: 'var(--text-primary)',
     padding: '8px 12px',
     borderRadius: 6,

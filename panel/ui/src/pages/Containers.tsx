@@ -298,7 +298,7 @@ export function Containers() {
             onKeyDown={(e) => { if (e.key === 'Enter') confirmAction(); if (e.key === 'Escape') cancelAction(); }}
             placeholder="Enter password…"
             autoFocus
-            style={S.passwordInput}
+            style={{ ...S.passwordInput, borderColor: password ? '#7aa2f7' : '#9ece6a' }}
           />
           <button
             onClick={confirmAction}
@@ -393,7 +393,7 @@ export function Containers() {
           <div style={{ ...S.card, marginBottom: '1rem' }}>
             <div style={S.pullRow}>
               <input
-                style={S.input}
+                style={{ ...S.input, borderColor: pullImage ? '#7aa2f7' : '#9ece6a' }}
                 placeholder="Image name (e.g. nginx:latest)"
                 value={pullImage}
                 onChange={(e) => setPullImage(e.target.value)}
@@ -447,11 +447,11 @@ export function Containers() {
           <h3 style={S.formTitle}>Create New Container</h3>
           <div style={S.formGrid}>
             <label style={S.label}>Image *
-              <input style={S.input} placeholder="nginx:latest" value={form.image}
+              <input style={{ ...S.input, borderColor: form.image ? '#7aa2f7' : '#9ece6a' }} placeholder="nginx:latest" value={form.image}
                 onChange={(e) => setForm({ ...form, image: e.target.value })} />
             </label>
             <label style={S.label}>Name
-              <input style={S.input} placeholder="my-container" value={form.name}
+              <input style={{ ...S.input, borderColor: form.name ? '#7aa2f7' : '#9ece6a' }} placeholder="my-container" value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </label>
           </div>
@@ -465,10 +465,10 @@ export function Containers() {
             </div>
             {form.ports.map((p, i) => (
               <div key={i} style={S.pairRow}>
-                <input style={S.inputSm} placeholder="Host port" value={p.host}
+                <input style={{ ...S.inputSm, borderColor: p.host ? '#7aa2f7' : '#9ece6a' }} placeholder="Host port" value={p.host}
                   onChange={(e) => { const ports = [...form.ports]; ports[i] = { ...p, host: e.target.value }; setForm({ ...form, ports }); }} />
                 <span style={S.muted}>→</span>
-                <input style={S.inputSm} placeholder="Container port" value={p.container}
+                <input style={{ ...S.inputSm, borderColor: p.container ? '#7aa2f7' : '#9ece6a' }} placeholder="Container port" value={p.container}
                   onChange={(e) => { const ports = [...form.ports]; ports[i] = { ...p, container: e.target.value }; setForm({ ...form, ports }); }} />
                 {form.ports.length > 1 && (
                   <button style={S.rmBtn} onClick={() => {
@@ -488,10 +488,10 @@ export function Containers() {
             </div>
             {form.env.map((e, i) => (
               <div key={i} style={S.pairRow}>
-                <input style={S.inputSm} placeholder="KEY" value={e.key}
+                <input style={{ ...S.inputSm, borderColor: e.key ? '#7aa2f7' : '#9ece6a' }} placeholder="KEY" value={e.key}
                   onChange={(ev) => { const env = [...form.env]; env[i] = { ...e, key: ev.target.value }; setForm({ ...form, env }); }} />
                 <span style={S.muted}>=</span>
-                <input style={S.inputSm} placeholder="value" value={e.value}
+                <input style={{ ...S.inputSm, borderColor: e.value ? '#7aa2f7' : '#9ece6a' }} placeholder="value" value={e.value}
                   onChange={(ev) => { const env = [...form.env]; env[i] = { ...e, value: ev.target.value }; setForm({ ...form, env }); }} />
                 {form.env.length > 1 && (
                   <button style={S.rmBtn} onClick={() => {
@@ -511,10 +511,10 @@ export function Containers() {
             </div>
             {form.volumes.map((v, i) => (
               <div key={i} style={S.pairRow}>
-                <input style={S.inputSm} placeholder="Host path" value={v.host}
+                <input style={{ ...S.inputSm, borderColor: v.host ? '#7aa2f7' : '#9ece6a' }} placeholder="Host path" value={v.host}
                   onChange={(e) => { const volumes = [...form.volumes]; volumes[i] = { ...v, host: e.target.value }; setForm({ ...form, volumes }); }} />
                 <span style={S.muted}>→</span>
-                <input style={S.inputSm} placeholder="Container path" value={v.container}
+                <input style={{ ...S.inputSm, borderColor: v.container ? '#7aa2f7' : '#9ece6a' }} placeholder="Container path" value={v.container}
                   onChange={(e) => { const volumes = [...form.volumes]; volumes[i] = { ...v, container: e.target.value }; setForm({ ...form, volumes }); }} />
                 {form.volumes.length > 1 && (
                   <button style={S.rmBtn} onClick={() => {
@@ -527,7 +527,7 @@ export function Containers() {
 
           <div style={S.formGrid}>
             <label style={S.label}>Restart Policy
-              <select style={S.input} value={form.restart}
+              <select style={{ ...S.input, borderColor: form.restart ? '#7aa2f7' : '#9ece6a' }} value={form.restart}
                 onChange={(e) => setForm({ ...form, restart: e.target.value })}>
                 <option value="">None</option>
                 <option value="always">Always</option>
@@ -536,7 +536,7 @@ export function Containers() {
               </select>
             </label>
             <label style={S.label}>Command (optional)
-              <input style={S.input} placeholder="e.g. /bin/sh -c 'echo hello'" value={form.command}
+              <input style={{ ...S.input, borderColor: form.command ? '#7aa2f7' : '#9ece6a' }} placeholder="e.g. /bin/sh -c 'echo hello'" value={form.command}
                 onChange={(e) => setForm({ ...form, command: e.target.value })} />
             </label>
           </div>
@@ -717,7 +717,7 @@ const S: Record<string, React.CSSProperties> = {
   input: {
     padding: '0.4rem 0.6rem',
     borderRadius: 4,
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     fontSize: '0.85rem',
@@ -726,7 +726,7 @@ const S: Record<string, React.CSSProperties> = {
   inputSm: {
     padding: '0.3rem 0.5rem',
     borderRadius: 4,
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     fontSize: '0.8rem',
@@ -827,7 +827,7 @@ const S: Record<string, React.CSSProperties> = {
   passwordInput: {
     padding: '0.3rem 0.5rem',
     borderRadius: 4,
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     fontSize: '0.85rem',

@@ -16,3 +16,4 @@ pub mod top_processes;
 pub mod hosts;
 pub mod kdump;
 pub mod log_files;
+pub mod users;

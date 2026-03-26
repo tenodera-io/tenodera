@@ -238,6 +238,14 @@ impl ChannelHandler for NetworkManageHandler {
             _ => {}
         }
 
+        // Always echo back the action field so the frontend can match responses
+        let mut result = result;
+        if let Some(obj) = result.as_object_mut() {
+            if !obj.contains_key("action") && !action.is_empty() {
+                obj.insert("action".to_string(), serde_json::json!(action));
+            }
+        }
+
         vec![Message::Data {
             channel: channel.to_string(),
             data: result,
@@ -988,15 +996,26 @@ async fn sudo_run_cmd(password: &str, args: &[&str]) -> String {
 }
 
 async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> serde_json::Value {
-    if password.is_empty() {
+    let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
+
+    // When running as root, skip sudo entirely — avoid stdin password interference
+    let am_root = unsafe { libc::geteuid() } == 0;
+
+    if !am_root && password.is_empty() {
         return serde_json::json!({ "error": "password required" });
     }
 
-    let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
-    let mut cmd_args = vec!["-S"];
-    cmd_args.extend_from_slice(&str_args);
+    let (cmd, cmd_args) = if am_root {
+        let first = str_args.first().copied().unwrap_or("true");
+        let rest: Vec<&str> = str_args.iter().skip(1).copied().collect();
+        (first.to_string(), rest)
+    } else {
+        let mut sa = vec!["-S"];
+        sa.extend_from_slice(&str_args);
+        ("sudo".to_string(), sa)
+    };
 
-    let child = tokio::process::Command::new("sudo")
+    let child = tokio::process::Command::new(&cmd)
         .args(&cmd_args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -1009,7 +1028,9 @@ async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> serde_json::Va
     };
 
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
+        if !am_root {
+            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
+        }
         drop(stdin);
     }
 
@@ -1026,7 +1047,7 @@ async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> serde_json::Va
                 .collect::<Vec<_>>()
                 .join("\n");
             let msg = if clean.is_empty() {
-                "authentication failed".to_string()
+                "command failed".to_string()
             } else {
                 clean
             };

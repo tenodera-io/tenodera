@@ -137,7 +137,7 @@ export function Services() {
         placeholder="Filter services..."
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
-        style={styles.filter}
+        style={{ ...styles.filter, borderColor: filter ? '#7aa2f7' : '#9ece6a' }}
       />
       <table style={styles.table}>
         <thead>
@@ -280,7 +280,7 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
                   onClick={(e) => e.stopPropagation()}
                   placeholder="Enter password…"
                   autoFocus
-                  style={styles.passwordInput}
+                  style={{ ...styles.passwordInput, borderColor: password ? '#7aa2f7' : '#9ece6a' }}
                 />
                 <button
                   onClick={(e) => { e.stopPropagation(); onConfirm(); }}
@@ -387,7 +387,7 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     maxWidth: '400px',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     fontSize: '0.9rem',
@@ -501,7 +501,7 @@ const styles: Record<string, React.CSSProperties> = {
   passwordInput: {
     padding: '0.3rem 0.5rem',
     borderRadius: 4,
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     fontSize: '0.85rem',

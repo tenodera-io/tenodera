@@ -10,9 +10,12 @@ export function Login({ onLogin }: LoginProps) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [tried, setTried] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setTried(true);
+    if (!user || !password) return;
     setError('');
     setLoading(true);
 
@@ -39,7 +42,7 @@ export function Login({ onLogin }: LoginProps) {
           placeholder="Username"
           value={user}
           onChange={(e) => setUser(e.target.value)}
-          style={styles.input}
+          style={{ ...styles.input, borderColor: tried && !user ? '#f7768e' : user ? '#7aa2f7' : '#9ece6a' }}
           autoFocus
           autoComplete="username"
         />
@@ -48,7 +51,7 @@ export function Login({ onLogin }: LoginProps) {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={styles.input}
+          style={{ ...styles.input, borderColor: tried && !password ? '#f7768e' : password ? '#7aa2f7' : '#9ece6a' }}
           autoComplete="current-password"
           onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(e); }}
         />
@@ -96,7 +99,7 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     padding: '0.75rem',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     fontSize: '1rem',

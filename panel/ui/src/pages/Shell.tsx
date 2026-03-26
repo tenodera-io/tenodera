@@ -14,6 +14,7 @@ import { Packages } from './Packages.tsx';
 import { Hosts } from './Hosts.tsx';
 import { Kdump } from './Kdump.tsx';
 import { LogFiles } from './LogFiles.tsx';
+import { Users } from './Users.tsx';
 
 /* ── Superuser context ─────────────────────────────────── */
 
@@ -42,6 +43,7 @@ const NAV_SECTIONS = [
       { path: '/storage', label: 'Storage', icon: '💾' },
       { path: '/networking', label: 'Networking', icon: '🌐' },
       { path: '/packages', label: 'Packages', icon: '📦' },
+      { path: '/users', label: 'Users', icon: '👤' },
     ],
   },
   {
@@ -378,7 +380,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                 placeholder="Password"
                 value={suPwInput}
                 onChange={(e) => setSuPwInput(e.target.value)}
-                style={S.modalInput}
+                style={{ ...S.modalInput, borderColor: suPwInput ? '#7aa2f7' : '#9ece6a' }}
                 autoFocus
                 autoComplete="current-password"
               />
@@ -527,6 +529,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                   <Route path="/storage" element={<Storage />} />
                   <Route path="/networking" element={<Networking />} />
                   <Route path="/packages" element={<Packages />} />
+                  <Route path="/users" element={<Users />} />
                   <Route path="/files" element={<Files user={user} />} />
                   <Route path="/kdump" element={<Kdump />} />
                   <Route path="/log-files" element={<LogFiles />} />
@@ -779,7 +782,7 @@ const S: Record<string, React.CSSProperties> = {
     width: '100%',
     padding: '0.6rem',
     borderRadius: 4,
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-primary)',
     color: 'var(--text-primary)',
     fontSize: '0.9rem',

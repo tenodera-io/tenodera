@@ -17,7 +17,9 @@ Environment=TENODERA_UI_DIR=/usr/share/tenodera/ui
 
 # Security hardening
 ProtectSystem=strict
-ReadWritePaths=/etc/tenodera /var/log
+# Bridge child process needs write access for user/group management (useradd, etc.)
+# and networking configuration. /etc is needed for passwd/shadow/group lock files.
+ReadWritePaths=/etc /var/log /home /var/mail
 PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectKernelTunables=yes
@@ -26,7 +28,8 @@ ProtectKernelModules=yes
 RestrictNamespaces=yes
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
-RestrictSUIDSGID=yes
+# useradd/groupadd create lock files with specific permissions
+RestrictSUIDSGID=no
 
 Restart=on-failure
 RestartSec=5

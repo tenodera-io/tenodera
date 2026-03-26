@@ -40,6 +40,7 @@ routing. When a `hostId` is set, all channel opens include
 |------|----------------|-------------|
 | `Dashboard.tsx` | `system.info`, `metrics.stream` | System overview + real-time charts |
 | `Services.tsx` | `systemd.manage` | systemd service management |
+| `Users.tsx` | `users.manage` | User/group CRUD, lock/unlock, passwords |
 | `Containers.tsx` | `container.manage` | Docker/Podman management |
 | `Storage.tsx` | `storage.stream`, `disk.usage` | Block devices + I/O charts |
 | `Networking.tsx` | `networking.stream`, `networking.manage` | Interfaces, firewall, traffic |
@@ -87,5 +88,5 @@ ui/
       auth.ts         Login client
       HostTransportContext.tsx
     pages/
-      Dashboard.tsx, Services.tsx, Containers.tsx, ...
+      Dashboard.tsx, Services.tsx, Users.tsx, Containers.tsx, ...
 ```

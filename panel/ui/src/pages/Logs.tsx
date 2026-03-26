@@ -39,12 +39,12 @@ export function Logs() {
           placeholder="Filter by unit (e.g. sshd)"
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
-          style={styles.input}
+          style={{ ...styles.input, borderColor: unit ? '#7aa2f7' : '#9ece6a' }}
         />
         <select
           value={lines}
           onChange={(e) => setLines(Number(e.target.value))}
-          style={styles.select}
+          style={{ ...styles.select, borderColor: '#7aa2f7' }}
         >
           <option value={50}>50 lines</option>
           <option value={100}>100 lines</option>
@@ -106,7 +106,7 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     flex: 1,
@@ -115,7 +115,7 @@ const styles: Record<string, React.CSSProperties> = {
   select: {
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid var(--border)',
+    border: '1px solid #9ece6a',
     background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
   },
