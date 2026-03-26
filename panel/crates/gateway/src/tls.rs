@@ -57,7 +57,7 @@ pub async fn serve_tls(
                     let conn = hyper_util::server::conn::auto::Builder::new(
                         hyper_util::rt::TokioExecutor::new(),
                     );
-                    if let Err(e) = conn.serve_connection(io, service).await {
+                    if let Err(e) = conn.serve_connection_with_upgrades(io, service).await {
                         tracing::debug!(error = %e, addr = %addr, "connection error");
                     }
                 }
