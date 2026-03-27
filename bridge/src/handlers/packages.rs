@@ -354,32 +354,49 @@ async fn get_apt_candidate_version(name: &str) -> String {
 
 async fn search_dnf(query: &str) -> Vec<serde_json::Value> {
     // dnf search <query>
-    let out = run_cmd(&["dnf", "search", "--quiet", "--", query]).await;
+    // dnf5 does not support "--" after subcommands; query is validated by is_valid_package_name
+    let out = run_cmd(&["dnf", "search", "--quiet", query]).await;
     let mut pkgs = Vec::new();
     for line in out.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('=') || line.starts_with("Last metadata") {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('=')
+            || trimmed.starts_with("Last metadata")
+            || trimmed.starts_with("Matched fields")
+        {
             continue;
         }
-        // Format: "name.arch : description"
-        let parts: Vec<&str> = line.splitn(2, " : ").collect();
-        if parts.len() == 2 {
-            let name_arch = parts[0].trim();
-            let desc = parts[1].trim();
-            // Strip architecture suffix
-            let name = if name_arch.contains('.') {
-                name_arch.rsplitn(2, '.').last().unwrap_or(name_arch)
-            } else {
-                name_arch
-            };
 
-            pkgs.push(serde_json::json!({
-                "name": name,
-                "version": "",
-                "installed": false,
-                "description": desc,
-            }));
+        // dnf4 format: "name.arch : description"
+        // dnf5 format: " name.arch\tdescription"  (leading space, TAB separator)
+        let (name_arch, desc) = if let Some((left, right)) = trimmed.split_once(" : ") {
+            // dnf4
+            (left.trim(), right.trim())
+        } else if let Some((left, right)) = trimmed.split_once('\t') {
+            // dnf5
+            (left.trim(), right.trim())
+        } else {
+            continue;
+        };
+
+        if name_arch.is_empty() {
+            continue;
         }
+
+        // Strip architecture suffix (.x86_64, .noarch, etc.)
+        let name = if name_arch.contains('.') {
+            name_arch.rsplitn(2, '.').last().unwrap_or(name_arch)
+        } else {
+            name_arch
+        };
+
+        pkgs.push(serde_json::json!({
+            "name": name,
+            "version": "",
+            "installed": false,
+            "description": desc,
+        }));
+
         if pkgs.len() >= 200 {
             break;
         }
@@ -416,8 +433,10 @@ async fn package_info(name: &str) -> serde_json::Value {
             serde_json::json!({ "info": out, "installed": installed })
         }
         PkgBackend::Dnf => {
-            let out = run_cmd(&["dnf", "info", "--quiet", "--", name]).await;
-            let installed = out.contains("Installed Packages");
+            // dnf5 does not support "--" after subcommands; name is validated by is_valid_package_name
+            let out = run_cmd(&["dnf", "info", "--quiet", name]).await;
+            // dnf4: "Installed Packages", dnf5: "Installed packages"
+            let installed = out.to_ascii_lowercase().contains("installed packages");
             serde_json::json!({ "info": out, "installed": installed })
         }
         PkgBackend::None => serde_json::json!({ "error": "no package manager" }),
@@ -457,10 +476,10 @@ async fn install_packages(password: &str, names: &[String]) -> serde_json::Value
             args.extend(names.iter().cloned());
         }
         PkgBackend::Dnf => {
+            // dnf5 does not support "--"; names validated by is_valid_package_name
             args.push("dnf".into());
             args.push("install".into());
             args.push("-y".into());
-            args.push("--".into());
             args.extend(names.iter().cloned());
         }
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
@@ -498,10 +517,10 @@ async fn remove_packages(password: &str, names: &[String]) -> serde_json::Value 
             args.extend(names.iter().cloned());
         }
         PkgBackend::Dnf => {
+            // dnf5 does not support "--"; names validated by is_valid_package_name
             args.push("dnf".into());
             args.push("remove".into());
             args.push("-y".into());
-            args.push("--".into());
             args.extend(names.iter().cloned());
         }
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
@@ -640,7 +659,7 @@ async fn update_system(password: &str) -> serde_json::Value {
             }
             vec!["apt-get".into(), "dist-upgrade".into(), "-y".into()]
         }
-        PkgBackend::Dnf => vec!["dnf".into(), "upgrade".into(), "-y".into()],
+        PkgBackend::Dnf => vec!["dnf".into(), "upgrade".into(), "--refresh".into(), "-y".into()],
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
     };
 
@@ -821,18 +840,33 @@ async fn list_repos_dnf() -> serde_json::Value {
         if line.is_empty() || line.starts_with("repo id") || line.starts_with("Last metadata") {
             continue;
         }
-        let parts: Vec<&str> = line.splitn(3, char::is_whitespace).collect();
-        if parts.len() >= 2 {
-            let id = parts[0].trim();
-            let name = parts.get(1).unwrap_or(&"").trim();
-            let enabled = !id.ends_with("*disabled");
-            let clean_id = id.trim_end_matches("*disabled");
-            repos.push(serde_json::json!({
-                "name": clean_id,
-                "description": name,
-                "enabled": enabled,
-            }));
+        let words: Vec<&str> = line.split_whitespace().collect();
+        if words.len() < 2 {
+            continue;
         }
+        let id = words[0];
+        let last = words[words.len() - 1];
+
+        // dnf5: status is last word ("enabled" / "disabled")
+        // dnf4: repo id may have "*disabled" suffix, or status column absent
+        let (enabled, desc_words) = if last.eq_ignore_ascii_case("enabled") {
+            (true, &words[1..words.len() - 1])
+        } else if last.eq_ignore_ascii_case("disabled") {
+            (false, &words[1..words.len() - 1])
+        } else {
+            // dnf4 fallback: check for *disabled suffix on repo id
+            let en = !id.ends_with("*disabled");
+            (en, &words[1..])
+        };
+
+        let clean_id = id.trim_end_matches("*disabled");
+        let description = desc_words.join(" ");
+
+        repos.push(serde_json::json!({
+            "name": clean_id,
+            "description": description,
+            "enabled": enabled,
+        }));
     }
 
     serde_json::json!({ "backend": "dnf", "repos": repos })
