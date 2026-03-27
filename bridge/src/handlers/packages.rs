@@ -235,6 +235,9 @@ async fn search_packages(query: &str) -> serde_json::Value {
     if query.is_empty() {
         return serde_json::json!({ "error": "query required" });
     }
+    if !is_valid_package_name(query) {
+        return serde_json::json!({ "error": "invalid search query" });
+    }
 
     let backend = detect_backend().await;
     let packages = match backend {
@@ -252,7 +255,7 @@ async fn search_packages(query: &str) -> serde_json::Value {
 
 async fn search_pacman(query: &str) -> Vec<serde_json::Value> {
     // pacman -Ss <query>
-    let out = run_cmd(&["pacman", "-Ss", query]).await;
+    let out = run_cmd(&["pacman", "-Ss", "--", query]).await;
     let mut pkgs = Vec::new();
     let lines: Vec<&str> = out.lines().collect();
     let mut i = 0;
@@ -296,7 +299,7 @@ async fn search_pacman(query: &str) -> Vec<serde_json::Value> {
 
 async fn search_apt(query: &str) -> Vec<serde_json::Value> {
     // apt-cache search <query>
-    let out = run_cmd(&["apt-cache", "search", query]).await;
+    let out = run_cmd(&["apt-cache", "search", "--", query]).await;
     let mut pkgs = Vec::new();
     for line in out.lines() {
         let parts: Vec<&str> = line.splitn(2, " - ").collect();
@@ -351,7 +354,7 @@ async fn get_apt_candidate_version(name: &str) -> String {
 
 async fn search_dnf(query: &str) -> Vec<serde_json::Value> {
     // dnf search <query>
-    let out = run_cmd(&["dnf", "search", "--quiet", query]).await;
+    let out = run_cmd(&["dnf", "search", "--quiet", "--", query]).await;
     let mut pkgs = Vec::new();
     for line in out.lines() {
         let line = line.trim();
@@ -392,25 +395,28 @@ async fn package_info(name: &str) -> serde_json::Value {
     if name.is_empty() {
         return serde_json::json!({ "error": "package name required" });
     }
+    if !is_valid_package_name(name) {
+        return serde_json::json!({ "error": "invalid package name" });
+    }
     let backend = detect_backend().await;
     match backend {
         PkgBackend::Pacman => {
-            let out = run_cmd(&["pacman", "-Qi", name]).await;
+            let out = run_cmd(&["pacman", "-Qi", "--", name]).await;
             if out.contains("was not found") {
                 // Try remote info
-                let out = run_cmd(&["pacman", "-Si", name]).await;
+                let out = run_cmd(&["pacman", "-Si", "--", name]).await;
                 serde_json::json!({ "info": out, "installed": false })
             } else {
                 serde_json::json!({ "info": out, "installed": true })
             }
         }
         PkgBackend::Apt => {
-            let out = run_cmd(&["apt-cache", "show", name]).await;
+            let out = run_cmd(&["apt-cache", "show", "--", name]).await;
             let installed = is_apt_installed(name).await;
             serde_json::json!({ "info": out, "installed": installed })
         }
         PkgBackend::Dnf => {
-            let out = run_cmd(&["dnf", "info", "--quiet", name]).await;
+            let out = run_cmd(&["dnf", "info", "--quiet", "--", name]).await;
             let installed = out.contains("Installed Packages");
             serde_json::json!({ "info": out, "installed": installed })
         }
@@ -947,7 +953,7 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                     }
                 };
                 let canon_str = canonical.to_string_lossy();
-                sudo_action(password, &["rm", "-f", &canon_str]).await
+                sudo_action(password, &["rm", "-f", "--", &canon_str]).await
             } else {
                 // Try to find and remove matching file (.list or .sources)
                 let list_path = format!("/etc/apt/sources.list.d/{repo}.list");
@@ -958,12 +964,12 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 }
                 // Prefer .list, fall back to .sources
                 if tokio::fs::metadata(&list_path).await.is_ok() {
-                    sudo_action(password, &["rm", "-f", &list_path]).await
+                    sudo_action(password, &["rm", "-f", "--", &list_path]).await
                 } else if tokio::fs::metadata(&sources_path).await.is_ok() {
-                    sudo_action(password, &["rm", "-f", &sources_path]).await
+                    sudo_action(password, &["rm", "-f", "--", &sources_path]).await
                 } else {
                     // Try removing .list anyway (original behavior)
-                    sudo_action(password, &["rm", "-f", &list_path]).await
+                    sudo_action(password, &["rm", "-f", "--", &list_path]).await
                 }
             }
         }
@@ -989,7 +995,7 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 }
                 format!("/etc/yum.repos.d/{repo}.repo")
             };
-            sudo_action(password, &["rm", "-f", &path]).await
+            sudo_action(password, &["rm", "-f", "--", &path]).await
         }
         PkgBackend::None => serde_json::json!({ "error": "no package manager" }),
     }

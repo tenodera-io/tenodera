@@ -186,7 +186,7 @@ impl ChannelHandler for NetworkManageHandler {
                 if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c)) {
                     serde_json::json!({ "error": "invalid interface name" })
                 } else {
-                    sudo_action(password, &["ip", "link", "set", name, "up"]).await
+                    sudo_action(password, &["ip", "link", "set", "dev", name, "up"]).await
                 }
             }
             "iface_down" => {
@@ -194,7 +194,7 @@ impl ChannelHandler for NetworkManageHandler {
                 if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c)) {
                     serde_json::json!({ "error": "invalid interface name" })
                 } else {
-                    sudo_action(password, &["ip", "link", "set", name, "down"]).await
+                    sudo_action(password, &["ip", "link", "set", "dev", name, "down"]).await
                 }
             }
 
@@ -205,7 +205,7 @@ impl ChannelHandler for NetworkManageHandler {
                 if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_ ".contains(c)) {
                     serde_json::json!({ "error": "invalid connection name" })
                 } else {
-                    sudo_action(password, &["nmcli", "connection", "up", name]).await
+                    sudo_action(password, &["nmcli", "connection", "up", "--", name]).await
                 }
             }
             "vpn_disconnect" => {
@@ -213,7 +213,7 @@ impl ChannelHandler for NetworkManageHandler {
                 if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_ ".contains(c)) {
                     serde_json::json!({ "error": "invalid connection name" })
                 } else {
-                    sudo_action(password, &["nmcli", "connection", "down", name]).await
+                    sudo_action(password, &["nmcli", "connection", "down", "--", name]).await
                 }
             }
 
@@ -670,8 +670,11 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
                         "reject" => "reject",
                         _ => "accept",
                     };
-                    let nft_rule = format!("add rule inet filter input {proto} dport {port} {nft_action}");
-                    sudo_action(password, &["nft", &nft_rule]).await
+                    // Each word must be a separate argument to nft
+                    sudo_action(password, &[
+                        "nft", "add", "rule", "inet", "filter", "input",
+                        proto, "dport", port, nft_action,
+                    ]).await
                 }
                 _ => serde_json::json!({ "error": "no firewall backend available" }),
             }
@@ -878,7 +881,7 @@ async fn add_bridge(password: &str, name: &str) -> serde_json::Value {
     } else {
         let r1 = sudo_action(password, &["ip", "link", "add", "name", name, "type", "bridge"]).await;
         if r1.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-            sudo_action(password, &["ip", "link", "set", name, "up"]).await
+            sudo_action(password, &["ip", "link", "set", "dev", name, "up"]).await
         } else {
             r1
         }
@@ -908,12 +911,12 @@ async fn remove_interface(password: &str, name: &str) -> serde_json::Value {
     }
     // Try nmcli first
     if which("nmcli").await {
-        let r = sudo_action(password, &["nmcli", "connection", "delete", name]).await;
+        let r = sudo_action(password, &["nmcli", "connection", "delete", "--", name]).await;
         if r.get("ok").and_then(|v| v.as_bool()) == Some(true) {
             return r;
         }
     }
-    sudo_action(password, &["ip", "link", "delete", name]).await
+    sudo_action(password, &["ip", "link", "delete", "dev", name]).await
 }
 
 // ──────────────────────────────────────────────────────────────

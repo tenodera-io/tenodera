@@ -183,7 +183,7 @@ async fn inspect_container(rt: &str, id: &str) -> serde_json::Value {
     if !is_valid_container_ref(id) {
         return serde_json::json!({ "error": "invalid container id" });
     }
-    run_cmd(rt, &["inspect", id]).await
+    run_cmd(rt, &["inspect", "--", id]).await
 }
 
 async fn container_action_sudo(rt: &str, action: &str, id: &str, password: &str) -> serde_json::Value {
@@ -196,7 +196,7 @@ async fn container_action_sudo(rt: &str, action: &str, id: &str, password: &str)
     if password.is_empty() {
         return serde_json::json!({ "error": "password required" });
     }
-    sudo_cmd(password, &[rt, action, id]).await
+    sudo_cmd(password, &[rt, action, "--", id]).await
 }
 
 async fn remove_container(rt: &str, id: &str, force: bool, password: &str) -> serde_json::Value {
@@ -213,6 +213,7 @@ async fn remove_container(rt: &str, id: &str, force: bool, password: &str) -> se
     if force {
         args.push("-f");
     }
+    args.push("--");
     args.push(id);
     sudo_cmd(password, &args).await
 }
@@ -231,6 +232,7 @@ async fn remove_image(rt: &str, id: &str, force: bool, password: &str) -> serde_
     if force {
         args.push("-f");
     }
+    args.push("--");
     args.push(id);
     sudo_cmd(password, &args).await
 }
@@ -247,7 +249,7 @@ async fn pull_image(rt: &str, image: &str, password: &str) -> serde_json::Value 
     }
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(300),
-        sudo_cmd(password, &[rt, "pull", image]),
+        sudo_cmd(password, &[rt, "pull", "--", image]),
     )
     .await;
     match output {
@@ -335,6 +337,9 @@ async fn create_container(rt: &str, data: &serde_json::Value, password: &str) ->
     // Container name
     if let Some(name) = data.get("name").and_then(|v| v.as_str())
         && !name.is_empty() {
+            if !is_valid_container_ref(name) {
+                return serde_json::json!({ "error": "invalid container name" });
+            }
             args.push("--name".into());
             args.push(name.into());
         }
@@ -385,10 +390,14 @@ async fn create_container(rt: &str, data: &serde_json::Value, password: &str) ->
     // Restart policy
     if let Some(restart) = data.get("restart").and_then(|v| v.as_str())
         && !restart.is_empty() {
+            if !is_valid_restart_policy(restart) {
+                return serde_json::json!({ "error": format!("invalid restart policy: {restart}") });
+            }
             args.push("--restart".into());
             args.push(restart.into());
         }
 
+    args.push("--".into());
     args.push(image.into());
 
     // Optional command
@@ -408,9 +417,12 @@ async fn container_logs(rt: &str, id: &str, tail: u64) -> serde_json::Value {
     if id.is_empty() {
         return serde_json::json!({ "error": "no container id" });
     }
+    if !is_valid_container_ref(id) {
+        return serde_json::json!({ "error": "invalid container id" });
+    }
     let tail_str = tail.to_string();
     let output = tokio::process::Command::new(rt)
-        .args(["logs", "--tail", &tail_str, "--timestamps", id])
+        .args(["logs", "--tail", &tail_str, "--timestamps", "--", id])
         .output()
         .await;
 
@@ -573,4 +585,13 @@ fn is_valid_image_ref(image: &str) -> bool {
         && !image.starts_with('-')
         && image.chars().all(|c| c.is_alphanumeric() || "-_./: ".contains(c))
         && !image.contains("..")
+}
+
+/// Valid restart policy: no, always, unless-stopped, on-failure[:max-retries].
+fn is_valid_restart_policy(policy: &str) -> bool {
+    matches!(policy, "no" | "always" | "unless-stopped")
+        || policy == "on-failure"
+        || policy.starts_with("on-failure:")
+            && policy.strip_prefix("on-failure:")
+                .is_some_and(|n| !n.is_empty() && n.parse::<u32>().is_ok())
 }

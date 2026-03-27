@@ -69,6 +69,8 @@ impl ChannelHandler for SystemdManageHandler {
             "status" => {
                 if unit.is_empty() {
                     serde_json::json!({ "ok": false, "error": "no unit specified" })
+                } else if !is_valid_unit_name(unit) {
+                    serde_json::json!({ "ok": false, "error": "invalid unit name" })
                 } else {
                     unit_status(unit).await
                 }
@@ -143,7 +145,7 @@ async fn systemctl_action(action: &str, unit: &str, user: &str, password: &str) 
     // spawned via SSH on a remote host.  Password was already verified above
     // via unix_chkpwd, and we pass it again to sudo -S.
     let child = tokio::process::Command::new("sudo")
-        .args(["-S", "systemctl", action, unit])
+        .args(["-S", "systemctl", action, "--", unit])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -180,14 +182,14 @@ async fn systemctl_action(action: &str, unit: &str, user: &str, password: &str) 
 
 async fn unit_status(unit: &str) -> serde_json::Value {
     let is_active = tokio::process::Command::new("systemctl")
-        .args(["is-active", unit])
+        .args(["is-active", "--", unit])
         .output()
         .await
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|_| "unknown".into());
 
     let is_enabled = tokio::process::Command::new("systemctl")
-        .args(["is-enabled", unit])
+        .args(["is-enabled", "--", unit])
         .output()
         .await
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
