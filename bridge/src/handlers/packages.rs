@@ -940,9 +940,22 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 }
                 sudo_action(password, &["rm", "-f", repo]).await
             } else {
-                // Try to find and remove matching .list file
-                let fname = format!("/etc/apt/sources.list.d/{repo}.list");
-                sudo_action(password, &["rm", "-f", &fname]).await
+                // Try to find and remove matching file (.list or .sources)
+                let list_path = format!("/etc/apt/sources.list.d/{repo}.list");
+                let sources_path = format!("/etc/apt/sources.list.d/{repo}.sources");
+                // Validate name characters
+                if !repo.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+                    return serde_json::json!({ "error": "invalid repository name" });
+                }
+                // Prefer .list, fall back to .sources
+                if tokio::fs::metadata(&list_path).await.is_ok() {
+                    sudo_action(password, &["rm", "-f", &list_path]).await
+                } else if tokio::fs::metadata(&sources_path).await.is_ok() {
+                    sudo_action(password, &["rm", "-f", &sources_path]).await
+                } else {
+                    // Try removing .list anyway (original behavior)
+                    sudo_action(password, &["rm", "-f", &list_path]).await
+                }
             }
         }
         PkgBackend::Dnf => {

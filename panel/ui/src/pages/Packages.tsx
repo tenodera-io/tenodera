@@ -455,10 +455,10 @@ export function Packages() {
             <div style={S.formCard}>
               <h4 style={S.formTitle}>Add Repository</h4>
               <div style={S.formRow}>
-                {backend === 'pacman' && (
+                {(backend === 'pacman' || backend === 'apt') && (
                   <input
                     type="text"
-                    placeholder="Repository name"
+                    placeholder={backend === 'pacman' ? 'Repository name' : 'File name (e.g. docker, custom)'}
                     value={newRepoName}
                     onChange={e => setNewRepoName(e.target.value)}
                     style={{ ...S.input, width: 200, borderColor: newRepoName ? '#7aa2f7' : '#9ece6a' }}
@@ -479,61 +479,278 @@ export function Packages() {
                   ➕ Add
                 </button>
               </div>
+              {backend === 'apt' && (
+                <p style={S.formHint}>
+                  For non-PPA repos, the file name determines the .list file in /etc/apt/sources.list.d/
+                </p>
+              )}
             </div>
 
-            {/* Repos list */}
-            <div style={S.tableWrap}>
-              <table style={S.table}>
-                <thead>
-                  <tr>
-                    <th style={S.th}>Name</th>
-                    {backend === 'pacman' && <th style={S.th}>Server / Include</th>}
-                    {backend === 'apt' && <th style={S.th}>Source</th>}
-                    {backend === 'dnf' && <th style={S.th}>Description</th>}
-                    <th style={S.th}>Status</th>
-                    <th style={{ ...S.th, width: 80 }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {repos.map((r, i) => (
-                    <tr key={r.name + i} style={S.tr}>
-                      <td style={S.td}>{r.name}</td>
-                      {backend === 'pacman' && (
-                        <td style={{ ...S.td, maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-                          {r.server || r.include || '—'}
-                        </td>
+            {/* ── APT: grouped by file ── */}
+            {backend === 'apt' && (() => {
+              const mainRepos = repos.filter(r => r.file === '/etc/apt/sources.list');
+              const dropinFiles = new Map<string, RepoInfo[]>();
+              for (const r of repos) {
+                if (r.file && r.file !== '/etc/apt/sources.list') {
+                  const list = dropinFiles.get(r.file) || [];
+                  list.push(r);
+                  dropinFiles.set(r.file, list);
+                }
+              }
+              return (
+                <>
+                  {/* Main sources.list */}
+                  {mainRepos.length > 0 && (
+                    <div style={S.repoSection}>
+                      <div style={S.repoSectionHeader}>
+                        <span style={S.repoSectionIcon}>📄</span>
+                        <span style={S.repoSectionTitle}>/etc/apt/sources.list</span>
+                        <span style={S.repoSectionBadge}>system</span>
+                      </div>
+                      <div style={S.tableWrap}>
+                        <table style={S.table}>
+                          <thead>
+                            <tr>
+                              <th style={S.th}>Source Line</th>
+                              <th style={{ ...S.th, width: 100 }}>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {mainRepos.map((r, i) => (
+                              <tr key={'main-' + i} style={S.tr}>
+                                <td style={S.tdMono}>{r.line || '—'}</td>
+                                <td style={S.td}>
+                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                    {r.enabled ? '● Enabled' : '○ Disabled'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Drop-in files */}
+                  {dropinFiles.size > 0 && (
+                    <div style={S.repoSection}>
+                      <div style={S.repoSectionHeader}>
+                        <span style={S.repoSectionIcon}>📂</span>
+                        <span style={S.repoSectionTitle}>/etc/apt/sources.list.d/</span>
+                        <span style={S.repoSectionCount}>{dropinFiles.size} file{dropinFiles.size !== 1 ? 's' : ''}</span>
+                      </div>
+                      {[...dropinFiles.entries()].map(([file, entries]) => (
+                        <div key={file} style={S.dropinCard}>
+                          <div style={S.dropinHeader}>
+                            <span style={S.dropinFileName}>
+                              {file.replace('/etc/apt/sources.list.d/', '')}
+                            </span>
+                            <span style={S.dropinFormat}>
+                              {entries[0]?.format === 'deb822' ? 'DEB822' : 'one-line'}
+                            </span>
+                            <button
+                              onClick={() => removeRepo(file)}
+                              style={S.btnDanger}
+                              title={`Remove ${file.replace('/etc/apt/sources.list.d/', '')}`}
+                            >
+                              🗑️ Remove file
+                            </button>
+                          </div>
+                          {entries.map((r, i) => (
+                            r.format === 'deb822' ? (
+                              <div key={i} style={S.deb822Card}>
+                                <div style={S.deb822Row}>
+                                  <span style={S.deb822Label}>Types</span>
+                                  <span style={S.deb822Value}>{r.Types || '—'}</span>
+                                </div>
+                                <div style={S.deb822Row}>
+                                  <span style={S.deb822Label}>URIs</span>
+                                  <span style={S.deb822Value}>{r.URIs || '—'}</span>
+                                </div>
+                                <div style={S.deb822Row}>
+                                  <span style={S.deb822Label}>Suites</span>
+                                  <span style={S.deb822Value}>{r.Suites || '—'}</span>
+                                </div>
+                                <div style={S.deb822Row}>
+                                  <span style={S.deb822Label}>Components</span>
+                                  <span style={S.deb822Value}>{r.Components || '—'}</span>
+                                </div>
+                                <div style={S.deb822Row}>
+                                  <span style={S.deb822Label}>Status</span>
+                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                    {r.enabled ? '● Enabled' : '○ Disabled'}
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div key={i} style={S.dropinLine}>
+                                <span style={S.dropinLineMono}>{r.line || '—'}</span>
+                                <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e', fontSize: '0.8rem', flexShrink: 0 }}>
+                                  {r.enabled ? '● Enabled' : '○ Disabled'}
+                                </span>
+                              </div>
+                            )
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {repos.length === 0 && !loading && (
+                    <div style={S.emptyState}>No repositories found</div>
+                  )}
+                </>
+              );
+            })()}
+
+            {/* ── Pacman: official vs custom ── */}
+            {backend === 'pacman' && (() => {
+              const officialNames = ['core', 'extra', 'multilib', 'community', 'testing', 'multilib-testing', 'community-testing'];
+              const official = repos.filter(r => officialNames.includes(r.name));
+              const custom = repos.filter(r => !officialNames.includes(r.name));
+              return (
+                <>
+                  {/* Official repos */}
+                  {official.length > 0 && (
+                    <div style={S.repoSection}>
+                      <div style={S.repoSectionHeader}>
+                        <span style={S.repoSectionIcon}>📄</span>
+                        <span style={S.repoSectionTitle}>Official Repositories</span>
+                        <span style={S.repoSectionBadge}>system</span>
+                      </div>
+                      <div style={S.tableWrap}>
+                        <table style={S.table}>
+                          <thead>
+                            <tr>
+                              <th style={S.th}>Name</th>
+                              <th style={S.th}>Server / Include</th>
+                              <th style={S.th}>SigLevel</th>
+                              <th style={{ ...S.th, width: 100 }}>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {official.map((r, i) => (
+                              <tr key={'off-' + i} style={S.tr}>
+                                <td style={{ ...S.td, fontWeight: 600 }}>{r.name}</td>
+                                <td style={{ ...S.tdMono, maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                                  {r.server || r.include || '—'}
+                                </td>
+                                <td style={S.tdMono}>{r.sig_level || '—'}</td>
+                                <td style={S.td}>
+                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                    {r.enabled ? '● Enabled' : '○ Disabled'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom repos */}
+                  <div style={S.repoSection}>
+                    <div style={S.repoSectionHeader}>
+                      <span style={S.repoSectionIcon}>📦</span>
+                      <span style={S.repoSectionTitle}>Custom Repositories</span>
+                      {custom.length > 0 && (
+                        <span style={S.repoSectionCount}>{custom.length} repo{custom.length !== 1 ? 's' : ''}</span>
                       )}
-                      {backend === 'apt' && (
-                        <td style={{ ...S.td, maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
-                          {r.format === 'deb822'
-                            ? `${r.Types || ''} ${r.URIs || ''} ${r.Suites || ''} ${r.Components || ''}`
-                            : r.line || '—'}
-                        </td>
-                      )}
-                      {backend === 'dnf' && (
-                        <td style={S.td}>{r.description || '—'}</td>
-                      )}
-                      <td style={S.td}>
-                        <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
-                          {r.enabled ? '● Enabled' : '○ Disabled'}
-                        </span>
-                      </td>
-                      <td style={S.td}>
-                        <button
-                          onClick={() => removeRepo(
-                            backend === 'apt' && r.file ? r.file : r.name
-                          )}
-                          style={S.btnDanger}
-                          title="Remove"
-                        >
-                          🗑️
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                    </div>
+                    {custom.length > 0 ? (
+                      <div style={S.tableWrap}>
+                        <table style={S.table}>
+                          <thead>
+                            <tr>
+                              <th style={S.th}>Name</th>
+                              <th style={S.th}>Server / Include</th>
+                              <th style={S.th}>SigLevel</th>
+                              <th style={{ ...S.th, width: 100 }}>Status</th>
+                              <th style={{ ...S.th, width: 80 }}>Action</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {custom.map((r, i) => (
+                              <tr key={'cust-' + i} style={S.tr}>
+                                <td style={{ ...S.td, fontWeight: 600 }}>{r.name}</td>
+                                <td style={{ ...S.tdMono, maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const }}>
+                                  {r.server || r.include || '—'}
+                                </td>
+                                <td style={S.tdMono}>{r.sig_level || '—'}</td>
+                                <td style={S.td}>
+                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                    {r.enabled ? '● Enabled' : '○ Disabled'}
+                                  </span>
+                                </td>
+                                <td style={S.td}>
+                                  <button onClick={() => removeRepo(r.name)} style={S.btnDanger} title="Remove">
+                                    🗑️
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div style={S.emptyState}>No custom repositories configured</div>
+                    )}
+                  </div>
+                </>
+              );
+            })()}
+
+            {/* ── DNF: flat list ── */}
+            {backend === 'dnf' && (
+              <div style={S.repoSection}>
+                <div style={S.repoSectionHeader}>
+                  <span style={S.repoSectionIcon}>📦</span>
+                  <span style={S.repoSectionTitle}>DNF Repositories</span>
+                  <span style={S.repoSectionCount}>{repos.length} repo{repos.length !== 1 ? 's' : ''}</span>
+                </div>
+                {repos.length > 0 ? (
+                  <div style={S.tableWrap}>
+                    <table style={S.table}>
+                      <thead>
+                        <tr>
+                          <th style={S.th}>ID</th>
+                          <th style={S.th}>Description</th>
+                          <th style={{ ...S.th, width: 100 }}>Status</th>
+                          <th style={{ ...S.th, width: 80 }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {repos.map((r, i) => (
+                          <tr key={'dnf-' + i} style={S.tr}>
+                            <td style={{ ...S.td, fontWeight: 600 }}>{r.name}</td>
+                            <td style={S.td}>{r.description || '—'}</td>
+                            <td style={S.td}>
+                              <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                {r.enabled ? '● Enabled' : '○ Disabled'}
+                              </span>
+                            </td>
+                            <td style={S.td}>
+                              <button onClick={() => removeRepo(r.name)} style={S.btnDanger} title="Remove">
+                                🗑️
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div style={S.emptyState}>No repositories found</div>
+                )}
+              </div>
+            )}
+
+            {/* Fallback for unknown or no backend */}
+            {backend !== 'apt' && backend !== 'pacman' && backend !== 'dnf' && repos.length === 0 && !loading && (
+              <div style={S.emptyState}>No package manager detected</div>
+            )}
           </div>
         )}
 
@@ -844,5 +1061,113 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '0.5rem',
     justifyContent: 'flex-end',
+  },
+  // ── Repo section styles ──
+  repoSection: {
+    marginBottom: '1.25rem',
+  },
+  repoSectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.5rem 0',
+    borderBottom: '1px solid var(--border)',
+    marginBottom: '0.5rem',
+  },
+  repoSectionIcon: {
+    fontSize: '1rem',
+  },
+  repoSectionTitle: {
+    color: 'var(--text-primary)',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+  },
+  repoSectionBadge: {
+    background: 'rgba(122,162,247,0.15)',
+    color: '#7aa2f7',
+    padding: '1px 8px',
+    borderRadius: 8,
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+  },
+  repoSectionCount: {
+    color: 'var(--text-secondary)',
+    fontSize: '0.8rem',
+    marginLeft: 'auto',
+  },
+  // ── APT drop-in card styles ──
+  dropinCard: {
+    background: 'var(--bg-card)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    marginBottom: '0.5rem',
+    overflow: 'hidden',
+  },
+  dropinHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.5rem 0.75rem',
+    background: 'rgba(65,72,104,0.15)',
+    borderBottom: '1px solid var(--border)',
+  },
+  dropinFileName: {
+    color: '#e0af68',
+    fontFamily: 'monospace',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+  },
+  dropinFormat: {
+    color: 'var(--text-secondary)',
+    fontSize: '0.7rem',
+    background: 'rgba(65,72,104,0.3)',
+    padding: '1px 6px',
+    borderRadius: 6,
+    marginRight: 'auto',
+  },
+  dropinLine: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    padding: '0.4rem 0.75rem',
+    borderBottom: '1px solid rgba(65,72,104,0.2)',
+  },
+  dropinLineMono: {
+    fontFamily: 'monospace',
+    fontSize: '0.8rem',
+    color: 'var(--text-primary)',
+    flex: 1,
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  // ── DEB822 card styles ──
+  deb822Card: {
+    padding: '0.5rem 0.75rem',
+    borderBottom: '1px solid rgba(65,72,104,0.2)',
+  },
+  deb822Row: {
+    display: 'flex',
+    gap: '0.75rem',
+    padding: '2px 0',
+  },
+  deb822Label: {
+    color: '#7aa2f7',
+    fontSize: '0.8rem',
+    fontWeight: 600,
+    minWidth: 90,
+    flexShrink: 0,
+  },
+  deb822Value: {
+    color: 'var(--text-primary)',
+    fontFamily: 'monospace',
+    fontSize: '0.8rem',
+  },
+  formHint: {
+    color: 'var(--text-secondary)',
+    fontSize: '0.75rem',
+    margin: '0.4rem 0 0 0',
+    fontStyle: 'italic' as const,
   },
 };
