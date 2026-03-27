@@ -28,7 +28,8 @@ Communicates with the gateway via WebSocket using the channel protocol.
 - `request(payload, options)` -- one-shot: opens channel, collects data,
   resolves on close
 
-**`auth.ts`** -- Login client (`POST /api/auth/login`)
+**`auth.ts`** -- Login client (`POST /api/auth/login`), logout with
+`Authorization: Bearer <session_id>` header.
 
 **`HostTransportContext.tsx`** -- React context for transparent multi-host
 routing. When a `hostId` is set, all channel opens include
@@ -44,12 +45,12 @@ routing. When a `hostId` is set, all channel opens include
 | `Containers.tsx` | `container.manage` | Docker/Podman management |
 | `Storage.tsx` | `storage.stream`, `disk.usage` | Block devices + I/O charts |
 | `Networking.tsx` | `networking.stream`, `networking.manage` | Interfaces, firewall, traffic |
-| `Packages.tsx` | `packages.manage` | Package management (apt/dnf/pacman) |
-| `Logs.tsx` | `journal.query` | journald log viewer |
+| `Packages.tsx` | `packages.manage` | Package/repository management (apt/dnf/pacman) |
+| `Logs.tsx` | `journal.query` | journald log viewer with timestamps |
 | `LogFiles.tsx` | `log.files` | `/var/log` file browser + search |
 | `Terminal.tsx` | `terminal.pty` | Full terminal (xterm.js) |
 | `Files.tsx` | `file.list` | Remote file browser |
-| `Hosts.tsx` | `hosts.manage` | Remote host CRUD |
+| `Hosts.tsx` | `hosts.manage` | Remote host CRUD with SSH key verification |
 | `Kdump.tsx` | `kdump.info` | Kernel dump status + crash browser |
 | `Login.tsx` | -- | Login form |
 | `Shell.tsx` | -- | Main layout with sidebar navigation |
@@ -59,6 +60,17 @@ routing. When a `hostId` is set, all channel opens include
 - `session_id` and `user` stored in `sessionStorage`
 - WebSocket connects with `session_id` as query parameter
 - On WS close or missing session: redirect to `/login`
+
+### UI Patterns
+
+- **Tab persistence**: active tab stored in `sessionStorage` for Users,
+  Packages, Containers, Networking -- survives page refresh
+- **Input border colors**: green (empty), blue (filled/valid), red (error)
+  -- consistent across all pages (Tokyo Night palette)
+- **Byte array decoding**: journal log MESSAGE fields that arrive as byte
+  arrays (from journalctl JSON) are decoded via `TextDecoder` with ANSI
+  escape stripping
+- **Host enrollment**: 2-step flow -- scan SSH fingerprint, confirm, then add
 
 ## Development
 
@@ -85,7 +97,7 @@ ui/
     index.css         Global styles (Tokyo Night palette)
     api/
       transport.ts    Channel WebSocket transport
-      auth.ts         Login client
+      auth.ts         Login/logout client
       HostTransportContext.tsx
     pages/
       Dashboard.tsx, Services.tsx, Users.tsx, Containers.tsx, ...

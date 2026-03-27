@@ -30,6 +30,20 @@ child of the gateway) needs to write to `/etc/passwd`, `/etc/shadow`,
 for user and group management operations. The `/home` path is needed for
 creating home directories when adding new users.
 
+### Application-Level Security
+
+Beyond systemd hardening, the gateway enforces:
+
+- **TLS required by default** -- plaintext must be explicitly enabled
+- **CSRF Origin check** on all state-changing HTTP requests
+- **WebSocket Origin validation** against Host header
+- **HTTP security headers** (CSP, X-Frame-Options, X-Content-Type-Options,
+  Referrer-Policy, Permissions-Policy)
+- **Session idle timeout** (15 min default) and maximum lifetime (4 hours)
+- **Password zeroization** in memory on session drop
+- **Core dumps disabled** at startup to protect secrets in memory
+- **Audit logging** to `/var/log/tenodera_audit.log`
+
 ### Configuration
 
 Override environment variables without editing the service file:
@@ -70,4 +84,10 @@ sudo systemctl restart tenodera-gateway
 
 ```bash
 journalctl -u tenodera-gateway -f
+```
+
+### Audit Log
+
+```bash
+tail -f /var/log/tenodera_audit.log
 ```

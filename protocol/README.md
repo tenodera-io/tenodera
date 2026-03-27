@@ -6,9 +6,10 @@ between the gateway and bridge.
 ## Role in Architecture
 
 `tenodera-protocol` is a **library crate** -- it produces no binary.
-Both `tenodera-gateway` and `tenodera-bridge` depend on it. It defines
-the message format for channel-multiplexed JSON communication over
-WebSocket (browser <-> gateway) and stdin/stdout (gateway <-> bridge).
+Both `tenodera-gateway` and `tenodera-bridge` depend on it via path
+dependency. It defines the message format for channel-multiplexed JSON
+communication over WebSocket (browser <-> gateway) and stdin/stdout
+(gateway <-> bridge).
 
 ## Message Types
 
@@ -21,10 +22,11 @@ WebSocket (browser <-> gateway) and stdin/stdout (gateway <-> bridge).
 | `Close` | Bidirectional | Channel close (`problem: None` = clean) |
 | `Ping` | Bidirectional | Heartbeat |
 | `Pong` | Bidirectional | Heartbeat response |
+| `AuthResult` | Bridge -> Client | Authentication result (used internally) |
 
 ## Payload Types
 
-Known payload types registered in the `Payload` enum:
+21 known payload types registered in the system:
 
 | Payload | Handler | Description |
 |---------|---------|-------------|
@@ -41,9 +43,9 @@ Known payload types registered in the `Payload` enum:
 | `networking.manage` | `NetworkManageHandler` | Firewall, bridges, VPN |
 | `storage.stream` | `StorageStreamHandler` | Block device I/O streaming |
 | `container.manage` | `ContainersHandler` | Docker/Podman operations |
-| `packages.manage` | `PackagesHandler` | Package management |
+| `packages.manage` | `PackagesHandler` | Package + repository management |
 | `users.manage` | `UsersManageHandler` | User/group management |
-| `hosts.manage` | `HostsManageHandler` | Remote host CRUD |
+| `hosts.manage` | `HostsManageHandler` | Remote host CRUD + SSH key scan |
 | `log.files` | `LogFilesHandler` | Log file browsing |
 | `kdump.info` | `KdumpInfoHandler` | Kernel dump status |
 | `superuser.verify` | `SuperuserVerifyHandler` | Password verification |
@@ -52,7 +54,8 @@ Known payload types registered in the `Payload` enum:
 
 ## Wire Format
 
-Each message is a single JSON object with a `type` field:
+Each message is a single JSON object terminated by a newline, with a
+`type` field discriminating the variant:
 
 ```json
 {"type":"open","channel":"ch1","payload":"system.info"}
@@ -62,6 +65,11 @@ Each message is a single JSON object with a `type` field:
 {"type":"ping"}
 {"type":"pong"}
 ```
+
+The `Open` message uses `#[serde(flatten)]` on `ChannelOpenOptions`,
+which itself uses `#[serde(flatten)]` on an `extra: Map` field. This
+means extra fields like `host`, `path`, `unit`, `lines` appear at the
+top level of the JSON object alongside `type`, `channel`, and `payload`.
 
 ## Modules
 

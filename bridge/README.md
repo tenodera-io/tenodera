@@ -31,9 +31,9 @@ and writes responses to stdout.
 | `TopProcessesHandler` | `top.processes` | Top 15 processes by CPU usage |
 | `DiskUsageHandler` | `disk.usage` | Partition usage (total/used/free) |
 | `NetworkStatsHandler` | `network.stats` | Interface stats, IPs, MAC, speed |
-| `JournalQueryHandler` | `journal.query` | journald entries with filters |
-| `FileListHandler` | `file.list` | Directory listing (sudo fallback) |
-| `SuperuserVerifyHandler` | `superuser.verify` | Password verification via `unix_chkpwd` |
+| `JournalQueryHandler` | `journal.query` | journald entries with unit/priority/lines filters |
+| `FileListHandler` | `file.list` | Directory listing (sudo fallback, symlink-safe) |
+| `SuperuserVerifyHandler` | `superuser.verify` | Password verification with rate limiting (6/15min) |
 
 ### Streaming (open -> ready, then continuous data until close)
 
@@ -47,13 +47,13 @@ and writes responses to stdout.
 
 | Handler | Payload | Description |
 |---------|---------|-------------|
-| `SystemdManageHandler` | `systemd.manage` | systemd service management |
+| `SystemdManageHandler` | `systemd.manage` | systemd service management (via D-Bus) |
 | `ContainersHandler` | `container.manage` | Docker/Podman operations |
-| `NetworkManageHandler` | `networking.manage` | Firewall, bridges, VLANs, VPN |
-| `PackagesHandler` | `packages.manage` | Package management (apt/dnf/pacman) |
+| `NetworkManageHandler` | `networking.manage` | Firewall (ufw/firewalld), bridges, VLANs, VPN |
+| `PackagesHandler` | `packages.manage` | Package + repository management (apt/dnf/pacman) |
 | `UsersManageHandler` | `users.manage` | User/group CRUD, lock/unlock, passwords |
-| `HostsManageHandler` | `hosts.manage` | Remote host CRUD |
-| `LogFilesHandler` | `log.files` | Log file browsing + search |
+| `HostsManageHandler` | `hosts.manage` | Remote host CRUD, SSH key scanning |
+| `LogFilesHandler` | `log.files` | Log file browsing + keyword search |
 | `KdumpInfoHandler` | `kdump.info` | Kernel dump status + crash dumps |
 
 ### Bidirectional + Streaming (open -> ready, stream + input)
@@ -70,12 +70,28 @@ service), privileged commands like `useradd` are executed directly.
 When running as a non-root user (remote bridge spawned via SSH), the
 bridge uses `sudo -S` and pipes the user's password via stdin.
 
+## Security Features
+
+- **File listing**: uses `symlink_metadata()` to prevent symlink traversal
+- **Superuser verification**: rate-limited to 6 attempts per 15-minute
+  window, reset on success
+- **Firewall input validation**: IP/CIDR addresses, service names, and
+  port/protocol validated before passing to ufw/firewalld
+- **Repository management**: supports DEB822 `.sources` format, proper
+  system/drop-in section separation for apt
+
 ## Building
 
 ```bash
 make deps     # install Rust toolchain + system libraries
 make build    # cargo build --release
 sudo make install   # install to /usr/local/bin/tenodera-bridge
+```
+
+Or all at once:
+
+```bash
+make all      # deps + build + install
 ```
 
 ## Testing Manually
@@ -97,6 +113,7 @@ echo '{"type":"open","channel":"ch1","payload":"system.info"}' | tenodera-bridge
 - `serde` + `serde_json` -- JSON serialization
 - `nix` -- PTY, fork, setsid, ioctl
 - `libc` -- raw syscalls (statvfs, ioctl, geteuid)
+- `zbus` -- D-Bus client (systemd management)
 - `async-trait` -- async trait methods
 - `chrono` -- timestamps
 - `tracing` -- structured logging
