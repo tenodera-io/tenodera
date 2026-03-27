@@ -119,6 +119,20 @@ pub async fn login(
     // Clear rate limit on successful login
     state.login_limiter.clear(client_ip).await;
 
+    // Verify the user has sudo privileges — privileged operations
+    // (package management, firewall, systemd) all require sudo.
+    // Reject login early rather than failing cryptically later.
+    if let Err(e) = pam::verify_sudo(&req.user).await {
+        tracing::warn!(user = %req.user, ip = %client_ip, error = %e, "sudo verification failed");
+        crate::audit::log(&req.user, "login", "", false, "no sudo privileges");
+        return Err((
+            StatusCode::FORBIDDEN,
+            Json(LoginError {
+                error: e,
+            }),
+        ));
+    }
+
     let session = state.sessions.create(req.user.clone(), req.password).await;
     crate::audit::log(&session.user, "login", "", true, "");
 

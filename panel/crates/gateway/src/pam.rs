@@ -81,3 +81,40 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
         }
     }
 }
+
+/// Verify that the user has sudo privileges by running `sudo -l -U <user>`.
+///
+/// The gateway runs as root, so `sudo -l -U <user>` queries the sudoers
+/// policy for the given user without requiring their password.  When the
+/// user has NO sudo rights, the output contains "is not allowed to run sudo".
+///
+/// This ensures the authenticated user can actually perform privileged
+/// operations (package management, firewall changes, etc.) rather than
+/// failing later with cryptic "permission denied" errors.
+///
+/// Returns `Ok(())` on success or `Err(message)` on failure.
+pub async fn verify_sudo(user: &str) -> Result<(), String> {
+    let output = Command::new("sudo")
+        .args(["-l", "-U", user])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("sudo check failed: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // sudo -l -U prints "User X is not allowed to run sudo on <host>."
+    // when the user has no sudoers entries.
+    if stdout.contains("is not allowed to run sudo")
+        || stderr.contains("is not allowed to run sudo")
+    {
+        tracing::warn!(user = %user, "user has no sudo privileges");
+        return Err("user does not have sudo privileges".to_string());
+    }
+
+    tracing::info!(user = %user, "sudo access verified");
+    Ok(())
+}

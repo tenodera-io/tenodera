@@ -17,6 +17,7 @@ use crate::AppState;
 use crate::audit;
 use crate::bridge_transport::BridgeProcess;
 use crate::hosts_config;
+use crate::security_headers::origin_matches_host;
 
 #[derive(Deserialize)]
 pub struct WsParams {
@@ -328,25 +329,4 @@ async fn connect_remote(
         bridge_bin,
         &host.host_key,
     ).await
-}
-
-/// Check whether a WebSocket Origin header matches the request Host.
-///
-/// Origin format: `https://example.com:9090` or `http://localhost:3000`
-/// Host format: `example.com:9090` or `localhost:3000`
-///
-/// Extracts the hostname(:port) from the origin URL and compares it
-/// with the Host header. This prevents Cross-Site WebSocket Hijacking
-/// from a malicious page on a different domain.
-fn origin_matches_host(origin: &str, host: &str) -> bool {
-    // Extract host portion from origin URL (strip scheme)
-    let origin_host = origin
-        .strip_prefix("https://")
-        .or_else(|| origin.strip_prefix("http://"))
-        .unwrap_or(origin);
-
-    // Strip trailing path if any
-    let origin_host = origin_host.split('/').next().unwrap_or(origin_host);
-
-    origin_host.eq_ignore_ascii_case(host)
 }
