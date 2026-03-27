@@ -7,13 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/tenodera-gateway
-Environment=RUST_LOG=tenodera_gateway=info
-Environment=TENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge
-Environment=TENODERA_UI_DIR=/usr/share/tenodera/ui
-# TLS — uncomment and set paths for production:
-# Environment=TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
-# Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
-# Environment=TENODERA_ALLOW_UNENCRYPTED=0
+EnvironmentFile=-/etc/tenodera/gateway.env
 
 # Security hardening
 ProtectSystem=strict

@@ -96,17 +96,16 @@ install: $(GATEWAY_BIN) ui/dist/index.html
 	else \
 		echo "    $(CONFDIR)/hosts.json already exists — skipping"; \
 	fi
+	@if [ ! -f $(CONFDIR)/gateway.env ]; then \
+		printf '# Tenodera Gateway Configuration\n# See: systemctl cat tenodera-gateway\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to bridge binary\nTENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS certificate and key (uncomment for production)\n#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\n#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# Allow unencrypted HTTP (set to 1 only for development/testing)\nTENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
+			| sudo tee $(CONFDIR)/gateway.env > /dev/null; \
+		sudo chmod 640 $(CONFDIR)/gateway.env; \
+		echo "    Created $(CONFDIR)/gateway.env (HTTP mode — configure TLS for production)"; \
+	else \
+		echo "    $(CONFDIR)/gateway.env already exists — skipping (preserving your config)"; \
+	fi
 	@echo "==> Installing systemd services..."
 	sudo cp systemd/tenodera-gateway.service $(SYSTEMDDIR)/
-	@# Create override if not already customized by the user
-	sudo mkdir -p $(SYSTEMDDIR)/tenodera-gateway.service.d
-	@if [ ! -f $(SYSTEMDDIR)/tenodera-gateway.service.d/override.conf ]; then \
-		printf '[Service]\nEnvironment=TENODERA_BIND=0.0.0.0:9090\nEnvironment=TENODERA_ALLOW_UNENCRYPTED=1\n' \
-			| sudo tee $(SYSTEMDDIR)/tenodera-gateway.service.d/override.conf > /dev/null; \
-		echo "    Created override.conf (HTTP mode — configure TLS for production)"; \
-	else \
-		echo "    override.conf already exists — skipping (preserving your TLS config)"; \
-	fi
 	sudo systemctl daemon-reload
 	sudo systemctl enable --now tenodera-gateway
 	@echo "==> Installing logrotate config..."
@@ -122,8 +121,8 @@ install: $(GATEWAY_BIN) ui/dist/index.html
 	@echo "  in the bridge/ directory on each host."
 	@echo ""
 	@echo "  Login with any PAM user (system credentials)."
-	@echo "  For TLS, set TENODERA_TLS_CERT / TENODERA_TLS_KEY in:"
-	@echo "    systemctl edit tenodera-gateway"
+	@echo "  Configuration: $(CONFDIR)/gateway.env"
+	@echo "  For TLS, set TENODERA_TLS_CERT / TENODERA_TLS_KEY in gateway.env"
 
 $(GATEWAY_BIN):
 	$(MAKE) build-backend

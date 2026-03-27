@@ -142,16 +142,16 @@ sudo cp fullchain.pem /etc/tenodera/tls/cert.pem
 sudo cp privkey.pem   /etc/tenodera/tls/key.pem
 sudo chmod 600 /etc/tenodera/tls/key.pem
 
-# Configure the gateway
-sudo systemctl edit tenodera-gateway
+# Edit gateway config
+sudo nano /etc/tenodera/gateway.env
 ```
 
-Add the following to the editor:
+Uncomment the TLS lines and remove the unencrypted option:
 
-```ini
-[Service]
-Environment=TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
-Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+```
+TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
+TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+#TENODERA_ALLOW_UNENCRYPTED=1
 ```
 
 ```bash
@@ -171,18 +171,17 @@ openssl req -x509 -newkey rsa:4096 -nodes -days 365 \
 
 #### Option B: Plaintext HTTP (development only)
 
-On first install, `make install` creates a default override that enables
-plaintext HTTP. For subsequent installs, if you need to switch:
+On first install, `make install` creates a default `gateway.env` with
+plaintext enabled. If you need to re-enable it later, edit the config:
 
 ```bash
-sudo systemctl edit tenodera-gateway
+sudo nano /etc/tenodera/gateway.env
 ```
 
-Add:
+Set:
 
-```ini
-[Service]
-Environment=TENODERA_ALLOW_UNENCRYPTED=1
+```
+TENODERA_ALLOW_UNENCRYPTED=1
 ```
 
 ```bash
@@ -242,9 +241,23 @@ The bridge binary just needs to exist at `/usr/local/bin/tenodera-bridge`.
 
 ## Configuration
 
-### Environment Variables
+All gateway settings live in a single file:
 
-Set via `systemctl edit tenodera-gateway`:
+```
+/etc/tenodera/gateway.env
+```
+
+Edit the file, then restart the service:
+
+```bash
+sudo nano /etc/tenodera/gateway.env
+sudo systemctl restart tenodera-gateway
+```
+
+`make install` creates a default `gateway.env` with HTTP enabled. Subsequent
+installs preserve your existing config.
+
+### Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|

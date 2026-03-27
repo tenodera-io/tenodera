@@ -46,32 +46,42 @@ Beyond systemd hardening, the gateway enforces:
 
 ### Configuration
 
-Override environment variables without editing the service file:
+All gateway settings are in `/etc/tenodera/gateway.env`. The service file
+loads this via `EnvironmentFile=`, so changes take effect after a restart:
 
 ```bash
-sudo systemctl edit tenodera-gateway
+sudo nano /etc/tenodera/gateway.env
+sudo systemctl restart tenodera-gateway
 ```
 
 #### TLS (recommended for production)
 
-```ini
-[Service]
-Environment=TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
-Environment=TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+Uncomment and set the TLS paths in `gateway.env`:
+
+```
+TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
+TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+```
+
+And remove or comment out the unencrypted line:
+
+```
+#TENODERA_ALLOW_UNENCRYPTED=1
 ```
 
 #### Plaintext HTTP (development only)
 
-```ini
-[Service]
-Environment=TENODERA_ALLOW_UNENCRYPTED=1
+The default `gateway.env` created by `make install` enables plaintext:
+
+```
+TENODERA_ALLOW_UNENCRYPTED=1
 ```
 
 #### Custom bind address
 
-```ini
-[Service]
-Environment=TENODERA_BIND=0.0.0.0:9090
+```
+TENODERA_BIND_ADDR=0.0.0.0
+TENODERA_BIND_PORT=9090
 ```
 
 Then restart:
