@@ -302,6 +302,13 @@ async fn list_groups() -> Value {
 // ──────────────────────────────────────────────────────────────
 
 async fn list_shells() -> Value {
+    let shells = read_valid_shells().await;
+    json!({ "action": "list_shells", "shells": shells })
+}
+
+/// Read `/etc/shells` and return only entries whose binaries actually exist
+/// on this host.  Always includes nologin/false variants when present.
+async fn read_valid_shells() -> Vec<String> {
     let mut shells = Vec::new();
 
     if let Ok(content) = tokio::fs::read_to_string("/etc/shells").await {
@@ -310,21 +317,29 @@ async fn list_shells() -> Value {
             if line.is_empty() || line.starts_with('#') {
                 continue;
             }
-            shells.push(line.to_string());
+            // Only include shells whose binary actually exists
+            if std::path::Path::new(line).exists() {
+                shells.push(line.to_string());
+            }
         }
     }
 
     // Always include nologin options if not already present
     for nologin in &["/usr/sbin/nologin", "/sbin/nologin", "/bin/false"] {
         if !shells.iter().any(|s| s == nologin) {
-            // Only add if the binary actually exists
             if std::path::Path::new(nologin).exists() {
                 shells.push(nologin.to_string());
             }
         }
     }
 
-    json!({ "action": "list_shells", "shells": shells })
+    shells
+}
+
+/// Check whether `shell` is listed in `/etc/shells` and its binary exists.
+async fn is_valid_shell(shell: &str) -> bool {
+    let valid = read_valid_shells().await;
+    valid.iter().any(|s| s == shell)
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -354,6 +369,9 @@ async fn create_user(data: &Value, password: &str) -> Value {
     }
 
     if !gecos.is_empty() {
+        if !is_valid_gecos(gecos) {
+            return json!({ "error": "Invalid full name. Must not contain ':', newlines, or null bytes, and must be at most 256 characters." });
+        }
         args.push("-c".into());
         args.push(gecos.to_string());
     }
@@ -367,6 +385,9 @@ async fn create_user(data: &Value, password: &str) -> Value {
     }
 
     if !shell.is_empty() {
+        if !is_valid_shell(shell).await {
+            return json!({ "error": format!("Invalid shell: {shell}. Must be listed in /etc/shells and exist on this host.") });
+        }
         args.push("-s".into());
         args.push(shell.to_string());
     }
@@ -417,12 +438,18 @@ async fn modify_user(data: &Value, password: &str) -> Value {
     let mut changed = false;
 
     if let Some(gecos) = data.get("gecos").and_then(|v| v.as_str()) {
+        if !is_valid_gecos(gecos) {
+            return json!({ "error": "Invalid full name. Must not contain ':', newlines, or null bytes, and must be at most 256 characters." });
+        }
         args.push("-c".into());
         args.push(gecos.to_string());
         changed = true;
     }
 
     if let Some(shell) = data.get("shell").and_then(|v| v.as_str()) {
+        if !is_valid_shell(shell).await {
+            return json!({ "error": format!("Invalid shell: {shell}. Must be listed in /etc/shells and exist on this host.") });
+        }
         args.push("-s".into());
         args.push(shell.to_string());
         changed = true;
@@ -606,6 +633,21 @@ fn is_valid_path(path: &str) -> bool {
         && !path.contains("..")
         && !path.contains('\0')
         && path.len() <= 4096
+}
+
+/// Validate GECOS (full name / comment) field.
+/// Reject characters that could corrupt `/etc/passwd` or confuse parsers.
+fn is_valid_gecos(gecos: &str) -> bool {
+    if gecos.len() > 256 {
+        return false;
+    }
+    // Colon is the /etc/passwd field separator — must never appear in gecos.
+    // Newlines/carriage-returns would inject new passwd lines.
+    // Null bytes could truncate strings in C-level tools.
+    !gecos.contains(':')
+        && !gecos.contains('\n')
+        && !gecos.contains('\r')
+        && !gecos.contains('\0')
 }
 
 // ──────────────────────────────────────────────────────────────

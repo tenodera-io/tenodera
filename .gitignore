@@ -15,6 +15,7 @@
 # Internal documents (not for public repo)
 SECURITY_AUDIT.md
 SECURITY_AUDIT_PL.md
+SECURITY_AUDIT_V2.md
 
 # Environment & secrets
 .env

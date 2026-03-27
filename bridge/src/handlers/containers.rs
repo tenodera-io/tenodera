@@ -258,14 +258,29 @@ async fn pull_image(rt: &str, image: &str, password: &str) -> serde_json::Value 
 
 /// Paths that must never be bind-mounted into containers.
 /// These provide direct access to host internals or credentials.
+///
+/// Checked as prefixes: `/etc` blocks `/etc`, `/etc/shadow`, `/etc/anything`.
+/// A path matches if it equals the denied path or starts with `denied_path/`.
 const DENIED_VOLUME_PATHS: &[&str] = &[
-    "/", "/etc", "/etc/shadow", "/etc/passwd", "/etc/sudoers",
-    "/proc", "/sys", "/dev", "/boot",
-    "/var/run/docker.sock", "/run/docker.sock",
-    "/var/run/podman", "/run/podman",
+    "/",
+    "/etc",
+    "/proc",
+    "/sys",
+    "/dev",
+    "/boot",
+    "/root",
+    "/var/run/docker.sock",
+    "/run/docker.sock",
+    "/var/run/podman",
+    "/run/podman",
+    "/var/lib/docker",
+    "/var/lib/containers",
 ];
 
 /// Check whether a host volume path is safe to mount.
+///
+/// Resolves symlinks via `fs::canonicalize` so that a symlink pointing to a
+/// denied path (e.g. `/tmp/innocent -> /etc`) is correctly blocked.
 fn is_safe_volume_path(path: &str) -> bool {
     if path.is_empty() || !path.starts_with('/') {
         return false;
@@ -273,10 +288,30 @@ fn is_safe_volume_path(path: &str) -> bool {
     if path.contains("..") {
         return false;
     }
-    // Normalize: strip trailing slash for comparison
-    let normalized = path.trim_end_matches('/');
+
+    // Resolve symlinks and '..' components.  If the path does not exist yet
+    // we fall back to the literal string check, which is still safe because
+    // the `..` check above already passed.
+    let resolved = std::fs::canonicalize(path)
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.to_string());
+
+    let normalized = resolved.trim_end_matches('/');
+
     for denied in DENIED_VOLUME_PATHS {
-        if normalized.eq_ignore_ascii_case(denied) {
+        let denied_norm = denied.trim_end_matches('/');
+        // Exact match: path IS the denied path
+        if normalized.eq_ignore_ascii_case(denied_norm) {
+            return false;
+        }
+        // Prefix match: path is under the denied directory.
+        // Use "denied/" to avoid "/etcetera" matching "/etc".
+        // Skip prefix check for "/" — it is exact-match only (handled above).
+        if !denied_norm.is_empty()
+            && normalized
+                .to_ascii_lowercase()
+                .starts_with(&format!("{}/", denied_norm.to_ascii_lowercase()))
+        {
             return false;
         }
     }

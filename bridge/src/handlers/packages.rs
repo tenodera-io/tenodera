@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 use tokio::io::AsyncWriteExt;
@@ -934,11 +936,18 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 sudo_action(password, &["add-apt-repository", "--remove", "-y", repo]).await
             } else if repo.starts_with("/") {
                 // It's a file path — remove the file
-                // Validate path is in sources.list.d
-                if !repo.starts_with("/etc/apt/sources.list.d/") {
-                    return serde_json::json!({ "error": "can only remove files in /etc/apt/sources.list.d/" });
-                }
-                sudo_action(password, &["rm", "-f", repo]).await
+                // Canonicalize to resolve .. and symlinks, then verify it's in sources.list.d
+                let allowed_dir = Path::new("/etc/apt/sources.list.d");
+                let canonical = match allowed_dir.canonicalize().ok().zip(
+                    Path::new(repo).canonicalize().ok(),
+                ) {
+                    Some((dir, file)) if file.starts_with(&dir) => file,
+                    _ => {
+                        return serde_json::json!({ "error": "can only remove files in /etc/apt/sources.list.d/" });
+                    }
+                };
+                let canon_str = canonical.to_string_lossy();
+                sudo_action(password, &["rm", "-f", &canon_str]).await
             } else {
                 // Try to find and remove matching file (.list or .sources)
                 let list_path = format!("/etc/apt/sources.list.d/{repo}.list");
@@ -961,10 +970,18 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
         PkgBackend::Dnf => {
             // Remove .repo file from /etc/yum.repos.d/
             let path = if repo.starts_with("/") {
-                if !repo.starts_with("/etc/yum.repos.d/") {
-                    return serde_json::json!({ "error": "can only remove repo files in /etc/yum.repos.d/" });
+                // Canonicalize to resolve .. and symlinks, then verify it's in yum.repos.d
+                let allowed_dir = Path::new("/etc/yum.repos.d");
+                match allowed_dir.canonicalize().ok().zip(
+                    Path::new(repo).canonicalize().ok(),
+                ) {
+                    Some((dir, file)) if file.starts_with(&dir) => {
+                        file.to_string_lossy().to_string()
+                    }
+                    _ => {
+                        return serde_json::json!({ "error": "can only remove repo files in /etc/yum.repos.d/" });
+                    }
                 }
-                repo.to_string()
             } else {
                 // Validate name
                 if !repo.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
