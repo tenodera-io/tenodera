@@ -147,123 +147,146 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
     // Remote bridge senders keyed by host ID
     let mut remote_senders: HashMap<String, mpsc::Sender<message::Message>> = HashMap::new();
 
+    // Periodic session-existence check so that logout (or reaper) kills
+    // live WebSocket connections promptly instead of leaving them orphaned.
+    let mut session_check = tokio::time::interval(std::time::Duration::from_secs(5));
+    // consume the first immediate tick
+    session_check.tick().await;
+
     // Main loop: route WebSocket client messages to the correct bridge
-    while let Some(Ok(msg)) = stream.next().await {
-        match msg {
-            Message::Text(text) => {
-                // Refresh session activity on every message
-                state.sessions.touch(&session_id).await;
+    loop {
+        tokio::select! {
+            maybe_msg = stream.next() => {
+                let Some(Ok(msg)) = maybe_msg else { break };
+                match msg {
+                    Message::Text(text) => {
+                        // Refresh session activity on every message
+                        state.sessions.touch(&session_id).await;
 
-                match serde_json::from_str::<message::Message>(&text) {
-                    Ok(message::Message::Ping) => {
-                        let pong = serde_json::to_string(&message::Message::Pong)
-                            .expect("pong serialization");
-                        let mut s = sink.lock().await;
-                        let _ = s.send(Message::Text(pong.into())).await;
-                    }
-                    Ok(message::Message::Open { channel, options }) => {
-                        let host_id = options.extra.get("host")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string());
+                        match serde_json::from_str::<message::Message>(&text) {
+                            Ok(message::Message::Ping) => {
+                                let pong = serde_json::to_string(&message::Message::Pong)
+                                    .expect("pong serialization");
+                                let mut s = sink.lock().await;
+                                let _ = s.send(Message::Text(pong.into())).await;
+                            }
+                            Ok(message::Message::Open { channel, options }) => {
+                                let host_id = options.extra.get("host")
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string());
 
-                        let target_sender = if let Some(ref hid) = host_id {
-                            // Route to remote bridge via SSH
-                            if let Some(sender) = remote_senders.get(hid) {
-                                sender.clone()
-                            } else {
-                                // Spawn bridge on remote host via SSH
-                                match connect_remote(hid, &user, &password, bridge_bin).await {
-                                    Ok(bridge) => {
-                                        audit::log(&user, "bridge_spawn", hid, true, "remote bridge spawned via SSH");
-                                        let BridgeProcess { child, to_bridge: sender, from_bridge, _temp_known_hosts } = bridge;
-                                        _children.push(child);
-                                        if let Some(tmp) = _temp_known_hosts {
-                                            _temp_files.push(tmp);
+                                let target_sender = if let Some(ref hid) = host_id {
+                                    // Route to remote bridge via SSH
+                                    if let Some(sender) = remote_senders.get(hid) {
+                                        sender.clone()
+                                    } else {
+                                        // Spawn bridge on remote host via SSH
+                                        match connect_remote(hid, &user, &password, bridge_bin).await {
+                                            Ok(bridge) => {
+                                                audit::log(&user, "bridge_spawn", hid, true, "remote bridge spawned via SSH");
+                                                let BridgeProcess { child, to_bridge: sender, from_bridge, _temp_known_hosts } = bridge;
+                                                _children.push(child);
+                                                if let Some(tmp) = _temp_known_hosts {
+                                                    _temp_files.push(tmp);
+                                                }
+                                                spawn_bridge_forwarder(
+                                                    format!("remote:{hid}"),
+                                                    from_bridge,
+                                                    sink.clone(),
+                                                );
+                                                remote_senders.insert(hid.clone(), sender.clone());
+                                                sender
+                                            }
+                                            Err(e) => {
+                                                audit::log(&user, "bridge_spawn", hid, false, &format!("remote SSH connect failed: {e}"));
+                                                tracing::error!(host = %hid, error = %e, "remote connect failed");
+                                                let close = message::Message::Close {
+                                                    channel: channel.clone(),
+                                                    problem: Some(format!("connect-failed: {e}")),
+                                                };
+                                                let json = serde_json::to_string(&close).unwrap();
+                                                let mut s = sink.lock().await;
+                                                let _ = s.send(Message::Text(json.into())).await;
+                                                continue;
+                                            }
                                         }
-                                        spawn_bridge_forwarder(
-                                            format!("remote:{hid}"),
-                                            from_bridge,
-                                            sink.clone(),
-                                        );
-                                        remote_senders.insert(hid.clone(), sender.clone());
-                                        sender
                                     }
-                                    Err(e) => {
-                                        audit::log(&user, "bridge_spawn", hid, false, &format!("remote SSH connect failed: {e}"));
-                                        tracing::error!(host = %hid, error = %e, "remote connect failed");
-                                        let close = message::Message::Close {
-                                            channel: channel.clone(),
-                                            problem: Some(format!("connect-failed: {e}")),
-                                        };
-                                        let json = serde_json::to_string(&close).unwrap();
-                                        let mut s = sink.lock().await;
-                                        let _ = s.send(Message::Text(json.into())).await;
-                                        continue;
-                                    }
+                                } else {
+                                    // Route to local bridge
+                                    local_sender.clone()
+                                };
+
+                                // Store channel -> bridge mapping
+                                channel_routes.insert(channel.clone(), target_sender.clone());
+
+                                // Inject authenticated user and strip host field before forwarding
+                                let open_msg = {
+                                    let mut clean = options.clone();
+                                    clean.extra.remove("host");
+                                    clean.extra.insert(
+                                        "_user".into(),
+                                        serde_json::Value::String(user.clone()),
+                                    );
+                                    message::Message::Open { channel, options: clean }
+                                };
+
+                                if target_sender.send(open_msg).await.is_err() {
+                                    tracing::warn!("bridge channel closed on Open");
                                 }
                             }
-                        } else {
-                            // Route to local bridge
-                            local_sender.clone()
-                        };
+                            Ok(parsed) => {
+                                // Data, Close, Control — route to owning bridge
+                                let ch = match &parsed {
+                                    message::Message::Data { channel, .. } => Some(channel.clone()),
+                                    message::Message::Close { channel, .. } => Some(channel.clone()),
+                                    message::Message::Control { channel, .. } => Some(channel.clone()),
+                                    _ => None,
+                                };
 
-                        // Store channel -> bridge mapping
-                        channel_routes.insert(channel.clone(), target_sender.clone());
+                                let is_close = matches!(&parsed, message::Message::Close { .. });
 
-                        // Inject authenticated user and strip host field before forwarding
-                        let open_msg = {
-                            let mut clean = options.clone();
-                            clean.extra.remove("host");
-                            clean.extra.insert(
-                                "_user".into(),
-                                serde_json::Value::String(user.clone()),
-                            );
-                            message::Message::Open { channel, options: clean }
-                        };
+                                if let Some(ch) = ch {
+                                    let sender = channel_routes
+                                        .get(&ch)
+                                        .cloned()
+                                        .unwrap_or_else(|| local_sender.clone());
 
-                        if target_sender.send(open_msg).await.is_err() {
-                            tracing::warn!("bridge channel closed on Open");
+                                    if sender.send(parsed).await.is_err() {
+                                        tracing::warn!(channel = %ch, "bridge closed");
+                                    }
+
+                                    if is_close {
+                                        channel_routes.remove(&ch);
+                                    }
+                                } else {
+                                    // Forward unknown messages to local bridge
+                                    let _ = local_sender.send(parsed).await;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = %e, raw = %text, "invalid message from client");
+                            }
                         }
                     }
-                    Ok(parsed) => {
-                        // Data, Close, Control — route to owning bridge
-                        let ch = match &parsed {
-                            message::Message::Data { channel, .. } => Some(channel.clone()),
-                            message::Message::Close { channel, .. } => Some(channel.clone()),
-                            message::Message::Control { channel, .. } => Some(channel.clone()),
-                            _ => None,
-                        };
-
-                        let is_close = matches!(&parsed, message::Message::Close { .. });
-
-                        if let Some(ch) = ch {
-                            let sender = channel_routes
-                                .get(&ch)
-                                .cloned()
-                                .unwrap_or_else(|| local_sender.clone());
-
-                            if sender.send(parsed).await.is_err() {
-                                tracing::warn!(channel = %ch, "bridge closed");
-                            }
-
-                            if is_close {
-                                channel_routes.remove(&ch);
-                            }
-                        } else {
-                            // Forward unknown messages to local bridge
-                            let _ = local_sender.send(parsed).await;
-                        }
+                    Message::Close(_) => {
+                        tracing::debug!("WebSocket closed by client");
+                        break;
                     }
-                    Err(e) => {
-                        tracing::warn!(error = %e, raw = %text, "invalid message from client");
-                    }
+                    _ => {}
                 }
             }
-            Message::Close(_) => {
-                tracing::debug!("WebSocket closed by client");
-                break;
+            // Periodically verify the session still exists — logout or
+            // the reaper may have removed it while the WS was idle.
+            _ = session_check.tick() => {
+                if state.sessions.get(&session_id).await.is_none() {
+                    tracing::info!(user = %user, "session invalidated — closing WebSocket");
+                    audit::log(&user, "ws_disconnect", "websocket", true, "session invalidated (logout/expired)");
+                    // Send close frame to client before dropping
+                    let mut s = sink.lock().await;
+                    let _ = s.send(Message::Close(None)).await;
+                    break;
+                }
             }
-            _ => {}
         }
     }
 

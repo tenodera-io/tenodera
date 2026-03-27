@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use axum::{Json, extract::State};
 use axum::extract::ConnectInfo;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
@@ -34,10 +34,28 @@ pub struct LogoutRequest {
 /// POST /api/auth/logout
 ///
 /// Destroys the server-side session so credentials are no longer held in memory.
+/// Requires `Authorization: Bearer <session_id>` header matching the body
+/// `session_id` to prevent unauthenticated session destruction.
 pub async fn logout(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(req): Json<LogoutRequest>,
 ) -> StatusCode {
+    // Extract Bearer token from Authorization header
+    let token = headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "));
+
+    // The caller must prove they own the session
+    match token {
+        Some(t) if t == req.session_id => {}
+        _ => {
+            tracing::warn!(session_id = %req.session_id, "logout rejected: missing or mismatched Authorization header");
+            return StatusCode::UNAUTHORIZED;
+        }
+    }
+
     let user = state
         .sessions
         .get(&req.session_id)
