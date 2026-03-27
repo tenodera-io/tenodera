@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
 
 interface LogEntry {
-  MESSAGE?: string;
+  MESSAGE?: string | number[];
   PRIORITY?: string;
   _SYSTEMD_UNIT?: string;
   __REALTIME_TIMESTAMP?: string;
@@ -57,11 +57,12 @@ export function Logs() {
       <div style={styles.logContainer}>
         {entries.map((entry, i) => (
           <div key={i} style={styles.logLine}>
+            <span style={styles.timestamp}>{formatTimestamp(entry.__REALTIME_TIMESTAMP)}</span>
             <span style={priorityStyle(entry.PRIORITY)}>
               {priorityLabel(entry.PRIORITY)}
             </span>
             <span style={styles.unit}>{entry._SYSTEMD_UNIT || '—'}</span>
-            <span>{entry.MESSAGE || ''}</span>
+            <span>{decodeMessage(entry.MESSAGE)}</span>
           </div>
         ))}
         {entries.length === 0 && <p>No log entries.</p>}
@@ -82,6 +83,30 @@ function priorityLabel(p?: string): string {
     '7': 'DBG ',
   };
   return map[p || '6'] || 'INFO';
+}
+
+/** Decode MESSAGE field — journalctl --output=json encodes binary messages as byte arrays. */
+function decodeMessage(msg?: string | number[]): string {
+  if (msg == null) return '';
+  if (typeof msg === 'string') return msg;
+  if (Array.isArray(msg)) {
+    // Strip ANSI escape sequences after decoding
+    const raw = new TextDecoder().decode(new Uint8Array(msg));
+    return raw.replace(/\x1b\[[0-9;]*m/g, '');
+  }
+  return String(msg);
+}
+
+/** Format __REALTIME_TIMESTAMP (microseconds since epoch) to local time. */
+function formatTimestamp(ts?: string): string {
+  if (!ts) return '—';
+  const ms = Math.floor(Number(ts) / 1000);
+  const d = new Date(ms);
+  if (isNaN(d.getTime())) return '—';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
 }
 
 function priorityStyle(p?: string): React.CSSProperties {
@@ -146,5 +171,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--accent)',
     marginRight: '0.5rem',
     fontSize: '0.8rem',
+  },
+  timestamp: {
+    color: 'var(--text-secondary)',
+    marginRight: '0.5rem',
+    fontSize: '0.8rem',
+    minWidth: '4.5rem',
   },
 };

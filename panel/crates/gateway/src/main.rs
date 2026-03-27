@@ -36,6 +36,7 @@ async fn main() -> anyhow::Result<()> {
     // Logging
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env().add_directive("tenodera_gateway=debug".parse()?))
+        .with_ansi(false)
         .init();
 
     let config = GatewayConfig::default();

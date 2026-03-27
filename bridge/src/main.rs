@@ -22,6 +22,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(
             EnvFilter::from_default_env().add_directive("tenodera_bridge=debug".parse()?),
         )
+        .with_ansi(false)
         .with_writer(io::stderr)
         .init();
 
