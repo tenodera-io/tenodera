@@ -39,13 +39,19 @@ impl std::fmt::Debug for Session {
 pub struct SessionStore {
     inner: Arc<RwLock<HashMap<String, Session>>>,
     idle_timeout_secs: u64,
+    /// Hard upper bound on session age regardless of activity (seconds).
+    max_lifetime_secs: u64,
 }
+
+/// Maximum absolute session lifetime: 4 hours.
+const DEFAULT_MAX_LIFETIME_SECS: u64 = 4 * 3600;
 
 impl SessionStore {
     pub fn new(idle_timeout_secs: u64) -> Self {
         Self {
             inner: Arc::new(RwLock::new(HashMap::new())),
             idle_timeout_secs,
+            max_lifetime_secs: DEFAULT_MAX_LIFETIME_SECS,
         }
     }
 
@@ -77,13 +83,16 @@ impl SessionStore {
         self.inner.write().await.remove(id);
     }
 
-    /// Remove all sessions that have been idle longer than the configured
-    /// timeout. Dropped sessions have their passwords zeroized via `Drop`.
+    /// Remove sessions that have been idle too long **or** exceeded the
+    /// absolute lifetime cap.  Dropped sessions have their passwords
+    /// zeroized via `Drop`.
     pub async fn reap_expired(&self) -> usize {
         let mut map = self.inner.write().await;
         let before = map.len();
         map.retain(|_id, session| {
-            session.last_activity.elapsed().as_secs() <= self.idle_timeout_secs
+            let idle_ok = session.last_activity.elapsed().as_secs() <= self.idle_timeout_secs;
+            let age_ok = session.created_at.elapsed().as_secs() <= self.max_lifetime_secs;
+            idle_ok && age_ok
         });
         before - map.len()
     }

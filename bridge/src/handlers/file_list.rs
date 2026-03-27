@@ -64,12 +64,15 @@ fn list_directory(path: &str) -> serde_json::Value {
         Ok(rd) => rd
             .filter_map(|e| e.ok())
             .map(|entry| {
-                let meta = entry.metadata().ok();
+                // Use symlink_metadata to detect symlinks correctly;
+                // entry.metadata() follows symlinks so is_symlink() is
+                // always false.
+                let meta = entry.path().symlink_metadata().ok();
                 serde_json::json!({
                     "name": entry.file_name().to_string_lossy(),
                     "type": meta.as_ref().map(|m| {
-                        if m.is_dir() { "directory" }
-                        else if m.is_symlink() { "symlink" }
+                        if m.is_symlink() { "symlink" }
+                        else if m.is_dir() { "directory" }
                         else { "file" }
                     }).unwrap_or("unknown"),
                     "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),

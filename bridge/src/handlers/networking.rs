@@ -560,6 +560,33 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
     let validate_proto = |p: &str| -> bool {
         matches!(p, "tcp" | "udp" | "icmp")
     };
+    // Validate IP address or CIDR notation (IPv4 and IPv6)
+    let validate_ip_or_cidr = |s: &str| -> bool {
+        if s == "any" {
+            return true;
+        }
+        // Split optional /prefix
+        let (addr_part, prefix_part) = match s.rsplit_once('/') {
+            Some((a, p)) => (a, Some(p)),
+            None => (s, None),
+        };
+        // Validate prefix length if present
+        if let Some(p) = prefix_part {
+            let Ok(prefix) = p.parse::<u32>() else { return false };
+            // IPv4 max /32, IPv6 max /128 — we allow up to 128 here;
+            // an IPv4 with /128 is nonsensical but harmless, the real
+            // check is on the address itself.
+            if prefix > 128 { return false; }
+        }
+        // Validate address
+        addr_part.parse::<std::net::IpAddr>().is_ok()
+    };
+    // Validate firewalld service name: alphanumeric + hyphens only
+    let validate_service_name = |s: &str| -> bool {
+        !s.is_empty()
+            && s.len() <= 128
+            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+    };
 
     match backend {
         FirewallBackend::Ufw => {
@@ -580,6 +607,9 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
             if !matches!(action, "allow" | "deny" | "reject" | "limit") {
                 return serde_json::json!({ "error": "invalid action" });
             }
+            if !validate_ip_or_cidr(from) {
+                return serde_json::json!({ "error": "invalid source address (expected IP, CIDR, or \"any\")" });
+            }
 
             let port_proto = format!("{port}/{proto}");
             if from == "any" {
@@ -594,8 +624,17 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
             let service = rule.get("service").and_then(|v| v.as_str());
 
             if let Some(svc) = service {
+                if !validate_service_name(svc) {
+                    return serde_json::json!({ "error": "invalid service name (alphanumeric, hyphens, underscores, dots only)" });
+                }
                 sudo_action(password, &["firewall-cmd", "--permanent", "--add-service", svc]).await
             } else if !port.is_empty() {
+                if !validate_port(port) {
+                    return serde_json::json!({ "error": "invalid port number" });
+                }
+                if !validate_proto(proto) {
+                    return serde_json::json!({ "error": "invalid protocol (tcp, udp, icmp)" });
+                }
                 let port_proto = format!("{port}/{proto}");
                 sudo_action(password, &["firewall-cmd", "--permanent", "--add-port", &port_proto]).await
             } else {
@@ -667,7 +706,17 @@ async fn firewall_remove_rule(password: &str, rule: &serde_json::Value, target: 
             let proto = rule.get("proto").and_then(|v| v.as_str()).unwrap_or("tcp");
             let service = rule.get("service").and_then(|v| v.as_str());
 
+            // Validate service name — alphanumeric, hyphens, underscores, dots
+            let valid_svc_name = |s: &str| -> bool {
+                !s.is_empty()
+                    && s.len() <= 128
+                    && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+            };
+
             if let Some(svc) = service {
+                if !valid_svc_name(svc) {
+                    return serde_json::json!({ "error": "invalid service name" });
+                }
                 sudo_action(password, &["firewall-cmd", "--permanent", "--remove-service", svc]).await
             } else if !port.is_empty() {
                 let port_proto = format!("{port}/{proto}");

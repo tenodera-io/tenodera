@@ -1,8 +1,55 @@
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+use std::time::Instant;
+
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
+
+// ── Rate limiting for superuser verification ──────────────────
+// Block a user after MAX_ATTEMPTS failed password checks within
+// LOCKOUT_WINDOW seconds.  The counter resets on successful verify
+// or after the window expires.
+
+const MAX_ATTEMPTS: u32 = 6;
+const LOCKOUT_WINDOW_SECS: u64 = 15 * 60; // 15 minutes
+
+/// Per-user failure counter: (attempts, first_failure_time).
+static RATE_LIMITER: LazyLock<Mutex<HashMap<String, (u32, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Check whether the user is currently locked out.
+fn is_locked_out(user: &str) -> bool {
+    let Ok(map) = RATE_LIMITER.lock() else { return false };
+    if let Some((count, since)) = map.get(user) {
+        if since.elapsed().as_secs() > LOCKOUT_WINDOW_SECS {
+            return false; // window expired
+        }
+        return *count >= MAX_ATTEMPTS;
+    }
+    false
+}
+
+/// Record a failed attempt.  Returns `true` if the user is now locked out.
+fn record_failure(user: &str) -> bool {
+    let Ok(mut map) = RATE_LIMITER.lock() else { return false };
+    let entry = map.entry(user.to_string()).or_insert((0, Instant::now()));
+    // Reset window if it expired
+    if entry.1.elapsed().as_secs() > LOCKOUT_WINDOW_SECS {
+        *entry = (0, Instant::now());
+    }
+    entry.0 += 1;
+    entry.0 >= MAX_ATTEMPTS
+}
+
+/// Clear the failure counter on success.
+fn clear_failures(user: &str) {
+    if let Ok(mut map) = RATE_LIMITER.lock() {
+        map.remove(user);
+    }
+}
 
 pub struct SuperuserVerifyHandler;
 
@@ -29,9 +76,20 @@ impl ChannelHandler for SuperuserVerifyHandler {
             serde_json::json!({ "ok": false, "error": "password required" })
         } else if user.is_empty() {
             serde_json::json!({ "ok": false, "error": "no user context" })
+        } else if is_locked_out(user) {
+            tracing::warn!(user, "superuser verify blocked — too many failed attempts");
+            serde_json::json!({ "ok": false, "error": "too many failed attempts, try again later" })
         } else {
             let r = verify_password(user, password).await;
             let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
+            if ok {
+                clear_failures(user);
+            } else {
+                let locked = record_failure(user);
+                if locked {
+                    tracing::warn!(user, "superuser verify lockout triggered after {MAX_ATTEMPTS} failures");
+                }
+            }
             crate::audit::log(user, "superuser.verify", "", ok, "");
             r
         };
