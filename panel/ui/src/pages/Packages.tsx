@@ -86,6 +86,7 @@ export function Packages() {
   // Actions
   const [actionMsg, setActionMsg] = useState('');
   const [actionError, setActionError] = useState('');
+  const [busyPkg, setBusyPkg] = useState<{ name: string; op: 'install' | 'remove' } | null>(null);
 
   // Password prompt
   const [pwPrompt, setPwPrompt] = useState(false);
@@ -210,14 +211,18 @@ export function Packages() {
   /* ── actions ──────────────────────────────────────────── */
   const installPkg = async (name: string) => {
     setActionMsg(''); setActionError('');
+    setBusyPkg({ name, op: 'install' });
     const res = await sudoAction({ action: 'install', names: [name] });
+    setBusyPkg(null);
     if (res.error) setActionError(String(res.error));
     else { setActionMsg(`Installed ${name}`); loadInstalled(); }
   };
 
   const removePkg = async (name: string) => {
     setActionMsg(''); setActionError('');
+    setBusyPkg({ name, op: 'remove' });
     const res = await sudoAction({ action: 'remove', names: [name] });
+    setBusyPkg(null);
     if (res.error) setActionError(String(res.error));
     else { setActionMsg(`Removed ${name}`); loadInstalled(); }
   };
@@ -322,14 +327,29 @@ export function Packages() {
                       <td style={S.td}>{p.name}</td>
                       <td style={S.tdMono}>{p.version}</td>
                       <td style={S.td}>
-                        <button onClick={() => removePkg(p.name)} style={S.btnDanger} title="Remove">
-                          🗑️
+                        <button
+                          onClick={() => removePkg(p.name)}
+                          style={S.btnDanger}
+                          title="Remove"
+                          disabled={busyPkg !== null}
+                        >
+                          {busyPkg?.name === p.name ? '...' : '🗑️'}
                         </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {busyPkg && (
+                <div style={S.progressWrap}>
+                  <span style={S.progressLabel}>
+                    {busyPkg.op === 'install' ? '📥 Installing' : '🗑️ Removing'} {busyPkg.name}...
+                  </span>
+                  <div style={S.progressTrack}>
+                    <div style={S.progressBar} />
+                  </div>
+                </div>
+              )}
               {filteredInstalled.length > 500 && (
                 <p style={S.muted}>Showing first 500 of {filteredInstalled.length}. Use filter to narrow down.</p>
               )}
@@ -379,15 +399,39 @@ export function Packages() {
                         </td>
                         <td style={S.td}>
                           {p.installed ? (
-                            <button onClick={() => removePkg(p.name)} style={S.btnDanger} title="Remove">🗑️</button>
+                            <button
+                              onClick={() => removePkg(p.name)}
+                              style={S.btnDanger}
+                              title="Remove"
+                              disabled={busyPkg !== null}
+                            >
+                              {busyPkg?.name === p.name ? '...' : '🗑️'}
+                            </button>
                           ) : (
-                            <button onClick={() => installPkg(p.name)} style={S.btnSuccess} title="Install">📥</button>
+                            <button
+                              onClick={() => installPkg(p.name)}
+                              style={S.btnSuccess}
+                              title="Install"
+                              disabled={busyPkg !== null}
+                            >
+                              {busyPkg?.name === p.name ? '...' : '📥'}
+                            </button>
                           )}
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+              </div>
+            )}
+            {busyPkg && (
+              <div style={S.progressWrap}>
+                <span style={S.progressLabel}>
+                  {busyPkg.op === 'install' ? '📥 Installing' : '🗑️ Removing'} {busyPkg.name}...
+                </span>
+                <div style={S.progressTrack}>
+                  <div style={S.progressBar} />
+                </div>
               </div>
             )}
             {loading && <div style={S.loadingText}>Searching...</div>}
@@ -408,6 +452,14 @@ export function Packages() {
               )}
               <span style={S.count}>{updateCount} update{updateCount !== 1 ? 's' : ''} available</span>
             </div>
+            {updating && (
+              <div style={S.progressWrap}>
+                <span style={S.progressLabel}>⬆️ Updating system packages...</span>
+                <div style={S.progressTrack}>
+                  <div style={S.progressBar} />
+                </div>
+              </div>
+            )}
             {updates.length > 0 && (
               <div style={S.tableWrap}>
                 <table style={S.table}>
@@ -1169,5 +1221,32 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.75rem',
     margin: '0.4rem 0 0 0',
     fontStyle: 'italic' as const,
+  },
+  // ── Progress bar styles ──
+  progressWrap: {
+    padding: '0.75rem 0',
+  },
+  progressLabel: {
+    display: 'block',
+    color: 'var(--text-secondary)',
+    fontSize: '0.8rem',
+    marginBottom: '0.4rem',
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    background: 'rgba(122,162,247,0.1)',
+    overflow: 'hidden',
+    position: 'relative' as const,
+  },
+  progressBar: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    width: '50%',
+    height: '100%',
+    borderRadius: 2,
+    background: 'linear-gradient(90deg, transparent, #7aa2f7, transparent)',
+    animation: 'progress-slide 1.2s ease-in-out infinite',
   },
 };

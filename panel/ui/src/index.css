@@ -33,3 +33,9 @@ a {
     grid-template-columns: 1fr !important;
   }
 }
+
+/* ── Indeterminate progress bar animation ───────────────── */
+@keyframes progress-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}

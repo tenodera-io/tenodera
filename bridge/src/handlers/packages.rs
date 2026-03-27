@@ -1082,6 +1082,7 @@ async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> serde_json::Va
 
     let child = tokio::process::Command::new(&cmd)
         .args(&cmd_args)
+        .env("DEBIAN_FRONTEND", "noninteractive")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -1143,6 +1144,7 @@ async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> serde
 
     let child = tokio::process::Command::new(&cmd)
         .args(&cmd_args)
+        .env("DEBIAN_FRONTEND", "noninteractive")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

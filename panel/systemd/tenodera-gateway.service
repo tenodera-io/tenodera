@@ -10,10 +10,13 @@ ExecStart=/usr/local/bin/tenodera-gateway
 EnvironmentFile=-/etc/tenodera/gateway.env
 
 # Security hardening
-ProtectSystem=strict
-# Bridge child process needs write access for user/group management (useradd, etc.)
-# and networking configuration. /etc is needed for passwd/shadow/group lock files.
-ReadWritePaths=/etc /var/log /home /var/mail
+# NOTE: ProtectSystem=strict is NOT used here because tenodera-bridge
+# (spawned as a child process) must write to /usr (package installs),
+# /var (dpkg/apt/dnf state, docker, systemd), /run (systemd, docker
+# sockets), and arbitrary paths via PTY sessions. Enumerating all
+# required ReadWritePaths would effectively whitelist the entire
+# filesystem, defeating the purpose of ProtectSystem.
+# Other hardening directives below still provide meaningful protection.
 PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectKernelTunables=yes

@@ -109,6 +109,7 @@ export function Containers() {
     command: '',
   });
   const [pullImage, setPullImage] = useState('');
+  const [pulling, setPulling] = useState<string | null>(null);
 
   const sendAction = useCallback((action: string, extra: Record<string, unknown> = {}) => {
     channelRef.current?.send({ action, ...extra });
@@ -165,6 +166,7 @@ export function Containers() {
           } else if (action === 'service_status') {
             setService(data as unknown as ServiceStatus);
           } else if (['start', 'stop', 'restart', 'remove', 'remove_image', 'pull', 'create'].includes(action)) {
+            if (action === 'pull') setPulling(null);
             if (data && typeof data === 'object' && 'error' in data && data.error) {
               setError(`${action}: ${data.error}`);
             }
@@ -178,6 +180,7 @@ export function Containers() {
         if (d.type === 'error') {
           setError(String(d.error));
           setLoading(false);
+          setPulling(null);
         }
       }
     });
@@ -236,7 +239,9 @@ export function Containers() {
 
   const handlePull = () => {
     if (!pullImage.trim()) return;
-    requestPrivileged('pull', `Pull ${pullImage.trim()}`, undefined, { image: pullImage.trim() });
+    const imageName = pullImage.trim();
+    setPulling(imageName);
+    requestPrivileged('pull', `Pull ${imageName}`, undefined, { image: imageName });
     setPullImage('');
   };
 
@@ -402,11 +407,20 @@ export function Containers() {
                 value={pullImage}
                 onChange={(e) => setPullImage(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handlePull()}
+                disabled={pulling !== null}
               />
-              <button style={S.btn} onClick={handlePull} disabled={loading || !pullImage.trim()}>
-                Pull Image
+              <button style={S.btn} onClick={handlePull} disabled={loading || !pullImage.trim() || pulling !== null}>
+                {pulling ? 'Pulling...' : 'Pull Image'}
               </button>
             </div>
+            {pulling && (
+              <div style={S.progressWrap}>
+                <span style={S.progressLabel}>Pulling {pulling}...</span>
+                <div style={S.progressTrack}>
+                  <div style={S.progressBar} />
+                </div>
+              </div>
+            )}
           </div>
           <div style={S.card}>
             {images.length === 0 ? (
@@ -856,5 +870,32 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.8rem',
     fontWeight: 500,
     cursor: 'pointer',
+  },
+  // ── Progress bar styles ──
+  progressWrap: {
+    padding: '0.75rem 0 0.25rem',
+  },
+  progressLabel: {
+    display: 'block',
+    color: 'var(--text-secondary)',
+    fontSize: '0.8rem',
+    marginBottom: '0.4rem',
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 2,
+    background: 'rgba(122,162,247,0.1)',
+    overflow: 'hidden',
+    position: 'relative' as const,
+  },
+  progressBar: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    width: '50%',
+    height: '100%',
+    borderRadius: 2,
+    background: 'linear-gradient(90deg, transparent, #7aa2f7, transparent)',
+    animation: 'progress-slide 1.2s ease-in-out infinite',
   },
 };
