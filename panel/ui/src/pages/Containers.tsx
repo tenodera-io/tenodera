@@ -86,7 +86,11 @@ export function Containers() {
   const [containers, setContainers] = useState<Container[]>([]);
   const [images, setImages] = useState<ContainerImage[]>([]);
   const [service, setService] = useState<ServiceStatus | null>(null);
-  const [tab, setTab] = useState<Tab>('containers');
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = sessionStorage.getItem('ctr_tab');
+    return (saved === 'images' || saved === 'create') ? saved : 'containers';
+  });
+  const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('ctr_tab', t); };
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<{ id: string; text: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -227,7 +231,7 @@ export function Containers() {
       env: [{ key: '', value: '' }], volumes: [{ host: '', container: '' }],
       restart: '', command: '',
     });
-    setTab('containers');
+    changeTab('containers');
   };
 
   const handlePull = () => {
@@ -318,7 +322,7 @@ export function Containers() {
       {/* Tabs */}
       <div style={S.tabs}>
         {(['containers', 'images', 'create'] as Tab[]).map((t) => (
-          <button key={t} onClick={() => setTab(t)} style={{
+          <button key={t} onClick={() => changeTab(t)} style={{
             ...S.tab, ...(tab === t ? S.tabActive : {}),
           }}>{t === 'create' ? '+ New Container' : t.charAt(0).toUpperCase() + t.slice(1)}</button>
         ))}

@@ -54,7 +54,11 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 export function Packages() {
   const { openChannel } = useTransport();
   const su = useSuperuser();
-  const [tab, setTab] = useState<Tab>('installed');
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = sessionStorage.getItem('pkg_tab');
+    return (saved === 'search' || saved === 'updates' || saved === 'repos') ? saved : 'installed';
+  });
+  const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('pkg_tab', t); };
   const [backend, setBackend] = useState('');
   const [distroName, setDistroName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -274,7 +278,7 @@ export function Packages() {
         {TABS.map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => changeTab(t.id)}
             style={tab === t.id ? { ...S.tab, ...S.tabActive } : S.tab}
           >
             {t.icon} {t.label}

@@ -39,7 +39,11 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 export function Users() {
   const { openChannel } = useTransport();
   const su = useSuperuser();
-  const [tab, setTab] = useState<Tab>('users');
+  const [tab, setTab] = useState<Tab>(() => {
+    const saved = sessionStorage.getItem('users_tab');
+    return (saved === 'groups' || saved === 'create') ? saved : 'users';
+  });
+  const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('users_tab', t); };
   const [loading, setLoading] = useState(false);
 
   // Users
@@ -252,7 +256,7 @@ export function Users() {
       setNewPassword(''); setNewPasswordConfirm('');
       setNewForceChange(false); setNewGroups([]);
       loadUsers();
-      setTab('users');
+      changeTab('users');
     }
   };
 
@@ -376,7 +380,7 @@ export function Users() {
         {TABS.map(t => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => changeTab(t.id)}
             style={tab === t.id ? { ...S.tab, ...S.tabActive } : S.tab}
           >
             {t.icon} {t.label}
