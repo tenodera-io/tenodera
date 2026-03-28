@@ -14,8 +14,10 @@ export type Message =
 
 type ChannelCallback = (msg: Message) => void;
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 let ws: WebSocket | null = null;
-let channelListeners: Map<string, ChannelCallback[]> = new Map();
+let channelListeners: Map<string, ChannelCallback> = new Map();
 let nextChannelId = 1;
 let connectPromise: Promise<void> | null = null;
 
@@ -40,10 +42,8 @@ export function connect(): Promise<void> {
         }
 
         if ('channel' in msg && msg.channel) {
-          const listeners = channelListeners.get(msg.channel);
-          if (listeners) {
-            for (const cb of listeners) cb(msg);
-          }
+          const cb = channelListeners.get(msg.channel);
+          if (cb) cb(msg);
         }
       } catch {
         console.warn('invalid message from server', event.data);
@@ -76,9 +76,6 @@ export function openChannel(
 ) {
   const channel = String(nextChannelId++);
 
-  const callbacks: ChannelCallback[] = [];
-  channelListeners.set(channel, callbacks);
-
   // Send open message
   ws?.send(
     JSON.stringify({
@@ -93,7 +90,7 @@ export function openChannel(
     channel,
 
     onMessage(cb: ChannelCallback) {
-      callbacks.push(cb);
+      channelListeners.set(channel, cb);
     },
 
     send(data: unknown) {
@@ -111,6 +108,7 @@ export function openChannel(
 
 /**
  * One-shot channel: open, collect all data messages, return on close.
+ * Times out after REQUEST_TIMEOUT_MS to prevent leaked promises/listeners.
  */
 export function request(
   payload: string,
@@ -119,11 +117,22 @@ export function request(
   return new Promise((resolve, reject) => {
     const ch = openChannel(payload, options);
     const results: unknown[] = [];
+    let settled = false;
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      channelListeners.delete(ch.channel);
+      reject(new Error('request timeout'));
+    }, REQUEST_TIMEOUT_MS);
 
     ch.onMessage((msg) => {
+      if (settled) return;
       if (msg.type === 'data' && 'data' in msg) {
         results.push(msg.data);
       } else if (msg.type === 'close') {
+        settled = true;
+        clearTimeout(timer);
         channelListeners.delete(ch.channel);
         if ('problem' in msg && msg.problem) {
           reject(new Error(String(msg.problem)));
