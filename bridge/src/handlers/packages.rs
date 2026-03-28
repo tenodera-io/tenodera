@@ -1159,25 +1159,60 @@ async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> serde_json::Va
 
 /// Write `content` to a command's stdin via sudo, avoiding shell execution.
 async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> serde_json::Value {
-    // When running as root, skip sudo entirely
+    // When running as root, skip sudo entirely — write content directly to
+    // the command's stdin.
+    //
+    // When non-root, sudo -S reads the password from stdin **and** closes
+    // all fd >= 3 before exec, so we cannot mix the sudo password with the
+    // command's data on the same stdin, nor pass data on a separate fd.
+    //
+    // Solution: base64-encode the content and embed it inside a
+    //   sudo -S sh -c 'printf "<b64>" | base64 -d | <command> [args]'
+    // invocation. Only the sudo password goes on stdin.
     let am_root = unsafe { libc::geteuid() } == 0;
 
     if !am_root && password.is_empty() {
         return serde_json::json!({ "error": "password required" });
     }
 
-    let (cmd, cmd_args): (String, Vec<&str>) = if am_root {
+    if am_root {
         let first = args.first().copied().unwrap_or("true");
         let rest: Vec<&str> = args.iter().skip(1).copied().collect();
-        (first.to_string(), rest)
-    } else {
-        let mut sa = vec!["-S"];
-        sa.extend_from_slice(args);
-        ("sudo".to_string(), sa)
-    };
 
-    let child = tokio::process::Command::new(&cmd)
-        .args(&cmd_args)
+        let child = tokio::process::Command::new(first)
+            .args(&rest)
+            .env("DEBIAN_FRONTEND", "noninteractive")
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+
+        let mut child = match child {
+            Ok(c) => c,
+            Err(e) => return serde_json::json!({ "error": e.to_string() }),
+        };
+
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(content.as_bytes()).await;
+            drop(stdin);
+        }
+
+        return match child.wait_with_output().await {
+            Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
+            Ok(out) => pkg_stderr_to_error(&out.stderr),
+            Err(e) => serde_json::json!({ "error": e.to_string() }),
+        };
+    }
+
+    // Non-root path — base64-encode content, embed in sh -c.
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
+
+    let escaped_args: Vec<String> = args.iter().map(|a| pkg_shell_escape(a)).collect();
+    let inner = format!("printf '{}' | base64 -d | {}", b64, escaped_args.join(" "));
+
+    let child = tokio::process::Command::new("sudo")
+        .args(["-S", "sh", "-c", &inner])
         .env("DEBIAN_FRONTEND", "noninteractive")
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -1190,33 +1225,34 @@ async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> serde
     };
 
     if let Some(mut stdin) = child.stdin.take() {
-        if !am_root {
-            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        }
-        let _ = stdin.write_all(content.as_bytes()).await;
+        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
         drop(stdin);
     }
 
     match child.wait_with_output().await {
-        Ok(out) if out.status.success() => {
-            serde_json::json!({ "ok": true })
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let clean = stderr
-                .lines()
-                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let msg = if clean.is_empty() {
-                "operation failed".to_string()
-            } else {
-                clean
-            };
-            serde_json::json!({ "error": msg })
-        }
+        Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
+        Ok(out) => pkg_stderr_to_error(&out.stderr),
         Err(e) => serde_json::json!({ "error": e.to_string() }),
     }
+}
+
+fn pkg_stderr_to_error(stderr: &[u8]) -> serde_json::Value {
+    let raw = String::from_utf8_lossy(stderr).trim().to_string();
+    let clean = raw
+        .lines()
+        .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let msg = if clean.is_empty() {
+        "operation failed".to_string()
+    } else {
+        clean
+    };
+    serde_json::json!({ "error": msg })
+}
+
+fn pkg_shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
 }
 
 fn is_valid_repo_url(url: &str) -> bool {

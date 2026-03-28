@@ -840,22 +840,24 @@ export function Users() {
         <div style={S.overlay} onClick={() => setPwUser(null)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
             <h3 style={S.modalTitle}>Set Password: {pwUser}</h3>
-            <div style={S.fieldGroup}>
-              <label style={S.label}>New Password</label>
-              <input type="password" value={pwNew} onChange={e => setPwNew(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? '#9ece6a' : pwNew && pwConfirm && pwNew === pwConfirm ? '#7aa2f7' : '#f7768e' }} autoComplete="new-password" autoFocus />
-            </div>
-            <div style={S.fieldGroup}>
-              <label style={S.label}>Confirm Password</label>
-              <input type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? '#9ece6a' : pwNew && pwConfirm && pwNew === pwConfirm ? '#7aa2f7' : '#f7768e' }} autoComplete="new-password" />
-            </div>
-            <label style={S.checkLabel}>
-              <input type="checkbox" checked={pwForce} onChange={e => setPwForce(e.target.checked)} />
-              Require password change on next login
-            </label>
-            <div style={{ ...S.modalActions, marginTop: '1rem' }}>
-              <button onClick={() => setPwUser(null)} style={S.btnCancel}>Cancel</button>
-              <button onClick={handleSetPassword} style={S.btnSuccess} disabled={!pwNew || pwNew !== pwConfirm}>Set Password</button>
-            </div>
+            <form autoComplete="off" onSubmit={e => { e.preventDefault(); handleSetPassword(); }}>
+              <div style={S.fieldGroup}>
+                <label style={S.label}>New Password</label>
+                <input type="password" value={pwNew} onChange={e => setPwNew(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? '#9ece6a' : pwNew && pwConfirm && pwNew === pwConfirm ? '#7aa2f7' : '#f7768e' }} autoComplete="off" autoFocus />
+              </div>
+              <div style={S.fieldGroup}>
+                <label style={S.label}>Confirm Password</label>
+                <input type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? '#9ece6a' : pwNew && pwConfirm && pwNew === pwConfirm ? '#7aa2f7' : '#f7768e' }} autoComplete="off" />
+              </div>
+              <label style={S.checkLabel}>
+                <input type="checkbox" checked={pwForce} onChange={e => setPwForce(e.target.checked)} />
+                Require password change on next login
+              </label>
+              <div style={{ ...S.modalActions, marginTop: '1rem' }}>
+                <button type="button" onClick={() => setPwUser(null)} style={S.btnCancel}>Cancel</button>
+                <button type="submit" style={S.btnSuccess} disabled={!pwNew || pwNew !== pwConfirm}>Set Password</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
