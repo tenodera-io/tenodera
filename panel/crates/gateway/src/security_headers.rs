@@ -36,6 +36,8 @@ pub async fn security_headers(request: Request, next: Next) -> Result<Response, 
         }
     }
 
+    let is_api = request.uri().path().starts_with("/api/");
+
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
 
@@ -65,6 +67,16 @@ pub async fn security_headers(request: Request, next: Next) -> Result<Response, 
             "camera=(), microphone=(), geolocation=(), payment=()"
         ),
     );
+    headers.insert(
+        "Strict-Transport-Security",
+        HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+    );
+    if is_api {
+        headers.insert(
+            "Cache-Control",
+            HeaderValue::from_static("no-store"),
+        );
+    }
 
     Ok(response)
 }
