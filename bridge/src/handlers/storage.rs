@@ -33,7 +33,8 @@ impl ChannelHandler for StorageStreamHandler {
             .extra
             .get("interval")
             .and_then(|v| v.as_u64())
-            .unwrap_or(2000);
+            .unwrap_or(2000)
+            .max(500);
 
         let channel = channel.to_string();
         let mut ticker = tokio::time::interval(std::time::Duration::from_millis(interval_ms));
