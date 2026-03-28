@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use tenodera_protocol::channel::ChannelOpenOptions;
@@ -261,7 +262,19 @@ fn lookup_user(username: &str) -> Option<(u32, u32, String, String)> {
     None
 }
 
-/// Open a PTY, fork, and exec the shell in the child.
+/// Open a PTY and spawn the shell using `std::process::Command` with `pre_exec`.
+///
+/// This avoids raw `fork()` inside the async tokio runtime, which is unsafe
+/// because `fork()` in a multi-threaded process only duplicates the calling
+/// thread — all tokio runtime threads die in the child. Additionally, raw
+/// `fork()` does not set `CLOEXEC` on inherited file descriptors, so the
+/// child process inherits the bridge's stdin/stdout pipes (SSH transport),
+/// which can corrupt the JSON protocol stream.
+///
+/// `std::process::Command` handles `fork()`+`exec()` safely, sets `CLOEXEC`
+/// on all non-stdio fds, and `pre_exec` runs in the child between fork and
+/// exec for PTY/session/user setup.
+///
 /// Returns (AsyncFd reader, OwnedFd writer) for the master side.
 fn open_pty(
     shell: &str,
@@ -270,8 +283,7 @@ fn open_pty(
     cwd: &str,
     run_as_user: Option<&str>,
 ) -> anyhow::Result<(AsyncFd<OwnedFd>, OwnedFd)> {
-    use nix::pty::openpty;
-    use nix::unistd::{dup2, execvp, fork, setsid, setgid, setuid, ForkResult, Gid, Uid};
+    use std::os::unix::process::CommandExt;
 
     let winsize = nix::pty::Winsize {
         ws_row: rows,
@@ -280,108 +292,101 @@ fn open_pty(
         ws_ypixel: 0,
     };
 
-    let pty = openpty(Some(&winsize), None)?;
+    let pty = nix::pty::openpty(Some(&winsize), None)?;
 
-    match unsafe { fork()? } {
-        ForkResult::Parent { .. } => {
-            // Close slave in parent — drop OwnedFd properly (no double-close)
-            drop(pty.slave);
+    // Dup slave fd three times: one each for stdin/stdout/stderr.
+    // Command::stdin/stdout/stderr take ownership via Stdio::from(OwnedFd),
+    // so each needs its own fd.
+    let slave_raw = pty.slave.as_raw_fd();
+    let slave_for_stdin = unsafe { OwnedFd::from_raw_fd(libc::dup(slave_raw)) };
+    let slave_for_stdout = unsafe { OwnedFd::from_raw_fd(libc::dup(slave_raw)) };
+    let slave_for_stderr = unsafe { OwnedFd::from_raw_fd(libc::dup(slave_raw)) };
 
-            let master_raw = pty.master.as_raw_fd();
+    // Prepare argv0 — login shell prefix if switching user
+    let argv0 = if run_as_user.is_some() {
+        let basename = shell.rsplit('/').next().unwrap_or(shell);
+        format!("-{basename}")
+    } else {
+        shell.rsplit('/').next().unwrap_or(shell).to_string()
+    };
 
-            // Dup master for writer (separate fd, same file description)
-            let writer_raw = unsafe { libc::dup(master_raw) };
-            if writer_raw < 0 {
-                return Err(anyhow::anyhow!(
-                    "dup failed: {}",
-                    std::io::Error::last_os_error()
-                ));
-            }
-            let writer = unsafe { OwnedFd::from_raw_fd(writer_raw) };
+    // Resolve user info for pre_exec (uid, gid, home, username)
+    let user_info = run_as_user.and_then(|u| {
+        lookup_user(u).map(|(uid, gid, home, _)| (uid, gid, home, u.to_string()))
+    });
+    let shell_for_env = shell.to_string();
 
-            // Set master non-blocking for AsyncFd epoll integration
-            unsafe {
-                let flags = libc::fcntl(master_raw, libc::F_GETFL);
-                libc::fcntl(master_raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
-            }
+    let mut cmd = Command::new(shell);
+    cmd.arg0(&argv0);
+    cmd.stdin(Stdio::from(slave_for_stdin));
+    cmd.stdout(Stdio::from(slave_for_stdout));
+    cmd.stderr(Stdio::from(slave_for_stderr));
+    cmd.current_dir(cwd);
 
-            // Wrap master OwnedFd in AsyncFd (takes ownership, no manual close needed)
-            let reader = AsyncFd::new(pty.master)?;
+    // Set environment for target user
+    if let Some((_, _, ref home, ref username)) = user_info {
+        cmd.env("HOME", home);
+        cmd.env("USER", username);
+        cmd.env("LOGNAME", username);
+        cmd.env("SHELL", &shell_for_env);
+    }
 
-            Ok((reader, writer))
-        }
-        ForkResult::Child => {
-            // Close master in child
-            drop(pty.master);
+    // pre_exec runs in child after fork, before exec — set up PTY session and user
+    unsafe {
+        let user_info_clone = user_info.clone();
+        cmd.pre_exec(move || {
+            // Create new session (detach from bridge's session)
+            libc::setsid();
 
-            // Create new session
-            setsid().ok();
+            // Set controlling terminal — fd 0 is the PTY slave (set by Command)
+            libc::ioctl(0, libc::TIOCSCTTY, 0);
 
-            // Set controlling terminal
-            unsafe {
-                libc::ioctl(pty.slave.as_raw_fd(), libc::TIOCSCTTY, 0);
-            }
-
-            // Redirect stdio to slave
-            let slave_fd = pty.slave.as_raw_fd();
-            dup2(slave_fd, 0).ok();
-            dup2(slave_fd, 1).ok();
-            dup2(slave_fd, 2).ok();
-
-            if slave_fd > 2 {
-                drop(pty.slave);
-            } else {
-                // slave IS one of stdin/stdout/stderr — don't close it
-                std::mem::forget(pty.slave);
-            }
-
-            // Switch to target user if specified
-            if let Some(username) = run_as_user {
-                if let Some((uid, gid, home, _)) = lookup_user(username) {
-                    let user_cstr = std::ffi::CString::new(username)
-                        .unwrap_or_else(|_| std::ffi::CString::new("nobody").unwrap());
-                    unsafe { libc::initgroups(user_cstr.as_ptr(), gid); }
-                    if setgid(Gid::from_raw(gid)).is_err()
-                        || setuid(Uid::from_raw(uid)).is_err()
-                    {
-                        let msg = format!("failed to switch to user {username}\r\n");
-                        unsafe {
-                            libc::write(2, msg.as_ptr() as *const libc::c_void, msg.len());
-                        }
-                        std::process::exit(1);
-                    }
-                    unsafe {
-                        std::env::set_var("HOME", &home);
-                        std::env::set_var("USER", username);
-                        std::env::set_var("LOGNAME", username);
-                        std::env::set_var("SHELL", shell);
-                    }
-                } else {
-                    let msg = format!("user {username} not found\r\n");
-                    unsafe {
-                        libc::write(2, msg.as_ptr() as *const libc::c_void, msg.len());
-                    }
-                    std::process::exit(1);
+            // Switch to target user if requested
+            if let Some((uid, gid, _, ref username)) = user_info_clone {
+                let user_cstr = std::ffi::CString::new(username.as_str())
+                    .unwrap_or_else(|_| std::ffi::CString::new("nobody").unwrap());
+                libc::initgroups(user_cstr.as_ptr(), gid);
+                if libc::setgid(gid) != 0 || libc::setuid(uid) != 0 {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        format!("failed to switch to user {username}"),
+                    ));
                 }
             }
 
-            // Change to working directory
-            let _ = std::env::set_current_dir(cwd);
-
-            // Exec shell (login shell when switching user)
-            let shell_cstr = std::ffi::CString::new(shell)
-                .unwrap_or_else(|_| std::ffi::CString::new("/bin/sh").unwrap());
-            let argv0 = if run_as_user.is_some() {
-                let basename = shell.rsplit('/').next().unwrap_or(shell);
-                std::ffi::CString::new(format!("-{basename}"))
-                    .unwrap_or_else(|_| shell_cstr.clone())
-            } else {
-                shell_cstr.clone()
-            };
-            let _ = execvp(&shell_cstr, &[&argv0]);
-
-            // If exec fails
-            std::process::exit(1);
-        }
+            Ok(())
+        });
     }
+
+    // Spawn the child process — this does fork+exec safely
+    let _child = cmd.spawn().map_err(|e| {
+        anyhow::anyhow!("failed to spawn shell {shell}: {e}")
+    })?;
+
+    // Close slave fds in parent — they're only needed by the child
+    drop(pty.slave);
+
+    // Set up master fd for async reading and sync writing
+    let master_raw = pty.master.as_raw_fd();
+
+    // Dup master for writer (separate fd, same underlying file description)
+    let writer_raw = unsafe { libc::dup(master_raw) };
+    if writer_raw < 0 {
+        return Err(anyhow::anyhow!(
+            "dup failed: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let writer = unsafe { OwnedFd::from_raw_fd(writer_raw) };
+
+    // Set master non-blocking for AsyncFd epoll integration
+    unsafe {
+        let flags = libc::fcntl(master_raw, libc::F_GETFL);
+        libc::fcntl(master_raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
+    }
+
+    // Wrap master OwnedFd in AsyncFd (takes ownership, no manual close needed)
+    let reader = AsyncFd::new(pty.master)?;
+
+    Ok((reader, writer))
 }

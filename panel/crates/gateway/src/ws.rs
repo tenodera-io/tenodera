@@ -81,6 +81,7 @@ fn spawn_bridge_forwarder(
         while let Some(msg) = from_bridge.recv().await {
             match serde_json::to_string(&msg) {
                 Ok(json) => {
+                    tracing::trace!(bridge = %label, raw = %json, "bridge → WS client");
                     let mut s = sink.lock().await;
                     if s.send(Message::Text(json.into())).await.is_err() {
                         break;
@@ -163,6 +164,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
                     Message::Text(text) => {
                         // Refresh session activity on every message
                         state.sessions.touch(&session_id).await;
+
+                        tracing::trace!(raw = %text, "WS client → gateway");
 
                         match serde_json::from_str::<message::Message>(&text) {
                             Ok(message::Message::Ping) => {

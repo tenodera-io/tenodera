@@ -173,7 +173,7 @@ export function Networking() {
       manageRef.current = ch;
     }
     return manageRef.current;
-  }, []);
+  }, [openChannel]);
 
   const sendManage = useCallback((data: Record<string, unknown>): Promise<Record<string, unknown>> => {
     return new Promise((resolve) => {
@@ -216,6 +216,20 @@ export function Networking() {
 
   /* ── start traffic stream ─────────────────────────────── */
   useEffect(() => {
+    setRxHistory([]);
+    setTxHistory([]);
+    setIfaceNames([]);
+    setInterfaces([]);
+    setFwStatus(null);
+    setFwRules([]);
+    setVpns([]);
+    setNetLogs([]);
+    setFwLogs([]);
+
+    // Close stale manage channel from previous host
+    manageRef.current?.close();
+    manageRef.current = null;
+
     const ch = openChannel('networking.stream', { interval: 1000 });
     streamRef.current = ch;
 
@@ -255,9 +269,9 @@ export function Networking() {
     return () => {
       ch.close();
       manageRef.current?.close();
+      manageRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [openChannel]);
 
   /* ── load interfaces ──────────────────────────────────── */
   const loadInterfaces = useCallback(async () => {

@@ -158,10 +158,25 @@ export function Users() {
     return sendManage({ ...actionData, password: pw });
   }, [getPassword, sendManage]);
 
-  /* ── cleanup ──────────────────────────────────────────── */
+  /* ── cleanup / host change ─────────────────────────────── */
   useEffect(() => {
+    // Reset state when host changes (openChannel identity changes)
+    setUsers([]);
+    setGroups([]);
+    setShells([]);
+    setSelectedUsers(new Set());
+    setActionMsg('');
+    setActionError('');
+    setEditUser(null);
+    setPwUser(null);
+    setDeleteUser(null);
+
+    // Close stale manage channel from previous host
+    manageRef.current?.close();
+    manageRef.current = null;
+
     return () => { manageRef.current?.close(); };
-  }, []);
+  }, [openChannel]);
 
   /* ── close groups dropdown on outside click ── */
   useEffect(() => {

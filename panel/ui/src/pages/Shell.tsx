@@ -178,8 +178,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
     }
     setHostSelectorOpen(false);
     setRemoteStatus('unknown');
-    navigate('/');
-  }, [navigate]);
+  }, []);
 
   /* ── probe remote host connectivity ── */
   useEffect(() => {
@@ -187,25 +186,28 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
       setRemoteStatus('unknown');
       return;
     }
+    let cancelled = false;
     setRemoteStatus('unknown');
     request('system.info', { host: activeHost.id })
-      .then(() => setRemoteStatus('ok'))
-      .catch(() => setRemoteStatus('error'));
+      .then(() => { if (!cancelled) setRemoteStatus('ok'); })
+      .catch(() => { if (!cancelled) setRemoteStatus('error'); });
+    return () => { cancelled = true; };
   }, [activeHost, connected]);
 
   /* ── probe all hosts when dropdown opens (refresh every 1s) ── */
   useEffect(() => {
     if (!hostSelectorOpen || !connected || hosts.length === 0) return;
+    let cancelled = false;
     const probe = () => {
       for (const h of hosts) {
         request('system.info', { host: h.id })
-          .then(() => setHostStatuses((prev) => ({ ...prev, [h.id]: 'ok' })))
-          .catch(() => setHostStatuses((prev) => ({ ...prev, [h.id]: 'error' })));
+          .then(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'ok' })); })
+          .catch(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'error' })); });
       }
     };
     probe();
     const interval = setInterval(probe, 1000);
-    return () => clearInterval(interval);
+    return () => { cancelled = true; clearInterval(interval); };
   }, [hostSelectorOpen, connected, hosts]);
 
   /* close dropdowns on outside click */

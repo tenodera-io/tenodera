@@ -105,6 +105,9 @@ export function Storage() {
   const channelRef = useRef<ReturnType<typeof openChannel> | null>(null);
 
   useEffect(() => {
+    setHistory([]);
+    setBlockRows([]);
+
     const ch = openChannel('storage.stream', { interval: 2000 });
     channelRef.current = ch;
 
@@ -133,7 +136,7 @@ export function Storage() {
     });
 
     return () => ch.close();
-  }, []);
+  }, [openChannel]);
 
   return (
     <div>

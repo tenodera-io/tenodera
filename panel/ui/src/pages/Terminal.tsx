@@ -98,7 +98,7 @@ export function Terminal({ user }: TerminalProps) {
       term.dispose();
       xtermRef.current = null;
     };
-  }, [user]);
+  }, [user, openChannel]);
 
   useEffect(() => {
     const cleanup = initTerminal();

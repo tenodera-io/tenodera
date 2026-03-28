@@ -72,6 +72,9 @@ export function Files({ user }: FilesProps) {
   }, [request]);
 
   useEffect(() => {
+    setEntries([]);
+    setPath(homeDir);
+    setCurrentPath(homeDir);
     fetchDir(homeDir);
   }, [homeDir, fetchDir]);
 

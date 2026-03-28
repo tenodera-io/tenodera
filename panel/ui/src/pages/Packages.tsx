@@ -102,7 +102,7 @@ export function Packages() {
       manageRef.current = ch;
     }
     return manageRef.current;
-  }, []);
+  }, [openChannel]);
 
   const sendManage = useCallback((data: Record<string, unknown>): Promise<Record<string, unknown>> => {
     return new Promise((resolve) => {
@@ -147,10 +147,26 @@ export function Packages() {
     return sendManage({ ...actionData, password: pw });
   }, [getPassword, sendManage]);
 
-  /* ── cleanup ──────────────────────────────────────────── */
+  /* ── cleanup / host change ─────────────────────────────── */
   useEffect(() => {
+    // Reset state when host changes (openChannel identity changes)
+    setBackend('');
+    setDistroName('');
+    setInstalled([]);
+    setInstalledCount(0);
+    setSearchResults([]);
+    setUpdates([]);
+    setUpdateCount(0);
+    setRepos([]);
+    setActionMsg('');
+    setActionError('');
+
+    // Close stale manage channel from previous host
+    manageRef.current?.close();
+    manageRef.current = null;
+
     return () => { manageRef.current?.close(); };
-  }, []);
+  }, [openChannel]);
 
   /* ── detect backend on mount ──────────────────────────── */
   useEffect(() => {

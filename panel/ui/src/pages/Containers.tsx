@@ -122,6 +122,15 @@ export function Containers() {
   }, [sendAction]);
 
   useEffect(() => {
+    setRuntime(null);
+    setAvailable(null);
+    setContainers([]);
+    setImages([]);
+    setService(null);
+    setError(null);
+    setLogs(null);
+    setPulling(null);
+
     const ch = openChannel('container.manage');
     channelRef.current = ch;
 
@@ -186,7 +195,7 @@ export function Containers() {
     });
 
     return () => ch.close();
-  }, [refresh, sendAction]);
+  }, [openChannel, refresh, sendAction]);
 
   const requestPrivileged = (action: string, label: string, id?: string, extra?: Record<string, unknown>) => {
     if (su.active) {

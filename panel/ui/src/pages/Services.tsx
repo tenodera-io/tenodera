@@ -35,9 +35,14 @@ export function Services() {
         setUnits(results[0] as Unit[]);
       }
     });
-  }, []);
+  }, [request]);
 
   useEffect(() => {
+    setUnits([]);
+    setExpanded(null);
+    setDetail(null);
+    setError(null);
+
     fetchUnits();
 
     // Open persistent management channel
@@ -74,7 +79,7 @@ export function Services() {
     });
 
     return () => ch.close();
-  }, [fetchUnits]);
+  }, [fetchUnits, openChannel]);
 
   const handleExpand = (unitName: string) => {
     if (expanded === unitName) {

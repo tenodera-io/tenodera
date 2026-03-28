@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
 
 interface LogEntry {
@@ -15,7 +15,7 @@ export function Logs() {
   const [lines, setLines] = useState(100);
   const [unit, setUnit] = useState('');
 
-  const fetchLogs = () => {
+  const fetchLogs = useCallback(() => {
     const opts: Record<string, unknown> = { lines };
     if (unit) opts.unit = unit;
 
@@ -23,12 +23,12 @@ export function Logs() {
       const data = results[0] as { entries: LogEntry[] } | undefined;
       if (data?.entries) setEntries(data.entries);
     });
-  };
+  }, [request, lines, unit]);
 
   useEffect(() => {
+    setEntries([]);
     fetchLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchLogs]);
 
   return (
     <div>
