@@ -21,6 +21,7 @@ export function Login({ onLogin }: LoginProps) {
 
     try {
       const result = await login(user, password);
+      setPassword('');
       onLogin(result.session_id, result.user);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
