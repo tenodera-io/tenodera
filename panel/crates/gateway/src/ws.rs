@@ -250,21 +250,17 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
                                 let is_close = matches!(&parsed, message::Message::Close { .. });
 
                                 if let Some(ch) = ch {
-                                    let sender = channel_routes
-                                        .get(&ch)
-                                        .cloned()
-                                        .unwrap_or_else(|| local_sender.clone());
-
-                                    if sender.send(parsed).await.is_err() {
-                                        tracing::warn!(channel = %ch, "bridge closed");
+                                    if let Some(sender) = channel_routes.get(&ch) {
+                                        if sender.send(parsed).await.is_err() {
+                                            tracing::warn!(channel = %ch, "bridge closed");
+                                        }
+                                    } else {
+                                        tracing::warn!(channel = %ch, "message for unknown channel — dropped");
                                     }
 
                                     if is_close {
                                         channel_routes.remove(&ch);
                                     }
-                                } else {
-                                    // Forward unknown messages to local bridge
-                                    let _ = local_sender.send(parsed).await;
                                 }
                             }
                             Err(e) => {

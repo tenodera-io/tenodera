@@ -63,9 +63,25 @@ pub enum Message {
     Pong,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "scheme")]
 pub enum AuthCredentials {
     Basic { user: String, password: String },
     Token { token: String },
+}
+
+impl std::fmt::Debug for AuthCredentials {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Basic { user, .. } => f
+                .debug_struct("Basic")
+                .field("user", user)
+                .field("password", &"[REDACTED]")
+                .finish(),
+            Self::Token { .. } => f
+                .debug_struct("Token")
+                .field("token", &"[REDACTED]")
+                .finish(),
+        }
+    }
 }

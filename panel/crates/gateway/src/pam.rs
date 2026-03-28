@@ -42,7 +42,7 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
             return PamResult {
                 success: false,
                 user: user.to_string(),
-                error: Some(format!("auth process failed: {e}")),
+                error: Some("authentication failed".to_string()),
             };
         }
     };
@@ -76,7 +76,7 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
             PamResult {
                 success: false,
                 user: user.to_string(),
-                error: Some(format!("auth process error: {e}")),
+                error: Some("authentication failed".to_string()),
             }
         }
     }
@@ -101,7 +101,10 @@ pub async fn verify_sudo(user: &str) -> Result<(), String> {
         .stderr(std::process::Stdio::piped())
         .output()
         .await
-        .map_err(|e| format!("sudo check failed: {e}"))?;
+        .map_err(|e| {
+            tracing::error!(error = %e, "sudo check process failed");
+            "unable to verify user privileges".to_string()
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

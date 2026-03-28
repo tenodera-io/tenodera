@@ -92,7 +92,8 @@ async fn main() -> anyhow::Result<()> {
                 ),
             )),
         )
-        .layer(axum::middleware::from_fn(security_headers::security_headers))
+        .layer(axum::extract::DefaultBodyLimit::max(1024 * 16)) // 16 KiB max request body
+        .layer(axum::middleware::from_fn_with_state(state.clone(), security_headers::security_headers))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 

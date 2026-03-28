@@ -1,13 +1,21 @@
+use std::sync::Arc;
+
 use axum::{
     middleware::Next,
-    extract::Request,
+    extract::{Request, State},
     response::Response,
 };
 use axum::http::{HeaderValue, Method, StatusCode};
 
+use crate::AppState;
+
 /// Middleware that enforces CSRF Origin checks on state-changing requests
 /// and adds security headers to every HTTP response.
-pub async fn security_headers(request: Request, next: Next) -> Result<Response, StatusCode> {
+pub async fn security_headers(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
     // ── CSRF: Origin check on mutating methods ──────────────
     // If the request carries an Origin header and the method is
     // state-changing (POST, PUT, DELETE, PATCH), verify that the
@@ -53,13 +61,20 @@ pub async fn security_headers(request: Request, next: Next) -> Result<Response, 
         "Referrer-Policy",
         HeaderValue::from_static("strict-origin-when-cross-origin"),
     );
+    // Only allow wss: when TLS is active; plain ws: only in unencrypted dev mode.
+    let tls_active = state.config.tls_cert.is_some() && state.config.tls_key.is_some();
+    let csp = if tls_active {
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+         img-src 'self' data:; connect-src 'self' wss:; font-src 'self'; \
+         frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    } else {
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+         img-src 'self' data:; connect-src 'self' ws:; font-src 'self'; \
+         frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    };
     headers.insert(
         "Content-Security-Policy",
-        HeaderValue::from_static(
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-             img-src 'self' data:; connect-src 'self' wss: ws:; font-src 'self'; \
-             frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-        ),
+        HeaderValue::from_str(csp).unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
     );
     headers.insert(
         "Permissions-Policy",
