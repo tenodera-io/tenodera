@@ -276,6 +276,41 @@ installs preserve your existing config.
 
 Hosts are stored in `/etc/tenodera/hosts.json` (managed via the panel UI).
 
+To build `hosts.json` manually (e.g. for automation), each host entry
+requires three generated values:
+
+```bash
+# id — random UUID v4
+uuidgen
+
+# added_at — RFC 3339 timestamp
+date -u +"%Y-%m-%dT%H:%M:%S.%N+00:00"
+
+# host_key — full SSH public key line (ed25519 preferred)
+ssh-keyscan -p 22 -T 5 -- <address> 2>/dev/null | grep ssh-ed25519 | head -1
+```
+
+Example `hosts.json`:
+
+```json
+{
+  "hosts": [
+    {
+      "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
+      "name": "web-server-01",
+      "address": "192.168.56.11",
+      "user": "",
+      "ssh_port": 22,
+      "added_at": "2026-03-28T12:00:00.000000000+00:00",
+      "host_key": "192.168.56.11 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..."
+    }
+  ]
+}
+```
+
+Set `user` to an empty string to use the logged-in panel user for SSH.
+The file should be owned by root with mode `0600`.
+
 ## Security
 
 ### Authentication
@@ -305,7 +340,7 @@ Hosts are stored in `/etc/tenodera/hosts.json` (managed via the panel UI).
 
 ### Infrastructure
 
-- **Hardened systemd service** (`ProtectSystem=strict`, `NoNewPrivileges=yes`,
+- **Hardened systemd service** (`NoNewPrivileges=yes`,
   `MemoryDenyWriteExecute=yes`, etc.)
 - **HTTP security headers**: CSP, X-Frame-Options, X-Content-Type-Options,
   Referrer-Policy, Permissions-Policy
