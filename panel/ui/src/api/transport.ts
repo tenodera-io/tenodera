@@ -17,7 +17,7 @@ type ChannelCallback = (msg: Message) => void;
 const REQUEST_TIMEOUT_MS = 30_000;
 
 let ws: WebSocket | null = null;
-let channelListeners: Map<string, ChannelCallback> = new Map();
+let channelListeners: Map<string, ChannelCallback[]> = new Map();
 let nextChannelId = 1;
 let connectPromise: Promise<void> | null = null;
 
@@ -42,8 +42,10 @@ export function connect(): Promise<void> {
         }
 
         if ('channel' in msg && msg.channel) {
-          const cb = channelListeners.get(msg.channel);
-          if (cb) cb(msg);
+          const cbs = channelListeners.get(msg.channel);
+          if (cbs) {
+            for (const cb of cbs) cb(msg);
+          }
         }
       } catch {
         console.warn('invalid message from server', event.data);
@@ -76,6 +78,9 @@ export function openChannel(
 ) {
   const channel = String(nextChannelId++);
 
+  const callbacks: ChannelCallback[] = [];
+  channelListeners.set(channel, callbacks);
+
   // Send open message
   ws?.send(
     JSON.stringify({
@@ -90,7 +95,11 @@ export function openChannel(
     channel,
 
     onMessage(cb: ChannelCallback) {
-      channelListeners.set(channel, cb);
+      callbacks.push(cb);
+      return () => {
+        const idx = callbacks.indexOf(cb);
+        if (idx >= 0) callbacks.splice(idx, 1);
+      };
     },
 
     send(data: unknown) {

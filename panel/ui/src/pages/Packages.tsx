@@ -119,10 +119,11 @@ export function Packages() {
             return;
           }
           resolved = true;
+          removeHandler();
           resolve(res);
         }
       };
-      ch.onMessage(handler);
+      const removeHandler = ch.onMessage(handler);
       ch.send(data);
     });
   }, [getManageChannel]);
