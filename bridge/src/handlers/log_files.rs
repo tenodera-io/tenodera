@@ -274,7 +274,13 @@ fn validate_log_path(path: &str) -> Result<PathBuf, String> {
     if !path.starts_with("/var/log") {
         return Err("path must be under /var/log".into());
     }
-    Ok(p.to_path_buf())
+    // Resolve symlinks and verify the real path is still under /var/log
+    let canonical = p.canonicalize()
+        .map_err(|_| "path does not exist or is not accessible".to_string())?;
+    if !canonical.starts_with("/var/log") {
+        return Err("path resolves outside /var/log".into());
+    }
+    Ok(canonical)
 }
 
 // ── Tail: read last N lines ─────────────────────────────────────────────────
