@@ -78,8 +78,13 @@ export function LogFiles() {
     ch.onMessage((msg: Message) => {
       if (msg.type === 'ready') {
         readyRef.current = true;
-        // Request file list once channel is ready
-        ch.send({ action: 'list' });
+        // Request file list once channel is ready (include password if superuser active)
+        const currentSu = suRef.current;
+        const listCmd: Record<string, unknown> = { action: 'list' };
+        if (currentSu.active && currentSu.password) {
+          listCmd.password = currentSu.password;
+        }
+        ch.send(listCmd);
       }
       if (msg.type === 'data' && 'data' in msg) {
         const d = msg.data as { type?: string; action?: string; data?: Record<string, unknown> };

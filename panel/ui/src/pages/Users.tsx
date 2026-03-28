@@ -16,6 +16,7 @@ interface UserInfo {
   locked: boolean;
   system: boolean;
   last_login: string;
+  source: string;
 }
 
 interface GroupInfo {
@@ -217,7 +218,8 @@ export function Users() {
       || u.uid.toString().includes(q)
       || u.gecos.toLowerCase().includes(q)
       || u.groups.some(g => g.toLowerCase().includes(q))
-      || u.last_login.toLowerCase().includes(q);
+      || u.last_login.toLowerCase().includes(q)
+      || (u.source || 'local').toLowerCase().includes(q);
   });
 
   const filteredGroups = groups.filter(g => {
@@ -516,6 +518,7 @@ export function Users() {
                       <td style={S.td}>
                         <span style={{ fontWeight: 600 }}>{u.username}</span>
                         {u.uid === 0 && <span style={S.rootBadge}>root</span>}
+                        <span style={u.source === 'ldap' ? S.ldapBadge : S.localBadge}>{u.source || 'local'}</span>
                       </td>
                       <td style={S.tdMono}>{u.uid}</td>
                       <td style={S.td}>{u.gecos || '\u2014'}</td>
@@ -1127,6 +1130,24 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     marginLeft: 6,
     fontWeight: 700,
+  },
+  localBadge: {
+    background: 'rgba(224,175,104,0.15)',
+    color: '#e0af68',
+    fontSize: '0.65rem',
+    padding: '1px 5px',
+    borderRadius: 6,
+    marginLeft: 6,
+    fontWeight: 600,
+  },
+  ldapBadge: {
+    background: 'rgba(158,206,106,0.15)',
+    color: '#9ece6a',
+    fontSize: '0.65rem',
+    padding: '1px 5px',
+    borderRadius: 6,
+    marginLeft: 6,
+    fontWeight: 600,
   },
   groupsWrap: {
     display: 'flex',

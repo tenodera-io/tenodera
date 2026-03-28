@@ -274,7 +274,9 @@ fn validate_log_path(path: &str) -> Result<PathBuf, String> {
     if !path.starts_with("/var/log") {
         return Err("path must be under /var/log".into());
     }
-    // Resolve symlinks and verify the real path is still under /var/log
+    // Resolve symlinks and verify the real path is still under /var/log.
+    // When running as root, canonicalize directly. When non-root, this may
+    // fail on restricted directories — defer to validate_log_path_sudo.
     let canonical = p.canonicalize()
         .map_err(|_| "path does not exist or is not accessible".to_string())?;
     if !canonical.starts_with("/var/log") {
@@ -283,12 +285,50 @@ fn validate_log_path(path: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
+/// Validate a log path using sudo realpath — for non-root bridge with
+/// administrative access, where the directory may not be readable by the
+/// bridge user but is accessible via sudo.
+async fn validate_log_path_sudo(path: &str, password: &str) -> Result<PathBuf, String> {
+    let p = Path::new(path);
+    if !p.is_absolute() || path.contains("..") {
+        return Err("invalid path".into());
+    }
+    if !path.starts_with("/var/log") {
+        return Err("path must be under /var/log".into());
+    }
+    // Try direct canonicalize first (works for world-readable paths)
+    if let Ok(canonical) = p.canonicalize() {
+        if canonical.starts_with("/var/log") {
+            return Ok(canonical);
+        }
+        return Err("path resolves outside /var/log".into());
+    }
+    // Fall back to sudo realpath for restricted directories
+    let output = run_cmd(password, &["realpath", "--", path]).await
+        .map_err(|_| "path does not exist or is not accessible".to_string())?;
+    let resolved = output.trim();
+    if resolved.is_empty() {
+        return Err("path does not exist or is not accessible".into());
+    }
+    if !resolved.starts_with("/var/log") {
+        return Err("path resolves outside /var/log".into());
+    }
+    Ok(PathBuf::from(resolved))
+}
+
 // ── Tail: read last N lines ─────────────────────────────────────────────────
 
 async fn tail_log(path: &str, lines: u64, password: &str) -> serde_json::Value {
-    let log_path = match validate_log_path(path) {
-        Ok(p) => p,
-        Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+    let log_path = if !password.is_empty() {
+        match validate_log_path_sudo(path, password).await {
+            Ok(p) => p,
+            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+        }
+    } else {
+        match validate_log_path(path) {
+            Ok(p) => p,
+            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+        }
     };
 
     let count = lines.min(10000).to_string();
@@ -324,9 +364,16 @@ async fn search_log(
     no_limit: bool,
     password: &str,
 ) -> serde_json::Value {
-    let log_path = match validate_log_path(path) {
-        Ok(p) => p,
-        Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+    let log_path = if !password.is_empty() {
+        match validate_log_path_sudo(path, password).await {
+            Ok(p) => p,
+            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+        }
+    } else {
+        match validate_log_path(path) {
+            Ok(p) => p,
+            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+        }
     };
 
     if query.is_empty() {
@@ -470,9 +517,16 @@ async fn filter_by_date(
     date_to: Option<&str>,
     password: &str,
 ) -> serde_json::Value {
-    let log_path = match validate_log_path(path) {
-        Ok(p) => p,
-        Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+    let log_path = if !password.is_empty() {
+        match validate_log_path_sudo(path, password).await {
+            Ok(p) => p,
+            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+        }
+    } else {
+        match validate_log_path(path) {
+            Ok(p) => p,
+            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
+        }
     };
 
     let from_ts = date_from.and_then(|d| parse_filter_date(d, true));

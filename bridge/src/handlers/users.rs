@@ -123,19 +123,80 @@ impl ChannelHandler for UsersManageHandler {
 // ──────────────────────────────────────────────────────────────
 
 async fn list_users() -> Value {
-    // Parse /etc/passwd
+    // Get ALL users from every configured NSS source (files, sss, ldap, …)
+    let all_passwd = run_cmd(&["getent", "passwd"]).await;
+    if all_passwd.is_empty() || all_passwd.starts_with("error:") {
+        // Fallback to /etc/passwd if getent is unavailable
+        return list_users_fallback().await;
+    }
+
+    // Get local-only users (files backend) to distinguish source
+    let local_passwd = run_cmd(&["getent", "passwd", "-s", "files"]).await;
+    let local_users: std::collections::HashSet<String> = local_passwd
+        .lines()
+        .filter_map(|line| line.split(':').next().map(|s| s.to_string()))
+        .collect();
+
+    // Parse /etc/group to build user→groups map
+    let group_map = build_group_map().await;
+
+    // Try to get lock status from /etc/shadow (may need root)
+    let lock_map = build_lock_map().await;
+
+    // Try to get last login times
+    let lastlog_map = build_lastlog_map().await;
+
+    let mut users = Vec::new();
+    for line in all_passwd.lines() {
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 7 {
+            continue;
+        }
+        let username = fields[0];
+        let uid: u32 = fields[2].parse().unwrap_or(0);
+        let gid: u32 = fields[3].parse().unwrap_or(0);
+        let gecos = fields[4];
+        let home = fields[5];
+        let shell = fields[6];
+
+        let source = if local_users.contains(username) {
+            "local"
+        } else {
+            "ldap"
+        };
+
+        let groups = group_map.get(username).cloned().unwrap_or_default();
+        let locked = lock_map.get(username).copied().unwrap_or(false);
+        let last_login = lastlog_map.get(username).cloned().unwrap_or_default();
+
+        users.push(json!({
+            "username": username,
+            "uid": uid,
+            "gid": gid,
+            "gecos": gecos,
+            "home": home,
+            "shell": shell,
+            "groups": groups,
+            "locked": locked,
+            "system": uid < 1000 && uid != 0,
+            "last_login": last_login,
+            "source": source,
+        }));
+    }
+
+    json!({ "action": "list", "users": users })
+}
+
+/// Fallback when `getent` is not available — reads /etc/passwd directly.
+/// All users are marked as "local".
+async fn list_users_fallback() -> Value {
     let passwd = match tokio::fs::read_to_string("/etc/passwd").await {
         Ok(c) => c,
         Err(e) => return json!({ "error": e.to_string() }),
     };
 
-    // Parse /etc/group to build user→groups map
     let group_map = build_group_map().await;
-
-    // Try to get lock status from passwd -S -a (may need root)
     let lock_map = build_lock_map().await;
-
-    // Try to get last login times
     let lastlog_map = build_lastlog_map().await;
 
     let mut users = Vec::new();
@@ -166,6 +227,7 @@ async fn list_users() -> Value {
             "locked": locked,
             "system": uid < 1000 && uid != 0,
             "last_login": last_login,
+            "source": "local",
         }));
     }
 
@@ -174,24 +236,33 @@ async fn list_users() -> Value {
 
 async fn build_group_map() -> std::collections::HashMap<String, Vec<String>> {
     let mut map: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
-    if let Ok(content) = tokio::fs::read_to_string("/etc/group").await {
-        for line in content.lines() {
-            let fields: Vec<&str> = line.split(':').collect();
-            if fields.len() < 4 {
-                continue;
-            }
-            let group_name = fields[0];
-            let members = fields[3];
-            if members.is_empty() {
-                continue;
-            }
-            for member in members.split(',') {
-                let member = member.trim();
-                if !member.is_empty() {
-                    map.entry(member.to_string())
-                        .or_default()
-                        .push(group_name.to_string());
-                }
+
+    // Use getent group to include LDAP/SSSD groups; fall back to /etc/group
+    let content = {
+        let out = run_cmd(&["getent", "group"]).await;
+        if out.is_empty() || out.starts_with("error:") {
+            tokio::fs::read_to_string("/etc/group").await.unwrap_or_default()
+        } else {
+            out
+        }
+    };
+
+    for line in content.lines() {
+        let fields: Vec<&str> = line.split(':').collect();
+        if fields.len() < 4 {
+            continue;
+        }
+        let group_name = fields[0];
+        let members = fields[3];
+        if members.is_empty() {
+            continue;
+        }
+        for member in members.split(',') {
+            let member = member.trim();
+            if !member.is_empty() {
+                map.entry(member.to_string())
+                    .or_default()
+                    .push(group_name.to_string());
             }
         }
     }
@@ -267,9 +338,17 @@ fn find_date_start(s: &str) -> Option<usize> {
 // ──────────────────────────────────────────────────────────────
 
 async fn list_groups() -> Value {
-    let content = match tokio::fs::read_to_string("/etc/group").await {
-        Ok(c) => c,
-        Err(e) => return json!({ "error": e.to_string() }),
+    // Use getent group to include LDAP/SSSD groups; fall back to /etc/group
+    let content = {
+        let out = run_cmd(&["getent", "group"]).await;
+        if out.is_empty() || out.starts_with("error:") {
+            match tokio::fs::read_to_string("/etc/group").await {
+                Ok(c) => c,
+                Err(e) => return json!({ "error": e.to_string() }),
+            }
+        } else {
+            out
+        }
     };
 
     let mut groups = Vec::new();
