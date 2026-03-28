@@ -194,9 +194,9 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
     return () => { cancelled = true; };
   }, [activeHost, connected]);
 
-  /* ── probe all hosts when dropdown opens (refresh every 1s) ── */
+  /* ── probe all hosts on connect, refresh every 10s — hide inaccessible hosts (H1) ── */
   useEffect(() => {
-    if (!hostSelectorOpen || !connected || hosts.length === 0) return;
+    if (!connected || hosts.length === 0) return;
     let cancelled = false;
     const probe = () => {
       for (const h of hosts) {
@@ -206,9 +206,9 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
       }
     };
     probe();
-    const interval = setInterval(probe, 1000);
+    const interval = setInterval(probe, 10000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [hostSelectorOpen, connected, hosts]);
+  }, [connected, hosts]);
 
   /* close dropdowns on outside click */
   useEffect(() => {
@@ -472,8 +472,8 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                       <div style={S.hostOptionAddr}>localhost</div>
                     </div>
                   </div>
-                  {hosts.length > 0 && <div style={S.hostDropdownDivider} />}
-                  {hosts.map((h) => {
+                  {hosts.filter((h) => hostStatuses[h.id] === 'ok' || activeHost?.id === h.id).length > 0 && <div style={S.hostDropdownDivider} />}
+                  {hosts.filter((h) => hostStatuses[h.id] === 'ok' || activeHost?.id === h.id).map((h) => {
                     const st = hostStatuses[h.id] ?? 'unknown';
                     const dotColor = st === 'ok' ? '#9ece6a' : st === 'error' ? '#f7768e' : '#565f89';
                     return (
