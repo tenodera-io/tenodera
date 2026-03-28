@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
+import { useSuperuser } from './Shell.tsx';
 import type { Message } from '../api/transport.ts';
 
 /* ── types ─────────────────────────────────────────────── */
@@ -25,6 +26,9 @@ interface GrepGroup {
 
 export function LogFiles() {
   const { openChannel } = useTransport();
+  const su = useSuperuser();
+  const suRef = useRef(su);
+  suRef.current = su;
 
   // File list
   const [files, setFiles] = useState<LogFile[]>([]);
@@ -153,9 +157,13 @@ export function LogFiles() {
     };
   }, [openChannel]);
 
-  // Helper: send command through persistent channel
+  // Helper: send command through persistent channel (injects superuser password)
   const send = useCallback((data: Record<string, unknown>) => {
     if (readyRef.current && channelRef.current) {
+      const currentSu = suRef.current;
+      if (currentSu.active && currentSu.password) {
+        data.password = currentSu.password;
+      }
       channelRef.current.send(data);
     }
   }, []);
@@ -228,6 +236,13 @@ export function LogFiles() {
     setFilesLoading(true);
     send({ action: 'list' });
   }, [send]);
+
+  // Re-list files when superuser status changes (reveals/hides restricted files)
+  useEffect(() => {
+    if (readyRef.current) {
+      fetchFiles();
+    }
+  }, [su.active]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-load tail when file selected
   useEffect(() => {

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useMemo, createContext, useContext, useCal
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { connect, disconnect, request, openChannel, type Message } from '../api/transport.ts';
 import { HostTransportProvider } from '../api/HostTransportContext.tsx';
+import { saveSuperuserPassword, loadSuperuserPassword, clearSuperuserPassword } from '../api/secureStorage.ts';
 import { Dashboard } from './Dashboard.tsx';
 import { Services } from './Services.tsx';
 import { Logs } from './Logs.tsx';
@@ -88,9 +89,10 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
   const [remoteStatus, setRemoteStatus] = useState<'unknown' | 'ok' | 'error'>('unknown');
   const [hostStatuses, setHostStatuses] = useState<Record<string, 'unknown' | 'ok' | 'error'>>({});
 
-  /* superuser state – flag persisted in sessionStorage, password kept in-memory only */
-  const [suActive, setSuActive] = useState(() => sessionStorage.getItem('su_active') === '1');
+  /* superuser state – password encrypted in sessionStorage via Web Crypto (HTTPS only) */
+  const [suActive, setSuActive] = useState(false);
   const [suPassword, setSuPassword] = useState('');
+  const suRestoredRef = useRef(false);
   const [suPrompt, setSuPrompt] = useState(false);
   const [suPwInput, setSuPwInput] = useState('');
   const [suError, setSuError] = useState('');
@@ -123,6 +125,22 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
     ch.send({ action: 'list' });
     // close the channel after a short delay so the response arrives
     setTimeout(() => ch.close(), 2000);
+  }, []);
+
+  /* ── restore superuser state from encrypted storage on mount ── */
+  useEffect(() => {
+    if (suRestoredRef.current) return;
+    suRestoredRef.current = true;
+    if (sessionStorage.getItem('su_active') !== '1') return;
+    loadSuperuserPassword().then((pw) => {
+      if (pw) {
+        setSuActive(true);
+        setSuPassword(pw);
+      } else {
+        /* password could not be decrypted (HTTP fallback or corrupt) — reset */
+        sessionStorage.removeItem('su_active');
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -205,6 +223,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
     disconnect();
     sessionStorage.removeItem('su_active');
     sessionStorage.removeItem('active_host_id');
+    clearSuperuserPassword(); /* remove encrypted password & key */
     onLogout();
     navigate('/login');
   };
@@ -216,6 +235,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
       setSuActive(false);
       setSuPassword('');
       sessionStorage.removeItem('su_active');
+      clearSuperuserPassword(); /* remove encrypted password & key */
       return;
     }
     /* show password prompt */
@@ -239,6 +259,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
           setSuActive(true);
           setSuPassword(suPwInput);
           sessionStorage.setItem('su_active', '1');
+          saveSuperuserPassword(suPwInput); /* encrypt & persist (no-op on HTTP) */
           setSuPrompt(false);
           setSuError('');
         } else {

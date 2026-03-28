@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
+use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
 
@@ -20,16 +21,17 @@ impl ChannelHandler for LogFilesHandler {
 
     async fn data(&self, channel: &str, data: &serde_json::Value) -> Vec<Message> {
         let action = data.get("action").and_then(|a| a.as_str()).unwrap_or("");
+        let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
 
         let result = match action {
             "list" | "refresh" => {
-                let files = list_log_files("/var/log").await;
+                let files = list_log_files("/var/log", password).await;
                 serde_json::json!({ "files": files })
             }
             "tail" => {
                 let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
                 let lines = data.get("lines").and_then(|n| n.as_u64()).unwrap_or(100);
-                tail_log(path, lines).await
+                tail_log(path, lines, password).await
             }
             "search" => {
                 let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
@@ -40,14 +42,14 @@ impl ChannelHandler for LogFilesHandler {
                 let date_from = data.get("date_from").and_then(|d| d.as_str());
                 let date_to = data.get("date_to").and_then(|d| d.as_str());
                 let no_limit = date_from.is_some() || date_to.is_some();
-                search_log(path, query, lines, before, after, date_from, date_to, no_limit).await
+                search_log(path, query, lines, before, after, date_from, date_to, no_limit, password).await
             }
             "filter" => {
                 // Date-only filtering: read file, filter lines by timestamp
                 let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
                 let date_from = data.get("date_from").and_then(|d| d.as_str());
                 let date_to = data.get("date_to").and_then(|d| d.as_str());
-                filter_by_date(path, date_from, date_to).await
+                filter_by_date(path, date_from, date_to, password).await
             }
             _ => serde_json::json!({ "ok": false, "error": format!("unknown action: {action}") }),
         };
@@ -59,9 +61,83 @@ impl ChannelHandler for LogFilesHandler {
     }
 }
 
+// ── Privilege helper ────────────────────────────────────────────────────────
+
+/// Run a command, using sudo when a password is provided and we are not root.
+async fn run_cmd(password: &str, args: &[&str]) -> Result<String, String> {
+    let am_root = unsafe { libc::geteuid() } == 0;
+    let use_sudo = !am_root && !password.is_empty();
+
+    let (program, full_args): (&str, Vec<&str>) = if use_sudo {
+        let mut sa = vec!["-S"];
+        sa.extend_from_slice(args);
+        ("sudo", sa)
+    } else {
+        let first = args.first().copied().unwrap_or("true");
+        let rest: Vec<&str> = args.iter().skip(1).copied().collect();
+        (first, rest)
+    };
+
+    let child = tokio::process::Command::new(program)
+        .args(&full_args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if use_sudo {
+        if let Some(mut stdin) = child.stdin.take() {
+            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
+            drop(stdin);
+        }
+    } else {
+        // Close stdin immediately for non-sudo commands
+        drop(child.stdin.take());
+    }
+
+    match child.wait_with_output().await {
+        Ok(out) if out.status.success() => {
+            Ok(String::from_utf8_lossy(&out.stdout).to_string())
+        }
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            let clean = stderr
+                .lines()
+                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if clean.is_empty() {
+                Err("command failed".into())
+            } else {
+                Err(clean)
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 // ── List log files recursively ──────────────────────────────────────────────
 
-async fn list_log_files(base: &str) -> Vec<serde_json::Value> {
+async fn list_log_files(base: &str, password: &str) -> Vec<serde_json::Value> {
+    let am_root = unsafe { libc::geteuid() } == 0;
+    let use_sudo = !am_root && !password.is_empty();
+
+    if use_sudo {
+        // Use sudo find to discover log files in directories we cannot read
+        return list_log_files_sudo(base, password).await;
+    }
+
+    // Direct filesystem access (root bridge or no password)
+    list_log_files_direct(base).await
+}
+
+/// List log files using direct filesystem access.
+async fn list_log_files_direct(base: &str) -> Vec<serde_json::Value> {
     let mut files = Vec::new();
     let mut dirs_to_scan: Vec<(PathBuf, u32)> = vec![(PathBuf::from(base), 0)];
 
@@ -97,6 +173,59 @@ async fn list_log_files(base: &str) -> Vec<serde_json::Value> {
                 }));
             }
         }
+    }
+
+    files.sort_by(|a, b| {
+        let na = a.get("path").and_then(|v| v.as_str()).unwrap_or("");
+        let nb = b.get("path").and_then(|v| v.as_str()).unwrap_or("");
+        na.cmp(nb)
+    });
+    files
+}
+
+/// List log files using sudo find — discovers files in restricted directories.
+async fn list_log_files_sudo(base: &str, password: &str) -> Vec<serde_json::Value> {
+    // Use find to list all files recursively (maxdepth 5 = base + 4 levels)
+    // Output: path\tsize\tmodified_epoch for each file
+    let output = run_cmd(password, &[
+        "find", base, "-maxdepth", "5", "-type", "f",
+        "-printf", "%p\\t%s\\t%T@\\n",
+    ]).await;
+
+    let output = match output {
+        Ok(o) => o,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut files = Vec::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        let path = parts[0];
+        let name = Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+
+        if !is_log_file(&name) {
+            continue;
+        }
+
+        let size: u64 = parts[1].parse().unwrap_or(0);
+        let modified: u64 = parts[2]
+            .split('.')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+
+        files.push(serde_json::json!({
+            "path": path,
+            "name": name,
+            "size_bytes": size,
+            "modified": modified,
+        }));
     }
 
     files.sort_by(|a, b| {
@@ -150,21 +279,19 @@ fn validate_log_path(path: &str) -> Result<PathBuf, String> {
 
 // ── Tail: read last N lines ─────────────────────────────────────────────────
 
-async fn tail_log(path: &str, lines: u64) -> serde_json::Value {
+async fn tail_log(path: &str, lines: u64, password: &str) -> serde_json::Value {
     let log_path = match validate_log_path(path) {
         Ok(p) => p,
         Err(e) => return serde_json::json!({ "ok": false, "error": e }),
     };
 
-    // Use `tail` command — efficient for large files
-    let output = tokio::process::Command::new("tail")
-        .args(["-n", &lines.min(10000).to_string(), log_path.to_str().unwrap_or("")])
-        .output()
-        .await;
+    let count = lines.min(10000).to_string();
+    let path_str = log_path.to_str().unwrap_or("");
+
+    let output = run_cmd(password, &["tail", "-n", &count, path_str]).await;
 
     match output {
-        Ok(out) if out.status.success() => {
-            let content = String::from_utf8_lossy(&out.stdout);
+        Ok(content) => {
             let result_lines: Vec<&str> = content.lines().collect();
             serde_json::json!({
                 "ok": true,
@@ -173,12 +300,7 @@ async fn tail_log(path: &str, lines: u64) -> serde_json::Value {
                 "lines": result_lines,
             })
         }
-        Ok(out) => {
-            // May fail due to permissions — try with sudo fallback info
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            serde_json::json!({ "ok": false, "error": stderr.trim() })
-        }
-        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }),
     }
 }
 
@@ -194,6 +316,7 @@ async fn search_log(
     date_from: Option<&str>,
     date_to: Option<&str>,
     no_limit: bool,
+    password: &str,
 ) -> serde_json::Value {
     let log_path = match validate_log_path(path) {
         Ok(p) => p,
@@ -209,36 +332,40 @@ async fn search_log(
     let after = after.min(50);
     let max_lines = if no_limit { 0 } else { max_lines.min(10000) };
 
-    // If date filtering requested, we do it in Rust after grep output
-    // Use grep for the text search (fast, handles large files)
-    let mut cmd = tokio::process::Command::new("grep");
-    cmd.args(["-n", "-i"]); // line numbers, case insensitive
+    let path_str = log_path.to_str().unwrap_or("");
+
+    // Build grep args
+    let mut args: Vec<String> = vec!["grep".into(), "-n".into(), "-i".into()];
 
     if before > 0 || after > 0 {
-        cmd.arg(format!("-B{before}"));
-        cmd.arg(format!("-A{after}"));
+        args.push(format!("-B{before}"));
+        args.push(format!("-A{after}"));
     }
 
-    // Max count for safety (skip if date filter → no_limit)
     if max_lines > 0 {
-        cmd.arg(format!("-m{}", max_lines));
+        args.push(format!("-m{max_lines}"));
     }
 
-    // Use fixed string matching for safety (no regex injection)
-    cmd.arg("-F");
-    cmd.arg(query);
-    cmd.arg(log_path.to_str().unwrap_or(""));
+    args.push("-F".into());
+    args.push(query.into());
+    args.push(path_str.into());
 
-    let output = cmd.output().await;
+    let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+    // grep returns exit code 1 when no matches — treat as empty result, not error
+    let am_root = unsafe { libc::geteuid() } == 0;
+    let use_sudo = !am_root && !password.is_empty();
+
+    let output = if use_sudo {
+        run_cmd_raw(password, &str_args).await
+    } else {
+        run_cmd_raw_direct(&str_args).await
+    };
 
     match output {
-        Ok(out) => {
-            let content = String::from_utf8_lossy(&out.stdout);
-
-            // Parse grep output into structured matches
+        Ok(content) => {
             let matches = parse_grep_output(&content, date_from, date_to);
             let match_count = matches.len();
-
             serde_json::json!({
                 "ok": true,
                 "path": path,
@@ -247,7 +374,85 @@ async fn search_log(
                 "matches": matches,
             })
         }
-        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+    }
+}
+
+/// Run command and return stdout even on non-zero exit (for grep exit=1 = no match).
+async fn run_cmd_raw(password: &str, args: &[&str]) -> Result<String, String> {
+    let mut sa: Vec<&str> = vec!["-S"];
+    sa.extend_from_slice(args);
+
+    let child = tokio::process::Command::new("sudo")
+        .args(&sa)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => return Err(e.to_string()),
+    };
+
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
+        drop(stdin);
+    }
+
+    match child.wait_with_output().await {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            // grep exit 1 = no matches — return empty stdout, not error
+            if !out.status.success() && stdout.is_empty() {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                let clean = stderr
+                    .lines()
+                    .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if clean.is_empty() || out.status.code() == Some(1) {
+                    // grep exit 1 = no matches
+                    Ok(String::new())
+                } else {
+                    Err(clean)
+                }
+            } else {
+                Ok(stdout)
+            }
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Run command directly (root/no-sudo) and return stdout even on non-zero exit.
+async fn run_cmd_raw_direct(args: &[&str]) -> Result<String, String> {
+    let first = args.first().copied().unwrap_or("true");
+    let rest: Vec<&str> = args.iter().skip(1).copied().collect();
+
+    let output = tokio::process::Command::new(first)
+        .args(&rest)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await;
+
+    match output {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
+            if !out.status.success() && stdout.is_empty() {
+                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                if stderr.trim().is_empty() || out.status.code() == Some(1) {
+                    Ok(String::new())
+                } else {
+                    Err(stderr.trim().to_string())
+                }
+            } else {
+                Ok(stdout)
+            }
+        }
+        Err(e) => Err(e.to_string()),
     }
 }
 
@@ -257,6 +462,7 @@ async fn filter_by_date(
     path: &str,
     date_from: Option<&str>,
     date_to: Option<&str>,
+    password: &str,
 ) -> serde_json::Value {
     let log_path = match validate_log_path(path) {
         Ok(p) => p,
@@ -270,15 +476,11 @@ async fn filter_by_date(
         return serde_json::json!({ "ok": false, "error": "no date range specified" });
     }
 
-    // Read the file with `cat` (respects permissions like other commands)
-    let output = tokio::process::Command::new("cat")
-        .arg(log_path.to_str().unwrap_or(""))
-        .output()
-        .await;
+    let path_str = log_path.to_str().unwrap_or("");
+    let output = run_cmd(password, &["cat", path_str]).await;
 
     match output {
-        Ok(out) if out.status.success() => {
-            let content = String::from_utf8_lossy(&out.stdout);
+        Ok(content) => {
             let mut filtered: Vec<serde_json::Value> = Vec::new();
 
             for (i, line) in content.lines().enumerate() {
@@ -311,11 +513,7 @@ async fn filter_by_date(
                 "lines": filtered,
             })
         }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            serde_json::json!({ "ok": false, "error": stderr.trim() })
-        }
-        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        Err(e) => serde_json::json!({ "ok": false, "error": e }),
     }
 }
 

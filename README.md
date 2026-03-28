@@ -27,7 +27,7 @@ The gateway connects via SSH and spawns the bridge process on demand.
 | **Containers** | Docker / Podman -- containers, images, create, logs |
 | **Files** | Remote file browser with sudo fallback |
 | **Logs** | journald viewer with unit/priority filters and timestamps |
-| **Log Files** | Browse `/var/log` with keyword search, context lines, date/time range |
+| **Log Files** | Browse `/var/log` with keyword search, context lines, date/time range (sudo-enabled for restricted logs) |
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
 | **Multi-host** | Manage multiple servers from one panel with SSH host key verification |
 
@@ -331,6 +331,16 @@ The file should be owned by root with mode `0600`.
 - **CSRF Origin check** on all state-changing REST requests (POST/PUT/DELETE/PATCH)
 - **WebSocket Origin validation** against Host header (prevents CSWSH)
 
+### Administrative Access (Superuser)
+
+- **Password verification** via `unix_chkpwd` with rate limiting (6 attempts / 15 min)
+- **Encrypted password persistence** -- on HTTPS, the superuser password is
+  encrypted with a non-extractable AES-GCM key (Web Crypto API) stored in
+  IndexedDB; only ciphertext is saved to sessionStorage. The password survives
+  page refresh without ever being stored in plaintext.
+- **Graceful HTTP fallback** -- when `crypto.subtle` is unavailable (plain HTTP,
+  non-localhost), the password is kept in memory only and resets on refresh
+
 ### Session Management
 
 - **Authenticated logout** requires `Authorization: Bearer <session_id>` header
@@ -346,7 +356,6 @@ The file should be owned by root with mode `0600`.
   Referrer-Policy, Permissions-Policy
 - **Structured audit logging** to `/var/log/tenodera_audit.log` -- login/logout,
   WebSocket sessions, host management, bridge spawning, superuser verification
-- **Superuser rate limiting** -- 6 attempts per 15 minutes, reset on success
 - **Firewall input validation** -- IP/CIDR, service names, port/protocol
   validated before passing to ufw/firewalld
 - **Symlink-safe file listing** -- `symlink_metadata()` prevents traversal
