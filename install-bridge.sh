@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tenodera Bridge — remote host installer
 # Usage:
-#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash
+#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh -o /tmp/install-bridge.sh && sudo bash /tmp/install-bridge.sh
 #   Uninstall: sudo bash install-bridge.sh --uninstall
 #
 # Install:

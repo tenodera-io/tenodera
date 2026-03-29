@@ -40,7 +40,8 @@ The gateway connects via SSH and spawns the bridge process on demand.
 ### Panel (gateway + UI + local bridge)
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-panel.sh | sudo bash
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-panel.sh -o /tmp/install-panel.sh
+sudo bash /tmp/install-panel.sh
 ```
 
 This downloads the source, installs all build dependencies (Rust, Node.js,
@@ -52,7 +53,8 @@ systemd services, and starts the panel on port 9090.
 On each remote host you want to manage:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh -o /tmp/install-bridge.sh
+sudo bash /tmp/install-bridge.sh
 ```
 
 No daemon or service -- the gateway spawns the bridge over SSH when needed.

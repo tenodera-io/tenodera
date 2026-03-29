@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tenodera Panel — installer (gateway + UI + local bridge)
 # Usage:
-#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-panel.sh | sudo bash
+#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-panel.sh -o /tmp/install-panel.sh && sudo bash /tmp/install-panel.sh
 #   Uninstall: sudo bash install-panel.sh --uninstall
 #
 # Install:
@@ -159,5 +159,5 @@ echo ""
 echo "  Log in with any PAM user that has sudo privileges."
 echo ""
 echo "  Install bridge on remote managed hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash"
+echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh -o /tmp/install-bridge.sh && sudo bash /tmp/install-bridge.sh"
 echo ""
