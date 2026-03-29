@@ -70,7 +70,7 @@ pub async fn logout(
 
 /// POST /api/auth/login
 ///
-/// Authenticates via PAM (unix_chkpwd). Creates session on success.
+/// Authenticates via PAM (tenodera-pam-helper subprocess). Creates session on success.
 /// Rate-limited per client IP: max_startups failed attempts per 5-minute window.
 pub async fn login(
     State(state): State<Arc<AppState>>,

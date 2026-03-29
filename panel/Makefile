@@ -17,7 +17,8 @@ UIDIR       ?= /usr/share/tenodera/ui
 CONFDIR     ?= /etc/tenodera
 SYSTEMDDIR  ?= /etc/systemd/system
 
-GATEWAY_BIN := target/release/tenodera-gateway
+GATEWAY_BIN    := target/release/tenodera-gateway
+PAM_HELPER_BIN := target/release/tenodera-pam-helper
 
 .PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean
 
@@ -72,7 +73,7 @@ deps-node:
 build: build-backend build-frontend
 
 build-backend:
-	@echo "==> Building backend (gateway)..."
+	@echo "==> Building backend (gateway + pam-helper)..."
 	. "$$HOME/.cargo/env" 2>/dev/null || true; cargo build --release
 
 build-frontend:
@@ -81,9 +82,11 @@ build-frontend:
 
 # ── Install ───────────────────────────────────────────────
 
-install: $(GATEWAY_BIN) ui/dist/index.html
+install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	@echo "==> Installing gateway binary..."
 	sudo install -m 755 $(GATEWAY_BIN) $(BINDIR)/tenodera-gateway
+	@echo "==> Installing PAM helper..."
+	sudo install -m 755 $(PAM_HELPER_BIN) $(BINDIR)/tenodera-pam-helper
 	@echo "==> Installing UI..."
 	sudo mkdir -p $(UIDIR)
 	sudo cp -r ui/dist/* $(UIDIR)/
@@ -127,6 +130,9 @@ install: $(GATEWAY_BIN) ui/dist/index.html
 $(GATEWAY_BIN):
 	$(MAKE) build-backend
 
+$(PAM_HELPER_BIN):
+	$(MAKE) build-backend
+
 ui/dist/index.html:
 	$(MAKE) build-frontend
 
@@ -141,7 +147,7 @@ uninstall:
 	-sudo systemctl daemon-reload
 	-sudo pkill -f tenodera-gateway 2>/dev/null || true
 	-sudo pkill -f tenodera-bridge 2>/dev/null || true
-	-sudo rm -f $(BINDIR)/tenodera-gateway $(BINDIR)/tenodera-bridge
+	-sudo rm -f $(BINDIR)/tenodera-gateway $(BINDIR)/tenodera-pam-helper $(BINDIR)/tenodera-bridge
 	-sudo rm -rf $(UIDIR)
 	-sudo rm -rf $(CONFDIR)
 	-sudo rm -f /etc/logrotate.d/tenodera

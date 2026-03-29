@@ -1,0 +1,11 @@
+[package]
+name = "tenodera-pam-helper"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "tenodera-pam-helper"
+path = "src/main.rs"
+
+[dependencies]
+pam-client = { workspace = true }
