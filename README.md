@@ -73,14 +73,27 @@ After `make all`, the panel is running and listening on port 9090.
 
 ### One-Command Install (Bridge)
 
-On each managed host, copy the `bridge/` and `protocol/` directories, then:
+On each managed host, run:
 
 ```bash
-cd bridge
-make all    # deps + build + install
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash
 ```
 
+This downloads only the bridge and protocol source, installs build
+dependencies (Rust, system libs), compiles the bridge natively on the host,
+installs it to `/usr/local/bin/tenodera-bridge`, and cleans up.
+
 No service or daemon -- the gateway spawns the bridge over SSH when needed.
+
+#### Alternative: Build from source manually
+
+If you prefer to clone the repo and build yourself:
+
+```bash
+git clone https://github.com/ultherego/Tenodera
+cd Tenodera/bridge
+make all    # deps + build + install
+```
 
 ### Step-by-Step Install
 
