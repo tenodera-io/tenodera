@@ -143,19 +143,37 @@ fn compute_io_rates(prev: &[DiskStat], curr: &[DiskStat], dt: f64) -> serde_json
 }
 
 async fn get_block_devices() -> Vec<serde_json::Value> {
-    let output = match tokio::process::Command::new("lsblk")
+    // Try MOUNTPOINTS first (util-linux >= 2.37), fall back to MOUNTPOINT
+    let (output, legacy) = match tokio::process::Command::new("lsblk")
         .args(["-J", "-b", "-o", "NAME,SIZE,TYPE,MOUNTPOINTS"])
         .output()
         .await
     {
-        Ok(o) if o.status.success() => o.stdout,
-        _ => return vec![],
+        Ok(o) if o.status.success() => (o.stdout, false),
+        _ => {
+            // Fallback: MOUNTPOINT (singular) for older util-linux
+            match tokio::process::Command::new("lsblk")
+                .args(["-J", "-b", "-o", "NAME,SIZE,TYPE,MOUNTPOINT"])
+                .output()
+                .await
+            {
+                Ok(o) if o.status.success() => (o.stdout, true),
+                _ => return vec![],
+            }
+        }
     };
 
-    let parsed: serde_json::Value = match serde_json::from_slice(&output) {
+    let mut parsed: serde_json::Value = match serde_json::from_slice(&output) {
         Ok(v) => v,
         Err(_) => return vec![],
     };
+
+    // Older lsblk returns "mountpoint": "string"|null instead of
+    // "mountpoints": ["string", ...]. Normalize to the array form so
+    // enrich_device always sees "mountpoints".
+    if legacy {
+        normalize_mountpoints(&mut parsed);
+    }
 
     let devices = match parsed.get("blockdevices").and_then(|v| v.as_array()) {
         Some(a) => a,
@@ -163,6 +181,32 @@ async fn get_block_devices() -> Vec<serde_json::Value> {
     };
 
     devices.iter().map(enrich_device).collect()
+}
+
+/// Convert `"mountpoint": "..."` to `"mountpoints": [...]` recursively.
+fn normalize_mountpoints(val: &mut serde_json::Value) {
+    if let Some(obj) = val.as_object_mut() {
+        if let Some(mp) = obj.remove("mountpoint") {
+            let arr = match mp {
+                serde_json::Value::String(s) if !s.is_empty() => serde_json::json!([s]),
+                _ => serde_json::json!([]),
+            };
+            obj.insert("mountpoints".to_string(), arr);
+        }
+        if let Some(children) = obj.get_mut("children") {
+            if let Some(arr) = children.as_array_mut() {
+                for child in arr {
+                    normalize_mountpoints(child);
+                }
+            }
+        }
+    }
+    // Top-level: recurse into blockdevices array
+    if let Some(arr) = val.get_mut("blockdevices").and_then(|v| v.as_array_mut()) {
+        for dev in arr {
+            normalize_mountpoints(dev);
+        }
+    }
 }
 
 fn enrich_device(dev: &serde_json::Value) -> serde_json::Value {
