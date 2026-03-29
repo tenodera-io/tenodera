@@ -30,11 +30,11 @@ deps: deps-system deps-rust deps-node
 deps-system:
 	@echo "==> Installing system build dependencies..."
 	@if command -v apt-get >/dev/null 2>&1; then \
-		sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev libpam0g-dev curl jq sshpass; \
+		sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev libpam0g-dev libclang-dev curl jq sshpass; \
 	elif command -v dnf >/dev/null 2>&1; then \
-		sudo dnf install -y gcc make pkg-config openssl-devel pam-devel curl jq sshpass; \
+		sudo dnf install -y gcc make pkg-config openssl-devel pam-devel clang-devel curl jq sshpass; \
 	elif command -v pacman >/dev/null 2>&1; then \
-		sudo pacman -Sy --needed --noconfirm base-devel openssl pam pkg-config curl jq sshpass; \
+		sudo pacman -Sy --needed --noconfirm base-devel openssl pam clang pkg-config curl jq sshpass; \
 	else \
 		echo "ERROR: Unsupported package manager. Install manually: gcc, make, pkg-config, openssl-dev, pam-dev, curl"; \
 		exit 1; \
