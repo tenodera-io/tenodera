@@ -1,5 +1,9 @@
 # Tenodera
 
+<p align="center">
+  <img src="src/tenodera.webp" alt="Tenodera" width="400" />
+</p>
+
 A self-hosted Linux server administration panel with real-time monitoring,
 terminal access, and multi-host management -- all from a single web interface.
 
@@ -417,6 +421,73 @@ bridge/                  Standalone bridge binary (deployed to managed hosts)
 
 protocol/                Shared message types (Rust library crate)
 ```
+
+## Screenshots
+
+<details>
+<summary>Click to expand screenshots</summary>
+
+### Login
+![Login](src/login.webp)
+
+### Dashboard
+![Dashboard](src/dashboard.webp)
+
+### Terminal
+![Terminal](src/term.webp)
+
+### Services
+![Services](src/services.webp)
+
+### Users
+![Users](src/users.webp)
+
+### User Groups
+![User Groups](src/us_groups.webp)
+
+### Create User
+![Create User](src/c_user.webp)
+
+### Packages
+![Packages](src/packages.webp)
+
+### Package Search
+![Package Search](src/pack_search.webp)
+
+### Package Repositories
+![Package Repositories](src/pack_repo.webp)
+
+### Storage
+![Storage](src/storage.webp)
+
+### Networking Overview
+![Networking Overview](src/net_overview.webp)
+
+### Networking Interfaces
+![Networking Interfaces](src/net_inter.webp)
+
+### Networking Firewall
+![Networking Firewall](src/net_firewall.webp)
+
+### Networking Logs
+![Networking Logs](src/net_logs.webp)
+
+### Files
+![Files](src/files.webp)
+
+### Journal
+![Journal](src/journal.webp)
+
+### Log Files
+![Log Files](src/log_f.webp)
+
+### Kernel Dump
+![Kernel Dump](src/kdump.webp)
+
+### Virtual Machines
+![Virtual Machines](src/virtual_machines.webp)
+
+</details>
 
 ## License
 
