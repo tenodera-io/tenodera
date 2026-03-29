@@ -51,6 +51,7 @@ tokio-stream = "0.1"
 bytes = "1"
 zeroize = "1"
 tempfile = "3"
+pam-client = "0.5"
 
 # Internal crates
 tenodera-protocol = { path = "../protocol" }

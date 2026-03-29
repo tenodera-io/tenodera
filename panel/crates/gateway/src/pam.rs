@@ -9,13 +9,18 @@ pub struct PamResult {
     pub error: Option<String>,
 }
 
-/// Authenticate a user via the unix_chkpwd PAM helper.
+/// Authenticate a user via the PAM stack.
 ///
-/// `unix_chkpwd` is a setuid helper shipped with pam_unix on virtually
-/// all Linux distributions. It reads the password from stdin (a single
-/// line terminated by NUL or newline) and exits 0 on success.
+/// Uses `pam-client` to call `pam_authenticate()` + `pam_acct_mgmt()`
+/// through the system PAM configuration. This works with all PAM-backed
+/// identity sources: local `/etc/shadow`, FreeIPA/SSSD, LDAP, Kerberos,
+/// etc.
 ///
-/// This avoids the problem with `su` which requires a real TTY.
+/// The PAM service name is `login`, which uses the standard system
+/// authentication policy (same as `su` / `ssh` on most distributions).
+///
+/// PAM calls are blocking, so we run them inside `spawn_blocking` to
+/// avoid stalling the Tokio runtime.
 pub async fn authenticate(user: &str, password: &str) -> PamResult {
     // Validate input: prevent injection through user field
     if user.is_empty() || user.contains('\0') || user.contains('\n') {
@@ -26,19 +31,37 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
         };
     }
 
-    // unix_chkpwd <user> nullok
-    // Reads password from stdin, verifies against /etc/shadow
-    let result = Command::new("unix_chkpwd")
-        .args([user, "nullok"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
+    let user_owned = user.to_string();
+    let password_owned = password.to_string();
 
-    let mut child = match result {
-        Ok(c) => c,
+    let result = tokio::task::spawn_blocking(move || {
+        pam_authenticate_blocking(&user_owned, &password_owned)
+    })
+    .await;
+
+    match result {
+        Ok(pam_result) => pam_result,
         Err(e) => {
-            tracing::error!(error = %e, "failed to spawn unix_chkpwd");
+            tracing::error!(error = %e, "PAM task panicked");
+            PamResult {
+                success: false,
+                user: user.to_string(),
+                error: Some("authentication failed".to_string()),
+            }
+        }
+    }
+}
+
+/// Blocking PAM authentication — runs on a dedicated thread.
+fn pam_authenticate_blocking(user: &str, password: &str) -> PamResult {
+    use pam_client::{Context, Flag};
+    use pam_client::conv_mock::Conversation;
+
+    let conv = Conversation::with_credentials(user, password);
+    let mut context = match Context::new("login", None, conv) {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to create PAM context");
             return PamResult {
                 success: false,
                 user: user.to_string(),
@@ -47,38 +70,32 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
         }
     };
 
-    // Write password + NUL to stdin (unix_chkpwd expects NUL-terminated)
-    if let Some(mut stdin) = child.stdin.take() {
-        use tokio::io::AsyncWriteExt;
-        let _ = stdin.write_all(format!("{password}\0").as_bytes()).await;
-        drop(stdin);
+    // Authenticate: verifies credentials via the PAM stack
+    // (pam_unix for local, pam_sss for FreeIPA/SSSD, etc.)
+    if let Err(e) = context.authenticate(Flag::NONE) {
+        tracing::warn!(user = %user, error = %e, "PAM authentication failed");
+        return PamResult {
+            success: false,
+            user: user.to_string(),
+            error: Some("authentication failed".to_string()),
+        };
     }
 
-    match child.wait().await {
-        Ok(status) if status.success() => {
-            tracing::info!(user = %user, "PAM auth succeeded");
-            PamResult {
-                success: true,
-                user: user.to_string(),
-                error: None,
-            }
-        }
-        Ok(status) => {
-            tracing::warn!(user = %user, code = ?status.code(), "PAM auth failed");
-            PamResult {
-                success: false,
-                user: user.to_string(),
-                error: Some("authentication failed".to_string()),
-            }
-        }
-        Err(e) => {
-            tracing::error!(user = %user, error = %e, "auth process error");
-            PamResult {
-                success: false,
-                user: user.to_string(),
-                error: Some("authentication failed".to_string()),
-            }
-        }
+    // Account validation: check if account is locked, expired, etc.
+    if let Err(e) = context.acct_mgmt(Flag::NONE) {
+        tracing::warn!(user = %user, error = %e, "PAM account validation failed");
+        return PamResult {
+            success: false,
+            user: user.to_string(),
+            error: Some("account unavailable".to_string()),
+        };
+    }
+
+    tracing::info!(user = %user, "PAM auth succeeded");
+    PamResult {
+        success: true,
+        user: user.to_string(),
+        error: None,
     }
 }
 
