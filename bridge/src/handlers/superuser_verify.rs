@@ -110,16 +110,24 @@ impl ChannelHandler for SuperuserVerifyHandler {
     }
 }
 
-async fn verify_password(user: &str, password: &str) -> serde_json::Value {
-    // Use unix_chkpwd to verify password (same as gateway login).
-    // This avoids sudo which requires setuid/NoNewPrivileges.
-    let chkpwd = match crate::util::unix_chkpwd_path() {
-        Some(p) => p,
-        None => return serde_json::json!({ "ok": false, "error": "unix_chkpwd not found" }),
-    };
+async fn verify_password(_user: &str, password: &str) -> serde_json::Value {
+    // Verify that the user can run commands via sudo.
+    //
+    // Previous approach used unix_chkpwd which only checks /etc/shadow.
+    // That fails for FreeIPA/LDAP users whose passwords live in the
+    // directory server, not in the local shadow database.
+    //
+    // Using `sudo -S -k true` goes through the full PAM/NSS stack
+    // (including pam_sss for SSSD/FreeIPA), so it works for both
+    // local and LDAP users.  As a bonus it also confirms the user
+    // actually has sudo privileges — which is exactly what
+    // "Administrative Access" requires.
+    //
+    // -S  read password from stdin
+    // -k  invalidate cached credentials (force re-auth)
 
-    let child = tokio::process::Command::new(chkpwd)
-        .args([user, "nullok"])
+    let child = tokio::process::Command::new("sudo")
+        .args(["-S", "-k", "true"])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -131,16 +139,25 @@ async fn verify_password(user: &str, password: &str) -> serde_json::Value {
     };
 
     if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\0").as_bytes()).await;
+        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
         drop(stdin);
     }
 
-    match child.wait().await {
-        Ok(status) if status.success() => {
+    match child.wait_with_output().await {
+        Ok(out) if out.status.success() => {
             serde_json::json!({ "ok": true })
         }
-        Ok(_) => {
-            serde_json::json!({ "ok": false, "error": "incorrect password" })
+        Ok(out) => {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            // Distinguish wrong password from no-sudo-access
+            if stderr.contains("incorrect password")
+                || stderr.contains("Sorry, try again")
+                || stderr.contains("Authentication failure")
+            {
+                serde_json::json!({ "ok": false, "error": "incorrect password" })
+            } else {
+                serde_json::json!({ "ok": false, "error": "sudo access denied" })
+            }
         }
         Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
     }

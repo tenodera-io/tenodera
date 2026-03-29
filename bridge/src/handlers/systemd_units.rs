@@ -100,50 +100,12 @@ fn is_valid_unit_name(name: &str) -> bool {
         && name.chars().all(|c| c.is_alphanumeric() || ".@-_:".contains(c))
 }
 
-async fn systemctl_action(action: &str, unit: &str, user: &str, password: &str) -> serde_json::Value {
+async fn systemctl_action(action: &str, unit: &str, _user: &str, password: &str) -> serde_json::Value {
     use tokio::io::AsyncWriteExt;
 
-    // Verify the user's password first via unix_chkpwd.
-    // The bridge may run as root (via systemd), so sudo would not
-    // actually verify the *user's* password — unix_chkpwd does.
-    if !user.is_empty() {
-        let chkpwd = match crate::util::unix_chkpwd_path() {
-            Some(p) => p,
-            None => return serde_json::json!({ "ok": false, "error": "unix_chkpwd not found" }),
-        };
-
-        let chk = tokio::process::Command::new(chkpwd)
-            .args([user, "nullok"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn();
-
-        match chk {
-            Ok(mut child) => {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let _ = stdin.write_all(format!("{password}\0").as_bytes()).await;
-                    drop(stdin);
-                }
-                match child.wait().await {
-                    Ok(status) if !status.success() => {
-                        return serde_json::json!({ "ok": false, "error": "incorrect password" });
-                    }
-                    Err(e) => {
-                        return serde_json::json!({ "ok": false, "error": e.to_string() });
-                    }
-                    _ => {} // password verified
-                }
-            }
-            Err(e) => {
-                return serde_json::json!({ "ok": false, "error": format!("unix_chkpwd: {e}") });
-            }
-        }
-    }
-
-    // Use sudo for systemctl — the bridge may run as a regular user when
-    // spawned via SSH on a remote host.  Password was already verified above
-    // via unix_chkpwd, and we pass it again to sudo -S.
+    // Use sudo for systemctl — sudo itself verifies the password
+    // through the full PAM/NSS stack (works for both local and
+    // LDAP/FreeIPA users via pam_sss).
     let child = tokio::process::Command::new("sudo")
         .args(["-S", "systemctl", action, "--", unit])
         .stdin(std::process::Stdio::piped())
