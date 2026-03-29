@@ -16,6 +16,7 @@ interface Container {
   Created?: string | number;
   Ports?: unknown;
   Command?: string | string[];
+  _owner?: string;
 }
 
 interface ContainerImage {
@@ -26,6 +27,7 @@ interface ContainerImage {
   Tag?: string;
   Size?: number;
   Created?: string | number;
+  _owner?: string;
 }
 
 interface ServiceStatus {
@@ -76,6 +78,10 @@ function stateColor(state?: string): string {
   return '#565f89';
 }
 
+function ownerColor(owner?: string): string {
+  return owner === 'root' ? '#9ece6a' : '#e0af68';
+}
+
 /* ── component ─────────────────────────────────────────── */
 
 export function Containers() {
@@ -111,8 +117,17 @@ export function Containers() {
   const [pullImage, setPullImage] = useState('');
   const [pulling, setPulling] = useState<string | null>(null);
 
+  // Track superuser state via ref to avoid channel re-creation on toggle
+  const suRef = useRef(su);
+  suRef.current = su;
+
   const sendAction = useCallback((action: string, extra: Record<string, unknown> = {}) => {
-    channelRef.current?.send({ action, ...extra });
+    const payload: Record<string, unknown> = { action, ...extra };
+    const s = suRef.current;
+    if (s.active && s.password && !('password' in extra)) {
+      payload.password = s.password;
+    }
+    channelRef.current?.send(payload);
   }, []);
 
   const refresh = useCallback(() => {
@@ -145,8 +160,8 @@ export function Containers() {
           if (info?.service) setService(info.service as ServiceStatus);
           // Fetch containers and images
           if (info?.available) {
-            ch.send({ action: 'list_containers' });
-            ch.send({ action: 'list_images' });
+            sendAction('list_containers');
+            sendAction('list_images');
           }
         }
 
@@ -197,12 +212,21 @@ export function Containers() {
     return () => ch.close();
   }, [openChannel, refresh, sendAction]);
 
+  // Re-fetch containers when superuser mode changes (to show/hide root containers)
+  const prevSuActive = useRef(su.active);
+  useEffect(() => {
+    if (su.active !== prevSuActive.current) {
+      prevSuActive.current = su.active;
+      if (available) refresh();
+    }
+  }, [su.active, available, refresh]);
+
   const requestPrivileged = (action: string, label: string, id?: string, extra?: Record<string, unknown>) => {
     if (su.active) {
       /* superuser mode — execute immediately with stored password */
       setLoading(true);
       setError(null);
-      const payload: Record<string, unknown> = { password: su.password, ...extra };
+      const payload: Record<string, unknown> = { ...extra };
       if (id) payload.id = id;
       sendAction(action, payload);
       return;
@@ -333,6 +357,13 @@ export function Containers() {
         </div>
       )}
 
+      {/* Ownership info banner */}
+      <div style={S.infoBanner}>
+        {su.active
+          ? 'Showing user and root containers. Owner column indicates who owns each container.'
+          : 'Showing your containers only. Enable Administrative Access to see root containers.'}
+      </div>
+
       {/* Tabs */}
       <div style={S.tabs}>
         {(['containers', 'images', 'create'] as Tab[]).map((t) => (
@@ -358,6 +389,7 @@ export function Containers() {
                   <th style={S.th}>Name</th>
                   <th style={S.th}>Image</th>
                   <th style={S.th}>State</th>
+                  <th style={S.th}>Owner</th>
                   <th style={S.th}>Status</th>
                   <th style={S.th}>ID</th>
                   <th style={S.th}>Actions</th>
@@ -367,8 +399,9 @@ export function Containers() {
                 {containers.map((c) => {
                   const id = getId(c);
                   const state = (c.State || '').toLowerCase();
+                  const owner = c._owner || 'user';
                   return (
-                    <tr key={id} style={S.tr}>
+                    <tr key={id + owner} style={S.tr}>
                       <td style={S.td}><strong>{getContainerName(c)}</strong></td>
                       <td style={{ ...S.td, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{c.Image}</td>
                       <td style={S.td}>
@@ -376,23 +409,28 @@ export function Containers() {
                           {c.State}
                         </span>
                       </td>
+                      <td style={S.td}>
+                        <span style={{ ...S.stateBadge, background: ownerColor(owner) + '22', color: ownerColor(owner) }}>
+                          {owner}
+                        </span>
+                      </td>
                       <td style={{ ...S.td, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{c.Status}</td>
                       <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{id}</td>
                       <td style={S.td}>
                         <div style={S.actions}>
                           {state !== 'running' && (
-                            <button style={S.actBtn} onClick={() => requestPrivileged('start', `Start ${getContainerName(c)}`, id)} title="Start">▶</button>
+                            <button style={S.actBtn} onClick={() => requestPrivileged('start', `Start ${getContainerName(c)}`, id, { owner })} title="Start">▶</button>
                           )}
                           {state === 'running' && (
-                            <button style={S.actBtn} onClick={() => requestPrivileged('stop', `Stop ${getContainerName(c)}`, id)} title="Stop">■</button>
+                            <button style={S.actBtn} onClick={() => requestPrivileged('stop', `Stop ${getContainerName(c)}`, id, { owner })} title="Stop">■</button>
                           )}
-                          <button style={S.actBtn} onClick={() => requestPrivileged('restart', `Restart ${getContainerName(c)}`, id)} title="Restart">↻</button>
+                          <button style={S.actBtn} onClick={() => requestPrivileged('restart', `Restart ${getContainerName(c)}`, id, { owner })} title="Restart">↻</button>
                           <button style={S.actBtn} onClick={() => {
-                            sendAction('logs', { id, tail: 200 });
+                            sendAction('logs', { id, tail: 200, owner });
                           }} title="Logs">📋</button>
                           <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => {
                             if (confirm(`Remove container ${getContainerName(c)}?`))
-                              requestPrivileged('remove', `Remove ${getContainerName(c)}`, id, { force: state === 'running' });
+                              requestPrivileged('remove', `Remove ${getContainerName(c)}`, id, { force: state === 'running', owner });
                           }} title="Remove">✕</button>
                         </div>
                       </td>
@@ -439,6 +477,7 @@ export function Containers() {
                 <thead>
                   <tr>
                     <th style={S.th}>Repository:Tag</th>
+                    <th style={S.th}>Owner</th>
                     <th style={S.th}>ID</th>
                     <th style={S.th}>Size</th>
                     <th style={S.th}>Actions</th>
@@ -447,15 +486,21 @@ export function Containers() {
                 <tbody>
                   {images.map((img) => {
                     const id = getId(img);
+                    const owner = img._owner || 'user';
                     return (
-                      <tr key={id + getImageName(img)} style={S.tr}>
+                      <tr key={id + owner + getImageName(img)} style={S.tr}>
                         <td style={S.td}><strong>{getImageName(img)}</strong></td>
+                        <td style={S.td}>
+                          <span style={{ ...S.stateBadge, background: ownerColor(owner) + '22', color: ownerColor(owner) }}>
+                            {owner}
+                          </span>
+                        </td>
                         <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{id}</td>
                         <td style={S.td}>{formatSize(img.Size)}</td>
                         <td style={S.td}>
                           <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => {
                             if (confirm(`Remove image ${getImageName(img)}?`))
-                              requestPrivileged('remove_image', `Remove image ${getImageName(img)}`, id, { force: false });
+                              requestPrivileged('remove_image', `Remove image ${getImageName(img)}`, id, { force: false, owner });
                           }} title="Remove">✕</button>
                         </td>
                       </tr>
@@ -879,6 +924,15 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.8rem',
     fontWeight: 500,
     cursor: 'pointer',
+  },
+  infoBanner: {
+    background: '#7aa2f711',
+    border: '1px solid #7aa2f733',
+    borderRadius: 6,
+    padding: '0.4rem 0.75rem',
+    marginBottom: '0.75rem',
+    color: '#7aa2f7',
+    fontSize: '0.8rem',
   },
   // ── Progress bar styles ──
   progressWrap: {
