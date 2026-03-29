@@ -427,7 +427,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
         <div style={S.body}>
           <nav style={S.sidebar}>
             <div style={S.logo} onClick={() => navigate('/')} role="button" tabIndex={0}>
-              <img src="/tenodera_icon.png" alt="Tenodera" style={S.sidebarLogo} />
+              <img src="/tenodera_icon.webp" alt="Tenodera" style={S.sidebarLogo} />
               Tenodera
             </div>
             <div style={{ ...S.status, color: connected ? '#9ece6a' : '#f7768e' }}>

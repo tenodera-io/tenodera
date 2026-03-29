@@ -33,7 +33,7 @@ export function Login({ onLogin }: LoginProps) {
   return (
     <div style={styles.container}>
       <form onSubmit={handleSubmit} style={styles.form} action="#">
-        <img src="/tenodera.png" alt="Tenodera" style={styles.loginLogo} />
+        <img src="/tenodera.webp" alt="Tenodera" style={styles.loginLogo} />
         <p style={styles.subtitle}>System Administration</p>
 
         {error && <div style={styles.error}>{error}</div>}
