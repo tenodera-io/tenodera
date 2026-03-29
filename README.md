@@ -298,11 +298,11 @@ Example `hosts.json`:
     {
       "id": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d",
       "name": "web-server-01",
-      "address": "192.168.56.11",
+      "address": "10.0.1.50",
       "user": "",
       "ssh_port": 22,
       "added_at": "2026-03-28T12:00:00.000000000+00:00",
-      "host_key": "192.168.56.11 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..."
+      "host_key": "10.0.1.50 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..."
     }
   ]
 }
@@ -351,7 +351,7 @@ The file should be owned by root with mode `0600`.
 ### Infrastructure
 
 - **Hardened systemd service** (`NoNewPrivileges=yes`,
-  `MemoryDenyWriteExecute=yes`, etc.)
+  `ProtectKernelTunables=yes`, `LockPersonality=yes`, etc.)
 - **HTTP security headers**: CSP, X-Frame-Options, X-Content-Type-Options,
   Referrer-Policy, Permissions-Policy
 - **Structured audit logging** to `/var/log/tenodera_audit.log` -- login/logout,
