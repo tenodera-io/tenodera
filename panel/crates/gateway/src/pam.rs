@@ -6,8 +6,6 @@ use tokio::process::Command;
 #[derive(Debug)]
 pub struct PamResult {
     pub success: bool,
-    #[allow(dead_code)]
-    pub user: String,
     pub error: Option<String>,
 }
 
@@ -33,7 +31,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
     if user.is_empty() || user.contains('\0') || user.contains('\n') {
         return PamResult {
             success: false,
-            user: user.to_string(),
             error: Some("invalid username".to_string()),
         };
     }
@@ -41,7 +38,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
     if password.contains('\0') || password.contains('\n') {
         return PamResult {
             success: false,
-            user: user.to_string(),
             error: Some("invalid password".to_string()),
         };
     }
@@ -61,7 +57,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
             tracing::error!(error = %e, bin = %helper_bin, "failed to spawn PAM helper");
             return PamResult {
                 success: false,
-                user: user.to_string(),
                 error: Some("authentication service unavailable".to_string()),
             };
         }
@@ -76,7 +71,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
             let _ = child.kill().await;
             return PamResult {
                 success: false,
-                user: user.to_string(),
                 error: Some("authentication service unavailable".to_string()),
             };
         }
@@ -107,7 +101,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
                     tracing::info!(user = %user, "PAM auth succeeded (via helper)");
                     PamResult {
                         success: true,
-                        user: user.to_string(),
                         error: None,
                     }
                 }
@@ -115,7 +108,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
                     tracing::warn!(user = %user, "PAM authentication failed (via helper)");
                     PamResult {
                         success: false,
-                        user: user.to_string(),
                         error: Some("authentication failed".to_string()),
                     }
                 }
@@ -123,7 +115,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
                     tracing::warn!(user = %user, stderr = %stderr, "PAM account unavailable");
                     PamResult {
                         success: false,
-                        user: user.to_string(),
                         error: Some("account unavailable".to_string()),
                     }
                 }
@@ -137,7 +128,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
                     }
                     PamResult {
                         success: false,
-                        user: user.to_string(),
                         error: Some("authentication failed".to_string()),
                     }
                 }
@@ -147,7 +137,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
             tracing::error!(error = %e, "PAM helper process error");
             PamResult {
                 success: false,
-                user: user.to_string(),
                 error: Some("authentication service unavailable".to_string()),
             }
         }
@@ -159,7 +148,6 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
             }
             PamResult {
                 success: false,
-                user: user.to_string(),
                 error: Some("authentication timed out".to_string()),
             }
         }

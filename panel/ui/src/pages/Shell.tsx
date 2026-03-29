@@ -663,13 +663,6 @@ const S: Record<string, React.CSSProperties> = {
     borderTop: '1px solid #292e42',
     margin: '0.4rem 0',
   },
-  dropdownLink: {
-    display: 'block',
-    padding: '0.3rem 0.9rem',
-    fontSize: '0.78rem',
-    color: 'var(--accent)',
-    textDecoration: 'none',
-  },
   dropdownLogout: {
     width: '100%',
     padding: '0.4rem 0.9rem',

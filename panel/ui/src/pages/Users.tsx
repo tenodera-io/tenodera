@@ -1183,11 +1183,6 @@ const S: Record<string, React.CSSProperties> = {
     padding: '1px 6px',
     borderRadius: 8,
   },
-  actionBtns: {
-    display: 'flex',
-    gap: '4px',
-    flexWrap: 'wrap' as const,
-  },
   selToolbar: {
     display: 'flex',
     alignItems: 'center',
@@ -1236,9 +1231,6 @@ const S: Record<string, React.CSSProperties> = {
     gap: '0.5rem',
     justifyContent: 'flex-end',
     marginTop: '1rem',
-  },
-  createForm: {
-    maxWidth: 700,
   },
   createGrid: {
     display: 'grid',
@@ -1317,45 +1309,12 @@ const S: Record<string, React.CSSProperties> = {
   fieldGroup: {
     marginBottom: '0.75rem',
   },
-  fieldRow: {
-    display: 'flex',
-    gap: '1rem',
-    marginBottom: 0,
-  },
   label: {
     display: 'block',
     color: 'var(--text-secondary)',
     fontSize: '0.8rem',
     marginBottom: '0.25rem',
     fontWeight: 600,
-  },
-  checkRow: {
-    display: 'flex',
-    gap: '1.5rem',
-    marginBottom: '0.75rem',
-  },
-  groupSelector: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '4px',
-    maxHeight: 150,
-    overflowY: 'auto' as const,
-    padding: '0.5rem',
-    background: 'var(--bg-base)',
-    borderRadius: 6,
-    border: '1px solid var(--border)',
-  },
-  groupChip: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '3px',
-    padding: '2px 8px',
-    borderRadius: 12,
-    fontSize: '0.78rem',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
-    background: 'var(--bg-card)',
-    border: '1px solid var(--border)',
   },
   overlay: {
     position: 'fixed' as const,

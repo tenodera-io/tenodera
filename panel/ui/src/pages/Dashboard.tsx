@@ -954,11 +954,6 @@ const styles: Record<string, React.CSSProperties> = {
     overflow: 'hidden' as const,
     textOverflow: 'ellipsis' as const,
   },
-  netIfaceGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(0, 1fr))',
-    gap: '0.75rem',
-  },
   netCard: {
     background: '#1a1b2688',
     borderRadius: 8,

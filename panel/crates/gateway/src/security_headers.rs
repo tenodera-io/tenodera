@@ -22,25 +22,25 @@ pub async fn security_headers(
     // Origin matches the Host header.  Mismatches indicate a
     // cross-site request and are rejected with 403.
     let method = request.method().clone();
-    if matches!(method, Method::POST | Method::PUT | Method::DELETE | Method::PATCH) {
-        if let Some(origin) = request.headers().get("origin") {
-            let origin_str = origin.to_str().unwrap_or("");
-            let host = request
-                .headers()
-                .get("host")
-                .and_then(|h| h.to_str().ok())
-                .unwrap_or("");
+    if matches!(method, Method::POST | Method::PUT | Method::DELETE | Method::PATCH)
+        && let Some(origin) = request.headers().get("origin")
+    {
+        let origin_str = origin.to_str().unwrap_or("");
+        let host = request
+            .headers()
+            .get("host")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or("");
 
-            if !origin_matches_host(origin_str, host) {
-                tracing::warn!(
-                    origin = %origin_str,
-                    host = %host,
-                    method = %method,
-                    path = %request.uri().path(),
-                    "CSRF: rejected cross-origin state-changing request"
-                );
-                return Err(StatusCode::FORBIDDEN);
-            }
+        if !origin_matches_host(origin_str, host) {
+            tracing::warn!(
+                origin = %origin_str,
+                host = %host,
+                method = %method,
+                path = %request.uri().path(),
+                "CSRF: rejected cross-origin state-changing request"
+            );
+            return Err(StatusCode::FORBIDDEN);
         }
     }
 

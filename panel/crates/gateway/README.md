@@ -7,7 +7,7 @@ TLS support, and SSH-based remote host management.
 
 The gateway is the central server accessible from the browser. It handles:
 
-1. **Login** -- PAM authentication via `unix_chkpwd`, sudo privilege check
+1. **Login** -- PAM authentication via `tenodera-pam-helper` subprocess, sudo privilege check
 2. **WebSocket** -- channel-multiplexed transport to bridge processes
 3. **UI serving** -- static React SPA
 4. **TLS** -- optional encryption (rustls)
@@ -27,7 +27,7 @@ Browser --> HTTPS/WSS --> Gateway (:9090) --> stdin/stdout --> Bridge (localhost
 | `ws.rs` | WebSocket upgrade, Origin validation, channel routing, session polling |
 | `session.rs` | In-memory session store with idle timeout, max lifetime, and reaper |
 | `bridge_transport.rs` | Bridge spawning (local + remote via SSH with host key verification) |
-| `pam.rs` | PAM authentication via `unix_chkpwd`, sudo privilege check via `sudo -l -U` |
+| `pam.rs` | PAM authentication via `tenodera-pam-helper` subprocess, sudo privilege check via `sudo -l -U` |
 | `config.rs` | Configuration from environment variables |
 | `tls.rs` | TLS acceptor setup (tokio-rustls) |
 | `hosts_config.rs` | Remote host config (`/etc/tenodera/hosts.json`) |
@@ -76,7 +76,7 @@ sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<tempfile> use
 
 ### Authentication & Authorization
 
-- PAM authentication via `unix_chkpwd` with login rate limiting (per-IP sliding window)
+- PAM authentication via `tenodera-pam-helper` subprocess with login rate limiting (per-IP sliding window)
 - Sudo privilege check at login (`sudo -l -U <user>`) -- users without sudo are rejected
 - Authenticated logout requires `Authorization: Bearer <session_id>` matching the body
 
@@ -98,8 +98,7 @@ sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<tempfile> use
 
 - HTTP security headers (CSP, X-Frame-Options, X-Content-Type-Options,
   Referrer-Policy, Permissions-Policy)
-- Hardened systemd service (`ProtectSystem=strict`, `NoNewPrivileges=yes`,
-  `MemoryDenyWriteExecute=yes`, etc.)
+- Hardened systemd service (`NoNewPrivileges=yes`, etc.)
 - Structured audit logging with file permission enforcement
 
 ## Dependencies

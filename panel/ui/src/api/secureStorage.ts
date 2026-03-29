@@ -151,10 +151,3 @@ export async function clearSuperuserPassword(): Promise<void> {
   }
 }
 
-/**
- * Returns true when the secure context is available (HTTPS or localhost).
- * When false, passwords cannot be persisted across refresh.
- */
-export function canPersistPassword(): boolean {
-  return isSecureContext();
-}

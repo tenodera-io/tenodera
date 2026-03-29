@@ -315,7 +315,7 @@ The file should be owned by root with mode `0600`.
 
 ### Authentication
 
-- **PAM authentication** via `unix_chkpwd` -- any valid Linux user
+- **PAM authentication** via `tenodera-pam-helper` subprocess -- any valid Linux/LDAP user
 - **Sudo privilege check** at login -- users without sudo are rejected
 - **Per-IP rate limiting** on login attempts (sliding window)
 - **Session idle timeout** (default 15 minutes) with background reaper
@@ -333,7 +333,7 @@ The file should be owned by root with mode `0600`.
 
 ### Administrative Access (Superuser)
 
-- **Password verification** via `unix_chkpwd` with rate limiting (6 attempts / 15 min)
+- **Password verification** via `sudo` with rate limiting (6 attempts / 15 min)
 - **Encrypted password persistence** -- on HTTPS, the superuser password is
   encrypted with a non-extractable AES-GCM key (Web Crypto API) stored in
   IndexedDB; only ciphertext is saved to sessionStorage. The password survives

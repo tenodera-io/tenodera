@@ -81,11 +81,6 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     maxWidth: '360px',
   },
-  title: {
-    textAlign: 'center' as const,
-    fontSize: '1.5rem',
-    fontWeight: 700,
-  },
   loginLogo: {
     display: 'block',
     margin: '-0.5rem auto 0',

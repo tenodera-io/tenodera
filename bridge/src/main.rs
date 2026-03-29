@@ -2,7 +2,6 @@ pub mod audit;
 mod handler;
 mod handlers;
 mod router;
-mod util;
 
 use std::io;
 
