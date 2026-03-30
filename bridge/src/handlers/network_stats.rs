@@ -16,14 +16,14 @@ impl ChannelHandler for NetworkStatsHandler {
 
         vec![
             Message::Ready {
-                channel: channel.to_string(),
+                channel: channel.into(),
             },
             Message::Data {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 data: serde_json::json!({ "interfaces": interfaces }),
             },
             Message::Close {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 problem: None,
             },
         ]

@@ -45,14 +45,14 @@ impl ChannelHandler for JournalQueryHandler {
 
         vec![
             Message::Ready {
-                channel: channel.to_string(),
+                channel: channel.into(),
             },
             Message::Data {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 data: entries,
             },
             Message::Close {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 problem: None,
             },
         ]

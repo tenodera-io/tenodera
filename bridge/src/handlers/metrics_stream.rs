@@ -1,4 +1,4 @@
-use tenodera_protocol::channel::ChannelOpenOptions;
+use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 use tokio::sync::{mpsc, watch};
 
@@ -18,7 +18,7 @@ impl ChannelHandler for MetricsStreamHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         vec![Message::Ready {
-            channel: channel.to_string(),
+            channel: channel.into(),
         }]
     }
 
@@ -36,7 +36,7 @@ impl ChannelHandler for MetricsStreamHandler {
             .unwrap_or(1000)
             .max(500);
 
-        let channel = channel.to_string();
+        let channel: ChannelId = channel.into();
         let mut ticker = tokio::time::interval(std::time::Duration::from_millis(interval_ms));
 
         loop {

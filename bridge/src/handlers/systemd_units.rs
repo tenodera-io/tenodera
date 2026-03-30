@@ -16,14 +16,14 @@ impl ChannelHandler for SystemdUnitsHandler {
 
         vec![
             Message::Ready {
-                channel: channel.to_string(),
+                channel: channel.into(),
             },
             Message::Data {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 data: units,
             },
             Message::Close {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 problem: None,
             },
         ]
@@ -40,7 +40,7 @@ impl ChannelHandler for SystemdManageHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         vec![Message::Ready {
-            channel: channel.to_string(),
+            channel: channel.into(),
         }]
         // Keep channel open for bidirectional commands
     }
@@ -83,7 +83,7 @@ impl ChannelHandler for SystemdManageHandler {
         };
 
         vec![Message::Data {
-            channel: channel.to_string(),
+            channel: channel.into(),
             data: serde_json::json!({ "type": "response", "action": action, "unit": unit, "data": result }),
         }]
     }

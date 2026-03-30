@@ -1,7 +1,93 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
+/// Maximum length of a channel identifier (bytes).
+const MAX_CHANNEL_ID_LEN: usize = 64;
+
 /// Unique channel identifier within a session.
-pub type ChannelId = String;
+///
+/// Validated on deserialization: non-empty, max 64 characters,
+/// only ASCII alphanumeric, dash, and underscore.
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub struct ChannelId(String);
+
+impl ChannelId {
+    /// Create a new `ChannelId`, validating the input.
+    pub fn new(s: impl Into<String>) -> Result<Self, String> {
+        let s = s.into();
+        if s.is_empty() {
+            return Err("channel id must not be empty".into());
+        }
+        if s.len() > MAX_CHANNEL_ID_LEN {
+            return Err(format!("channel id exceeds {MAX_CHANNEL_ID_LEN} bytes"));
+        }
+        if !s
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        {
+            return Err("channel id contains invalid characters".into());
+        }
+        Ok(Self(s))
+    }
+
+    /// Return the inner string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Trusted conversions for internal use — channel IDs that already passed
+/// validation at the deserialization boundary.
+impl From<String> for ChannelId {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for ChannelId {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+
+impl std::ops::Deref for ChannelId {
+    type Target = str;
+    fn deref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::borrow::Borrow<str> for ChannelId {
+    fn borrow(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for ChannelId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl fmt::Debug for ChannelId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ChannelId({:?})", self.0)
+    }
+}
+
+impl Serialize for ChannelId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ChannelId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        ChannelId::new(s).map_err(serde::de::Error::custom)
+    }
+}
 
 /// Channel state machine.
 #[derive(Debug, Clone, PartialEq, Eq)]

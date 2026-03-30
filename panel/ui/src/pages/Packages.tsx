@@ -104,7 +104,7 @@ export function Packages() {
     return manageRef.current;
   }, [openChannel]);
 
-  const sendManage = useCallback((data: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  const sendManage = useCallback((data: Record<string, unknown>, timeoutMs = 30_000): Promise<Record<string, unknown>> => {
     return new Promise((resolve, reject) => {
       const ch = getManageChannel();
       const sentAction = data.action as string | undefined;
@@ -114,7 +114,7 @@ export function Packages() {
         resolved = true;
         removeHandler();
         reject(new Error('request timed out'));
-      }, 30_000);
+      }, timeoutMs);
       const handler = (msg: Message) => {
         if (resolved) return;
         if (msg.type === 'data' && 'data' in msg) {
@@ -149,9 +149,9 @@ export function Packages() {
     });
   }, [su]);
 
-  const sudoAction = useCallback(async (actionData: Record<string, unknown>) => {
+  const sudoAction = useCallback(async (actionData: Record<string, unknown>, timeoutMs = 600_000) => {
     const pw = await getPassword();
-    return sendManage({ ...actionData, password: pw });
+    return sendManage({ ...actionData, password: pw }, timeoutMs);
   }, [getPassword, sendManage]);
 
   /* ── cleanup / host change ─────────────────────────────── */
@@ -167,6 +167,7 @@ export function Packages() {
     setRepos([]);
     setActionMsg('');
     setActionError('');
+    setBusyPkg(null);
 
     // Close stale manage channel from previous host
     manageRef.current?.close();
@@ -239,7 +240,12 @@ export function Packages() {
     const res = await sudoAction({ action: 'install', names: [name] });
     setBusyPkg(null);
     if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`Installed ${name}`); loadInstalled(); }
+    else {
+      setActionMsg(`Installed ${name}`);
+      loadInstalled();
+      // Mark as installed in search results without re-searching
+      setSearchResults(prev => prev.map(p => p.name === name ? { ...p, installed: true } : p));
+    }
   };
 
   const removePkg = async (name: string) => {
@@ -248,7 +254,12 @@ export function Packages() {
     const res = await sudoAction({ action: 'remove', names: [name] });
     setBusyPkg(null);
     if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`Removed ${name}`); loadInstalled(); }
+    else {
+      setActionMsg(`Removed ${name}`);
+      loadInstalled();
+      // Mark as uninstalled in search results without re-searching
+      setSearchResults(prev => prev.map(p => p.name === name ? { ...p, installed: false } : p));
+    }
   };
 
   const updateSystem = async () => {

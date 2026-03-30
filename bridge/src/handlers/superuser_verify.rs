@@ -96,14 +96,14 @@ impl ChannelHandler for SuperuserVerifyHandler {
 
         vec![
             Message::Ready {
-                channel: channel.to_string(),
+                channel: channel.into(),
             },
             Message::Data {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 data: result,
             },
             Message::Close {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 problem: None,
             },
         ]

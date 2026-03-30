@@ -3,7 +3,7 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-use tenodera_protocol::channel::ChannelOpenOptions;
+use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 use tokio::io::unix::AsyncFd;
 use tokio::sync::{mpsc, watch, Mutex};
@@ -12,7 +12,7 @@ use crate::handler::ChannelHandler;
 
 pub struct TerminalPtyHandler {
     /// Stores per-channel writer fds for writing client input to PTY master.
-    writers: Arc<Mutex<HashMap<String, OwnedFd>>>,
+    writers: Arc<Mutex<HashMap<ChannelId, OwnedFd>>>,
 }
 
 impl Default for TerminalPtyHandler {
@@ -41,7 +41,7 @@ impl ChannelHandler for TerminalPtyHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         vec![Message::Ready {
-            channel: channel.to_string(),
+            channel: channel.into(),
         }]
     }
 
@@ -82,7 +82,7 @@ impl ChannelHandler for TerminalPtyHandler {
             tracing::warn!(shell = %shell, "rejected non-whitelisted shell");
             let _ = tx
                 .send(Message::Close {
-                    channel: channel.to_string(),
+                    channel: channel.into(),
                     problem: Some(format!("shell not allowed: {shell}")),
                 })
                 .await;
@@ -111,7 +111,7 @@ impl ChannelHandler for TerminalPtyHandler {
             .and_then(|v| v.as_str())
             .unwrap_or(&default_cwd);
 
-        let channel = channel.to_string();
+        let channel: ChannelId = channel.into();
 
         // Audit log: terminal open
         let audit_user = target_user.as_deref().unwrap_or("unknown");

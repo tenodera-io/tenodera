@@ -16,7 +16,7 @@ impl ChannelHandler for LogFilesHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         // Only send Ready — keep channel open for bidirectional commands.
-        vec![Message::Ready { channel: channel.to_string() }]
+        vec![Message::Ready { channel: channel.into() }]
     }
 
     async fn data(&self, channel: &str, data: &serde_json::Value) -> Vec<Message> {
@@ -55,7 +55,7 @@ impl ChannelHandler for LogFilesHandler {
         };
 
         vec![Message::Data {
-            channel: channel.to_string(),
+            channel: channel.into(),
             data: serde_json::json!({ "type": "response", "action": action, "data": result }),
         }]
     }

@@ -2,15 +2,14 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
-    extract::{Query, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{State, WebSocketUpgrade, ws::{Message, WebSocket}},
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
-use serde::Deserialize;
 use tokio::sync::{mpsc, Mutex};
-use zeroize::Zeroizing;
 
+use tenodera_protocol::channel::ChannelId;
 use tenodera_protocol::message;
 
 use crate::AppState;
@@ -19,17 +18,19 @@ use crate::bridge_transport::BridgeProcess;
 use crate::hosts_config;
 use crate::security_headers::origin_matches_host;
 
-#[derive(Deserialize)]
-pub struct WsParams {
-    pub session_id: Option<String>,
-}
+/// Hard limit on simultaneously open channels per WebSocket session.
+const MAX_CHANNELS_PER_SESSION: usize = 512;
+/// Hard limit on remote bridge connections per WebSocket session.
+const MAX_REMOTE_BRIDGES: usize = 50;
+/// Timeout for the initial Auth message after WS upgrade.
+const AUTH_TIMEOUT_SECS: u64 = 10;
 
-/// GET /api/ws?session_id=… — upgrade to WebSocket for channel transport.
-/// Requires a valid session. Returns 401 if session is missing or invalid.
+/// GET /api/ws — upgrade to WebSocket for channel transport.
+/// Authentication happens inside the WebSocket via the first Auth message
+/// (session token), NOT via query parameters.
 /// Validates Origin header to prevent Cross-Site WebSocket Hijacking.
 pub async fn ws_upgrade(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<WsParams>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, StatusCode> {
@@ -47,28 +48,7 @@ pub async fn ws_upgrade(
         }
     }
 
-    let session_id = params.session_id.ok_or(StatusCode::UNAUTHORIZED)?;
-    let session = state
-        .sessions
-        .get(&session_id)
-        .await
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    // Check idle timeout
-    let elapsed = session.last_activity.elapsed().as_secs();
-    if elapsed > state.config.idle_timeout_secs {
-        state.sessions.remove(&session_id).await;
-        return Err(StatusCode::UNAUTHORIZED);
-    }
-
-    // Refresh activity on WS upgrade
-    state.sessions.touch(&session_id).await;
-
-    let user = session.user.clone();
-    let password = session.password.clone(); // Zeroizing<String> — zeroized on drop
-    tracing::info!(user = %user, "WS upgrade authorized");
-
-    Ok(ws.on_upgrade(move |socket| handle_socket(state, socket, session_id, user, password)))
+    Ok(ws.on_upgrade(move |socket| handle_socket(state, socket)))
 }
 
 /// Spawn a task forwarding messages from a bridge to the WebSocket sink.
@@ -96,8 +76,120 @@ fn spawn_bridge_forwarder(
     });
 }
 
-async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: String, user: String, password: Zeroizing<String>) {
+async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     let (sink, mut stream) = socket.split();
+    let sink = Arc::new(Mutex::new(sink));
+
+    // ── Auth phase: wait for the first message to be Auth { token } ──
+    let (session_id, user, password) = {
+        let auth_timeout = tokio::time::sleep(std::time::Duration::from_secs(AUTH_TIMEOUT_SECS));
+        tokio::pin!(auth_timeout);
+
+        let auth_result = loop {
+            tokio::select! {
+                _ = &mut auth_timeout => {
+                    tracing::warn!("WS auth timeout — no Auth message received");
+                    let err = message::Message::AuthResult {
+                        success: false,
+                        problem: Some("auth-timeout".into()),
+                        user: None,
+                    };
+                    let mut s = sink.lock().await;
+                    let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+                    return;
+                }
+                maybe_msg = stream.next() => {
+                    let Some(Ok(msg)) = maybe_msg else {
+                        return; // connection closed before auth
+                    };
+                    match msg {
+                        Message::Text(text) => {
+                            match serde_json::from_str::<message::Message>(&text) {
+                                Ok(message::Message::Auth { credentials }) => {
+                                    break credentials;
+                                }
+                                _ => {
+                                    // Non-auth message before auth — reject
+                                    tracing::warn!(raw = %text, "WS received non-auth message before authentication");
+                                    let err = message::Message::AuthResult {
+                                        success: false,
+                                        problem: Some("auth-required".into()),
+                                        user: None,
+                                    };
+                                    let mut s = sink.lock().await;
+                                    let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+                                    return;
+                                }
+                            }
+                        }
+                        Message::Close(_) => return,
+                        _ => continue,
+                    }
+                }
+            }
+        };
+
+        // Validate the token
+        let token = match auth_result {
+            message::AuthCredentials::Token { token } => token,
+            _ => {
+                let err = message::Message::AuthResult {
+                    success: false,
+                    problem: Some("token-scheme-required".into()),
+                    user: None,
+                };
+                let mut s = sink.lock().await;
+                let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+                return;
+            }
+        };
+
+        let session = match state.sessions.get(&token).await {
+            Some(s) => s,
+            None => {
+                let err = message::Message::AuthResult {
+                    success: false,
+                    problem: Some("invalid-session".into()),
+                    user: None,
+                };
+                let mut s = sink.lock().await;
+                let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+                return;
+            }
+        };
+
+        // Check idle timeout
+        let elapsed = session.last_activity.elapsed().as_secs();
+        if elapsed > state.config.idle_timeout_secs {
+            state.sessions.remove(&token).await;
+            let err = message::Message::AuthResult {
+                success: false,
+                problem: Some("session-expired".into()),
+                user: None,
+            };
+            let mut s = sink.lock().await;
+            let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+            return;
+        }
+
+        state.sessions.touch(&token).await;
+        let user = session.user.clone();
+        let password = session.password.clone();
+
+        // Send success
+        let ok = message::Message::AuthResult {
+            success: true,
+            problem: None,
+            user: Some(user.clone()),
+        };
+        {
+            let mut s = sink.lock().await;
+            let _ = s.send(Message::Text(serde_json::to_string(&ok).unwrap().into())).await;
+        }
+
+        tracing::info!(user = %user, "WS authenticated via token");
+        (token, user, password)
+    };
 
     tracing::debug!(user = %user, "new WebSocket connection");
 
@@ -118,8 +210,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
                 problem: Some(format!("bridge-spawn-failed: {e}")),
                 user: None,
             };
-            let mut sink = sink;
-            let _ = sink
+            let mut s = sink.lock().await;
+            let _ = s
                 .send(Message::Text(serde_json::to_string(&err_msg).unwrap().into()))
                 .await;
             return;
@@ -137,14 +229,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
     // Keep temp known_hosts files alive for SSH connections
     let mut _temp_files: Vec<tempfile::NamedTempFile> = Vec::new();
 
-    // Shared WebSocket sink
-    let sink = Arc::new(Mutex::new(sink));
-
     // Forward local bridge -> WebSocket
     spawn_bridge_forwarder("local".into(), local_receiver, sink.clone());
 
     // Channel -> bridge sender routing table
-    let mut channel_routes: HashMap<String, mpsc::Sender<message::Message>> = HashMap::new();
+    let mut channel_routes: HashMap<ChannelId, mpsc::Sender<message::Message>> = HashMap::new();
 
     // Remote bridge senders keyed by host ID
     let mut remote_senders: HashMap<String, mpsc::Sender<message::Message>> = HashMap::new();
@@ -175,6 +264,19 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
                                 let _ = s.send(Message::Text(pong.into())).await;
                             }
                             Ok(message::Message::Open { channel, options }) => {
+                                // Enforce per-session channel limit
+                                if channel_routes.len() >= MAX_CHANNELS_PER_SESSION {
+                                    tracing::warn!(user = %user, count = channel_routes.len(), "channel limit reached");
+                                    let close = message::Message::Close {
+                                        channel: channel.clone(),
+                                        problem: Some("channel-limit-exceeded".into()),
+                                    };
+                                    let json = serde_json::to_string(&close).unwrap();
+                                    let mut s = sink.lock().await;
+                                    let _ = s.send(Message::Text(json.into())).await;
+                                    continue;
+                                }
+
                                 let host_id = options.extra.get("host")
                                     .and_then(|v| v.as_str())
                                     .map(|s| s.to_string());
@@ -184,6 +286,19 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket, session_id: Stri
                                     if let Some(sender) = remote_senders.get(hid) {
                                         sender.clone()
                                     } else {
+                                        // Enforce per-session remote bridge limit
+                                        if remote_senders.len() >= MAX_REMOTE_BRIDGES {
+                                            tracing::warn!(user = %user, count = remote_senders.len(), "remote bridge limit reached");
+                                            let close = message::Message::Close {
+                                                channel: channel.clone(),
+                                                problem: Some("remote-bridge-limit-exceeded".into()),
+                                            };
+                                            let json = serde_json::to_string(&close).unwrap();
+                                            let mut s = sink.lock().await;
+                                            let _ = s.send(Message::Text(json.into())).await;
+                                            continue;
+                                        }
+
                                         // Spawn bridge on remote host via SSH
                                         match connect_remote(hid, &user, &password, bridge_bin).await {
                                             Ok(bridge) => {

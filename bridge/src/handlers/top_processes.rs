@@ -15,12 +15,12 @@ impl ChannelHandler for TopProcessesHandler {
         let procs = get_top_processes();
 
         vec![
-            Message::Ready { channel: channel.to_string() },
+            Message::Ready { channel: channel.into() },
             Message::Data {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 data: serde_json::json!({ "processes": procs }),
             },
-            Message::Close { channel: channel.to_string(), problem: None },
+            Message::Close { channel: channel.into(), problem: None },
         ]
     }
 }

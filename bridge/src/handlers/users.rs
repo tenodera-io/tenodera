@@ -21,7 +21,7 @@ impl ChannelHandler for UsersManageHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         vec![Message::Ready {
-            channel: channel.to_string(),
+            channel: channel.into(),
         }]
     }
 
@@ -112,7 +112,7 @@ impl ChannelHandler for UsersManageHandler {
         }
 
         vec![Message::Data {
-            channel: channel.to_string(),
+            channel: channel.into(),
             data: result,
         }]
     }

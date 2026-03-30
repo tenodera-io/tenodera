@@ -76,7 +76,7 @@ impl ChannelHandler for HostsManageHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         vec![Message::Ready {
-            channel: channel.to_string(),
+            channel: channel.into(),
         }]
     }
 
@@ -134,7 +134,7 @@ impl ChannelHandler for HostsManageHandler {
         };
 
         vec![Message::Data {
-            channel: channel.to_string(),
+            channel: channel.into(),
             data: result,
         }]
     }

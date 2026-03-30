@@ -9,6 +9,8 @@ export type Message =
   | { type: 'data'; channel: string; data: unknown }
   | { type: 'control'; channel: string; command: string; [key: string]: unknown }
   | { type: 'close'; channel: string; problem?: string }
+  | { type: 'auth'; credentials: { scheme: string; token: string } }
+  | { type: 'authresult'; success: boolean; problem?: string; user?: string }
   | { type: 'ping' }
   | { type: 'pong' };
 
@@ -26,15 +28,34 @@ export function connect(): Promise<void> {
 
   connectPromise = new Promise((resolve, reject) => {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const sessionId = sessionStorage.getItem('session_id') ?? '';
-    ws = new WebSocket(`${proto}//${location.host}/api/ws?session_id=${encodeURIComponent(sessionId)}`);
+    ws = new WebSocket(`${proto}//${location.host}/api/ws`);
 
-    ws.onopen = () => resolve();
+    ws.onopen = () => {
+      // Authenticate by sending session token as first message
+      const sessionId = sessionStorage.getItem('session_id') ?? '';
+      ws?.send(JSON.stringify({
+        type: 'auth',
+        credentials: { scheme: 'token', token: sessionId },
+      }));
+    };
+
     ws.onerror = () => reject(new Error('WebSocket connection failed'));
 
     ws.onmessage = (event) => {
       try {
         const msg: Message = JSON.parse(event.data);
+
+        // Handle auth result — resolve/reject the connect promise
+        if (msg.type === 'authresult') {
+          if ('success' in msg && msg.success) {
+            resolve();
+          } else {
+            const problem = ('problem' in msg && msg.problem) ? String(msg.problem) : 'authentication failed';
+            reject(new Error(problem));
+            ws?.close();
+          }
+          return;
+        }
 
         if (msg.type === 'ping') {
           ws?.send(JSON.stringify({ type: 'pong' }));

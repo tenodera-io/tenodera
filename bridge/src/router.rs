@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, watch};
 
-use tenodera_protocol::channel::ChannelOpenOptions;
+use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
@@ -18,11 +18,11 @@ struct ActiveChannel {
 /// Routes incoming messages to the correct ChannelHandler based on payload type.
 pub struct Router {
     handlers: HashMap<String, Arc<dyn ChannelHandler>>,
-    active_channels: HashMap<String, ActiveChannel>,
+    active_channels: HashMap<ChannelId, ActiveChannel>,
     /// Maps channel id → handler (for non-streaming channels that received Open).
-    channel_handlers: HashMap<String, Arc<dyn ChannelHandler>>,
+    channel_handlers: HashMap<ChannelId, Arc<dyn ChannelHandler>>,
     /// Maps channel id → open options (for injecting context into Data messages).
-    channel_options: HashMap<String, ChannelOpenOptions>,
+    channel_options: HashMap<ChannelId, ChannelOpenOptions>,
     /// Sender for outgoing messages (bridge → gateway).
     out_tx: mpsc::Sender<Message>,
 }

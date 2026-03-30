@@ -8,7 +8,7 @@
 #   make deps      — install build dependencies (Rust + Node.js + system libs)
 #   make build     — compile backend + frontend
 #   make install   — install binaries, UI, systemd services
-#   make uninstall — remove binaries, services (keeps config)
+#   make uninstall — remove binaries, services, config, UI, logs
 #   make clean     — remove build artifacts
 
 PREFIX      ?= /usr/local

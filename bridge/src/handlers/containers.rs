@@ -21,10 +21,10 @@ impl ChannelHandler for ContainersHandler {
 
         vec![
             Message::Ready {
-                channel: channel.to_string(),
+                channel: channel.into(),
             },
             Message::Data {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 data: serde_json::json!({
                     "type": "init",
                     "runtime": runtime,
@@ -51,7 +51,7 @@ impl ChannelHandler for ContainersHandler {
 
         let Some(rt) = rt else {
             return vec![Message::Data {
-                channel: channel.to_string(),
+                channel: channel.into(),
                 data: serde_json::json!({ "type": "error", "action": action, "error": "No container runtime found" }),
             }];
         };
@@ -129,7 +129,7 @@ impl ChannelHandler for ContainersHandler {
         }
 
         vec![Message::Data {
-            channel: channel.to_string(),
+            channel: channel.into(),
             data: serde_json::json!({ "type": "response", "action": action, "data": result }),
         }]
     }

@@ -9,6 +9,37 @@ use serde::{Deserialize, Serialize};
 use crate::AppState;
 use crate::pam;
 
+/// Extract client `SocketAddr` regardless of how it was injected.
+///
+/// - **Plaintext mode** — `axum::serve` with `into_make_service_with_connect_info`
+///   populates `ConnectInfo<SocketAddr>` natively.
+/// - **TLS mode** — our accept loop injects it via `axum::Extension(ConnectInfo(addr))`.
+///
+/// This extractor tries the native path first, then falls back to Extension.
+pub(crate) struct ClientAddr(SocketAddr);
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for ClientAddr {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &S,
+    ) -> Result<Self, Self::Rejection> {
+        // Try native ConnectInfo (plaintext mode)
+        if let Ok(ConnectInfo(addr)) = ConnectInfo::<SocketAddr>::from_request_parts(parts, state).await {
+            return Ok(Self(addr));
+        }
+        // Fallback: Extension (TLS mode)
+        if let Ok(axum::Extension(ConnectInfo(addr))) =
+            axum::Extension::<ConnectInfo<SocketAddr>>::from_request_parts(parts, state).await
+        {
+            return Ok(Self(addr));
+        }
+        tracing::error!("could not extract client address from request");
+        Err(StatusCode::INTERNAL_SERVER_ERROR)
+    }
+}
+
 #[derive(Deserialize)]
 pub struct LoginRequest {
     pub user: String,
@@ -74,7 +105,7 @@ pub async fn logout(
 /// Rate-limited per client IP: max_startups failed attempts per 5-minute window.
 pub async fn login(
     State(state): State<Arc<AppState>>,
-    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    ClientAddr(addr): ClientAddr,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<LoginError>)> {
     let client_ip = addr.ip();

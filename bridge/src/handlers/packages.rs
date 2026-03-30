@@ -21,7 +21,7 @@ impl ChannelHandler for PackagesHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         vec![Message::Ready {
-            channel: channel.to_string(),
+            channel: channel.into(),
         }]
     }
 
@@ -95,7 +95,7 @@ impl ChannelHandler for PackagesHandler {
         }
 
         vec![Message::Data {
-            channel: channel.to_string(),
+            channel: channel.into(),
             data: result,
         }]
     }
@@ -328,13 +328,25 @@ async fn search_apt(query: &str) -> Vec<serde_json::Value> {
 }
 
 async fn is_apt_installed(name: &str) -> bool {
-    let out = std::process::Command::new("dpkg-query")
-        .args(["-W", "-f", "${Status}", name])
-        .output();
-    match out {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).contains("install ok installed"),
-        Err(_) => false,
-    }
+    tokio::process::Command::new("dpkg-query")
+        .args(["-W", "-f", "${Status}", "--", name])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .await
+        .map(|o| String::from_utf8_lossy(&o.stdout).contains("install ok installed"))
+        .unwrap_or(false)
+}
+
+async fn is_rpm_installed(name: &str) -> bool {
+    tokio::process::Command::new("rpm")
+        .args(["-q", "--", name])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 async fn get_apt_candidate_version(name: &str) -> String {
@@ -390,10 +402,12 @@ async fn search_dnf(query: &str) -> Vec<serde_json::Value> {
             name_arch
         };
 
+        let installed = is_rpm_installed(name).await;
+
         pkgs.push(serde_json::json!({
             "name": name,
             "version": "",
-            "installed": false,
+            "installed": installed,
             "description": desc,
         }));
 

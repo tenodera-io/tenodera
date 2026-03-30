@@ -27,9 +27,9 @@ impl ChannelHandler for HardwareInfoHandler {
         });
 
         vec![
-            Message::Ready { channel: channel.to_string() },
-            Message::Data { channel: channel.to_string(), data: info },
-            Message::Close { channel: channel.to_string(), problem: None },
+            Message::Ready { channel: channel.into() },
+            Message::Data { channel: channel.into(), data: info },
+            Message::Close { channel: channel.into(), problem: None },
         ]
     }
 }
