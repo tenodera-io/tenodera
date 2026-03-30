@@ -16,6 +16,37 @@ interface UnitDetail {
   enabled: string;
 }
 
+/* ── column sorting ───────────────────────────────────── */
+type SortDir = 'asc' | 'desc' | null;
+type SortCol = 'active' | 'state' | null;
+
+const ACTIVE_ORDER: Record<string, number> = { active: 0, activating: 1, deactivating: 2, inactive: 3, failed: 4 };
+const STATE_ORDER: Record<string, number> = { running: 0, exited: 1, dead: 2, waiting: 3, mounted: 4 };
+
+function nextDir(current: SortDir): SortDir {
+  if (current === null) return 'desc';
+  if (current === 'desc') return 'asc';
+  return null;
+}
+
+function sortArrow(dir: SortDir): string {
+  if (dir === 'desc') return ' \u25BC';
+  if (dir === 'asc') return ' \u25B2';
+  return '';
+}
+
+function applySorting(list: Unit[], col: SortCol, dir: SortDir): Unit[] {
+  if (!col || !dir) return list;
+  const sorted = [...list];
+  const mul = dir === 'desc' ? 1 : -1;
+  if (col === 'active') {
+    sorted.sort((a, b) => mul * ((ACTIVE_ORDER[a.active] ?? 99) - (ACTIVE_ORDER[b.active] ?? 99)));
+  } else {
+    sorted.sort((a, b) => mul * ((STATE_ORDER[a.sub] ?? 99) - (STATE_ORDER[b.sub] ?? 99)));
+  }
+  return sorted;
+}
+
 export function Services() {
   const { request, openChannel } = useTransport();
   const su = useSuperuser();
@@ -28,6 +59,8 @@ export function Services() {
   const [pendingAction, setPendingAction] = useState<{ action: string; unit: string } | null>(null);
   const [password, setPassword] = useState('');
   const channelRef = useRef<ReturnType<typeof openChannel> | null>(null);
+  const [sortCol, setSortCol] = useState<SortCol>(null);
+  const [sortDir, setSortDir] = useState<SortDir>(null);
 
   const fetchUnits = useCallback(() => {
     request('systemd.units').then((results) => {
@@ -120,11 +153,26 @@ export function Services() {
     setPassword('');
   };
 
-  const filtered = units.filter(
-    (u) =>
-      u.unit?.toLowerCase().includes(filter.toLowerCase()) ||
-      u.description?.toLowerCase().includes(filter.toLowerCase()),
+  const filtered = applySorting(
+    units.filter(
+      (u) =>
+        u.unit?.toLowerCase().includes(filter.toLowerCase()) ||
+        u.description?.toLowerCase().includes(filter.toLowerCase()),
+    ),
+    sortCol,
+    sortDir,
   );
+
+  const handleSort = (col: 'active' | 'state') => {
+    if (sortCol === col) {
+      const nd = nextDir(sortDir);
+      setSortDir(nd);
+      if (nd === null) setSortCol(null);
+    } else {
+      setSortCol(col);
+      setSortDir('desc');
+    }
+  };
 
   return (
     <div>
@@ -148,8 +196,12 @@ export function Services() {
         <thead>
           <tr>
             <th style={styles.th}>Unit</th>
-            <th style={styles.th}>Active</th>
-            <th style={styles.th}>State</th>
+            <th style={styles.thSort} onClick={() => handleSort('active')}>
+              Active{sortCol === 'active' ? sortArrow(sortDir) : ''}
+            </th>
+            <th style={styles.thSort} onClick={() => handleSort('state')}>
+              State{sortCol === 'state' ? sortArrow(sortDir) : ''}
+            </th>
             <th style={styles.th}>Description</th>
           </tr>
         </thead>
@@ -408,6 +460,17 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
     fontSize: '0.8rem',
     textTransform: 'uppercase' as const,
+  },
+  thSort: {
+    textAlign: 'left' as const,
+    padding: '0.5rem',
+    borderBottom: '1px solid var(--border)',
+    color: 'var(--text-secondary)',
+    fontSize: '0.8rem',
+    textTransform: 'uppercase' as const,
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    whiteSpace: 'nowrap' as const,
   },
   td: {
     padding: '0.5rem',

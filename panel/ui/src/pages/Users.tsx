@@ -26,6 +26,37 @@ interface GroupInfo {
   system: boolean;
 }
 
+/* ── column sorting ───────────────────────────────────── */
+type SortDir = 'asc' | 'desc' | null;
+type UserSortCol = 'username' | 'uid' | 'status' | null;
+
+function nextSortDir(current: SortDir): SortDir {
+  if (current === null) return 'desc';
+  if (current === 'desc') return 'asc';
+  return null;
+}
+
+function sortArrow(dir: SortDir): string {
+  if (dir === 'desc') return ' \u25BC';
+  if (dir === 'asc') return ' \u25B2';
+  return '';
+}
+
+function sortUsers(list: UserInfo[], col: UserSortCol, dir: SortDir): UserInfo[] {
+  if (!col || !dir) return list;
+  const sorted = [...list];
+  const mul = dir === 'desc' ? 1 : -1;
+  if (col === 'username') {
+    sorted.sort((a, b) => mul * a.username.localeCompare(b.username));
+  } else if (col === 'uid') {
+    sorted.sort((a, b) => mul * (a.uid - b.uid));
+  } else if (col === 'status') {
+    /* desc = Active first (0), Locked last (1) */
+    sorted.sort((a, b) => mul * ((a.locked ? 1 : 0) - (b.locked ? 1 : 0)));
+  }
+  return sorted;
+}
+
 /* ── constants ─────────────────────────────────────────── */
 
 type Tab = 'users' | 'groups' | 'create';
@@ -93,6 +124,21 @@ export function Users() {
   // Messages
   const [actionMsg, setActionMsg] = useState('');
   const [actionError, setActionError] = useState('');
+
+  // Column sorting
+  const [userSortCol, setUserSortCol] = useState<UserSortCol>(null);
+  const [userSortDir, setUserSortDir] = useState<SortDir>(null);
+
+  const handleUserSort = (col: UserSortCol) => {
+    if (userSortCol === col) {
+      const nd = nextSortDir(userSortDir);
+      setUserSortDir(nd);
+      if (nd === null) setUserSortCol(null);
+    } else {
+      setUserSortCol(col);
+      setUserSortDir('desc');
+    }
+  };
 
   // Groups dropdown open state
   const [newGroupsOpen, setNewGroupsOpen] = useState(false);
@@ -225,17 +271,21 @@ export function Users() {
   }, [loadUsers, loadShells, loadGroups]);
 
   /* ── filter users ─────────────────────────────────────── */
-  const filteredUsers = users.filter(u => {
-    if (!showSystem && u.system) return false;
-    if (!filter) return true;
-    const q = filter.toLowerCase();
-    return u.username.toLowerCase().includes(q)
-      || u.uid.toString().includes(q)
-      || u.gecos.toLowerCase().includes(q)
-      || u.groups.some(g => g.toLowerCase().includes(q))
-      || u.last_login.toLowerCase().includes(q)
-      || (u.source || 'local').toLowerCase().includes(q);
-  });
+  const filteredUsers = sortUsers(
+    users.filter(u => {
+      if (!showSystem && u.system) return false;
+      if (!filter) return true;
+      const q = filter.toLowerCase();
+      return u.username.toLowerCase().includes(q)
+        || u.uid.toString().includes(q)
+        || u.gecos.toLowerCase().includes(q)
+        || u.groups.some(g => g.toLowerCase().includes(q))
+        || u.last_login.toLowerCase().includes(q)
+        || (u.source || 'local').toLowerCase().includes(q);
+    }),
+    userSortCol,
+    userSortDir,
+  );
 
   const filteredGroups = groups.filter(g => {
     if (!showSystemGroups && g.system) return false;
@@ -500,13 +550,19 @@ export function Users() {
                         }}
                       />
                     </th>
-                    <th style={S.th}>Username</th>
-                    <th style={S.th}>UID</th>
+                    <th style={S.thSort} onClick={() => handleUserSort('username')}>
+                      Username{userSortCol === 'username' ? sortArrow(userSortDir) : ''}
+                    </th>
+                    <th style={S.thSort} onClick={() => handleUserSort('uid')}>
+                      UID{userSortCol === 'uid' ? sortArrow(userSortDir) : ''}
+                    </th>
                     <th style={S.th}>Full Name</th>
                     <th style={S.th}>Groups</th>
                     <th style={S.th}>Shell</th>
                     <th style={S.th}>Last Login</th>
-                    <th style={S.th}>Status</th>
+                    <th style={S.thSort} onClick={() => handleUserSort('status')}>
+                      Status{userSortCol === 'status' ? sortArrow(userSortDir) : ''}
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1123,6 +1179,20 @@ const S: Record<string, React.CSSProperties> = {
     top: 0,
     background: 'var(--bg-base)',
     zIndex: 1,
+  },
+  thSort: {
+    textAlign: 'left' as const,
+    padding: '8px 12px',
+    borderBottom: '1px solid var(--border)',
+    color: 'var(--text-secondary)',
+    fontWeight: 600,
+    position: 'sticky' as const,
+    top: 0,
+    background: 'var(--bg-base)',
+    zIndex: 1,
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    whiteSpace: 'nowrap' as const,
   },
   tr: {
     borderBottom: '1px solid rgba(65,72,104,0.3)',

@@ -38,6 +38,24 @@ interface ServiceStatus {
 
 type Tab = 'containers' | 'images' | 'create';
 
+/* ── column sorting ───────────────────────────────────── */
+type SortDir = 'asc' | 'desc' | null;
+
+const CTR_STATE_ORDER: Record<string, number> = { running: 0, paused: 1, restarting: 2, created: 3, exited: 4, dead: 5 };
+const OWNER_ORDER: Record<string, number> = { user: 0, root: 1 };
+
+function nextDir(current: SortDir): SortDir {
+  if (current === null) return 'desc';
+  if (current === 'desc') return 'asc';
+  return null;
+}
+
+function sortArrow(dir: SortDir): string {
+  if (dir === 'desc') return ' \u25BC';
+  if (dir === 'asc') return ' \u25B2';
+  return '';
+}
+
 /* ── helpers ───────────────────────────────────────────── */
 
 function getId(c: Container | ContainerImage): string {
@@ -116,6 +134,55 @@ export function Containers() {
   });
   const [pullImage, setPullImage] = useState('');
   const [pulling, setPulling] = useState<string | null>(null);
+
+  // Sorting state — containers tab
+  const [ctrSortCol, setCtrSortCol] = useState<'state' | 'owner' | null>(null);
+  const [ctrSortDir, setCtrSortDir] = useState<SortDir>(null);
+  // Sorting state — images tab
+  const [imgSortCol, setImgSortCol] = useState<'owner' | null>(null);
+  const [imgSortDir, setImgSortDir] = useState<SortDir>(null);
+
+  const handleCtrSort = (col: 'state' | 'owner') => {
+    if (ctrSortCol === col) {
+      const nd = nextDir(ctrSortDir);
+      setCtrSortDir(nd);
+      if (nd === null) setCtrSortCol(null);
+    } else {
+      setCtrSortCol(col);
+      setCtrSortDir('desc');
+    }
+  };
+
+  const handleImgSort = (col: 'owner') => {
+    if (imgSortCol === col) {
+      const nd = nextDir(imgSortDir);
+      setImgSortDir(nd);
+      if (nd === null) setImgSortCol(null);
+    } else {
+      setImgSortCol(col);
+      setImgSortDir('desc');
+    }
+  };
+
+  const sortedContainers = (() => {
+    if (!ctrSortCol || !ctrSortDir) return containers;
+    const sorted = [...containers];
+    const mul = ctrSortDir === 'desc' ? 1 : -1;
+    if (ctrSortCol === 'state') {
+      sorted.sort((a, b) => mul * ((CTR_STATE_ORDER[(a.State || '').toLowerCase()] ?? 99) - (CTR_STATE_ORDER[(b.State || '').toLowerCase()] ?? 99)));
+    } else {
+      sorted.sort((a, b) => mul * ((OWNER_ORDER[a._owner || 'user'] ?? 99) - (OWNER_ORDER[b._owner || 'user'] ?? 99)));
+    }
+    return sorted;
+  })();
+
+  const sortedImages = (() => {
+    if (!imgSortCol || !imgSortDir) return images;
+    const sorted = [...images];
+    const mul = imgSortDir === 'desc' ? 1 : -1;
+    sorted.sort((a, b) => mul * ((OWNER_ORDER[a._owner || 'user'] ?? 99) - (OWNER_ORDER[b._owner || 'user'] ?? 99)));
+    return sorted;
+  })();
 
   // Track superuser state via ref to avoid channel re-creation on toggle
   const suRef = useRef(su);
@@ -388,15 +455,19 @@ export function Containers() {
                 <tr>
                   <th style={S.th}>Name</th>
                   <th style={S.th}>Image</th>
-                  <th style={S.th}>State</th>
-                  <th style={S.th}>Owner</th>
+                  <th style={S.thSort} onClick={() => handleCtrSort('state')}>
+                    State{ctrSortCol === 'state' ? sortArrow(ctrSortDir) : ''}
+                  </th>
+                  <th style={S.thSort} onClick={() => handleCtrSort('owner')}>
+                    Owner{ctrSortCol === 'owner' ? sortArrow(ctrSortDir) : ''}
+                  </th>
                   <th style={S.th}>Status</th>
                   <th style={S.th}>ID</th>
                   <th style={S.th}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {containers.map((c) => {
+                {sortedContainers.map((c) => {
                   const id = getId(c);
                   const state = (c.State || '').toLowerCase();
                   const owner = c._owner || 'user';
@@ -477,14 +548,16 @@ export function Containers() {
                 <thead>
                   <tr>
                     <th style={S.th}>Repository:Tag</th>
-                    <th style={S.th}>Owner</th>
+                    <th style={S.thSort} onClick={() => handleImgSort('owner')}>
+                      Owner{imgSortCol === 'owner' ? sortArrow(imgSortDir) : ''}
+                    </th>
                     <th style={S.th}>ID</th>
                     <th style={S.th}>Size</th>
                     <th style={S.th}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {images.map((img) => {
+                  {sortedImages.map((img) => {
                     const id = getId(img);
                     const owner = img._owner || 'user';
                     return (
@@ -741,6 +814,19 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
+  },
+  thSort: {
+    textAlign: 'left' as const,
+    padding: '0.5rem 0.75rem',
+    borderBottom: '1px solid var(--border)',
+    color: 'var(--text-secondary)',
+    fontSize: '0.75rem',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+    cursor: 'pointer',
+    userSelect: 'none' as const,
+    whiteSpace: 'nowrap' as const,
   },
   tr: {
     borderBottom: '1px solid #292e42',
