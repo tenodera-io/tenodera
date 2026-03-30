@@ -82,10 +82,12 @@ pub async fn security_headers(
             "camera=(), microphone=(), geolocation=(), payment=()"
         ),
     );
-    headers.insert(
-        "Strict-Transport-Security",
-        HeaderValue::from_static("max-age=63072000; includeSubDomains"),
-    );
+    if tls_active {
+        headers.insert(
+            "Strict-Transport-Security",
+            HeaderValue::from_static("max-age=63072000; includeSubDomains"),
+        );
+    }
     if is_api {
         headers.insert(
             "Cache-Control",

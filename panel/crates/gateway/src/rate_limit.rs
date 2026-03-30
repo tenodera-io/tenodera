@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 /// Sliding-window rate limiter for login attempts.
 ///
 /// Tracks failed attempts per IP address within a configurable window.
-/// Successful logins do not consume rate limit budget.
+/// Failed attempts accumulate and expire naturally after the window duration.
 #[derive(Clone)]
 pub struct LoginRateLimiter {
     /// IP -> list of failed attempt timestamps within the window.
@@ -49,12 +49,6 @@ impl LoginRateLimiter {
         let times = map.entry(ip).or_default();
         times.retain(|t| now.duration_since(*t) < self.window);
         times.push(now);
-    }
-
-    /// Remove all tracked attempts for an IP (e.g. after successful login).
-    pub async fn clear(&self, ip: IpAddr) {
-        let mut map = self.attempts.lock().await;
-        map.remove(&ip);
     }
 
     /// Periodic cleanup of stale entries. Call from a background task.

@@ -116,9 +116,6 @@ pub async fn login(
         ));
     }
 
-    // Clear rate limit on successful login
-    state.login_limiter.clear(client_ip).await;
-
     // Verify the user has sudo privileges — privileged operations
     // (package management, firewall, systemd) all require sudo.
     // Reject login early rather than failing cryptically later.

@@ -115,7 +115,7 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
                     tracing::warn!(user = %user, stderr = %stderr, "PAM account unavailable");
                     PamResult {
                         success: false,
-                        error: Some("account unavailable".to_string()),
+                        error: Some("authentication failed".to_string()),
                     }
                 }
                 _ => {
@@ -166,17 +166,24 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
 ///
 /// Returns `Ok(())` on success or `Err(message)` on failure.
 pub async fn verify_sudo(user: &str) -> Result<(), String> {
-    let output = Command::new("sudo")
-        .args(["-l", "-U", "--", user])
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| {
-            tracing::error!(error = %e, "sudo check process failed");
-            "unable to verify user privileges".to_string()
-        })?;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        Command::new("sudo")
+            .args(["-l", "-U", "--", user])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output(),
+    )
+    .await
+    .map_err(|_| {
+        tracing::error!(user = %user, "sudo check timed out (30s)");
+        "sudo verification timed out".to_string()
+    })?
+    .map_err(|e| {
+        tracing::error!(error = %e, "sudo check process failed");
+        "unable to verify user privileges".to_string()
+    })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);

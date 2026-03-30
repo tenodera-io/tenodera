@@ -113,6 +113,10 @@ impl ChannelHandler for TerminalPtyHandler {
 
         let channel = channel.to_string();
 
+        // Audit log: terminal open
+        let audit_user = target_user.as_deref().unwrap_or("unknown");
+        crate::audit::log(audit_user, "terminal.open", &format!("shell={shell}"), true, "");
+
         // Open PTY — returns (async reader via AsyncFd, writer OwnedFd)
         let (reader, writer) = match open_pty(&shell, cols, rows, cwd, target_user.as_deref()) {
             Ok(pair) => pair,
