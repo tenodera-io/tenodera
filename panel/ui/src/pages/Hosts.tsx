@@ -32,14 +32,15 @@ export function Hosts({ onClose, onChange }: HostsProps) {
   const [newSshPort, setNewSshPort] = useState('22');
   const [formError, setFormError] = useState('');
   const [tried, setTried] = useState(false);
-
-  // Host key verification state
-  const [scanning, setScanning] = useState(false);
-  const [scannedKey, setScannedKey] = useState('');
-  const [scannedFingerprint, setScannedFingerprint] = useState('');
-  const [keyConfirmed, setKeyConfirmed] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const chRef = useRef<Channel | null>(null);
+
+  // Tracks original address/port when editing (to detect changes)
+  const editOrigRef = useRef<{ address: string; ssh_port: number; host_key: string }>({ address: '', ssh_port: 22, host_key: '' });
+
+  // When keyscan returns during auto-submit, this ref tells handleData to proceed with add/edit
+  const pendingSubmitRef = useRef<{ name: string; address: string; user: string; ssh_port: number } | null>(null);
 
   /* ── handle incoming data from the channel ── */
   const resetForm = useCallback(() => {
@@ -48,10 +49,9 @@ export function Hosts({ onClose, onChange }: HostsProps) {
     setNewName(''); setNewAddr(''); setNewUser(''); setNewSshPort('22');
     setFormError('');
     setTried(false);
-    setScanning(false);
-    setScannedKey('');
-    setScannedFingerprint('');
-    setKeyConfirmed(false);
+    setSubmitting(false);
+    pendingSubmitRef.current = null;
+    editOrigRef.current = { address: '', ssh_port: 22, host_key: '' };
   }, []);
 
   const refreshList = useCallback(() => {
@@ -65,14 +65,27 @@ export function Hosts({ onClose, onChange }: HostsProps) {
     if (action === 'list') {
       setHosts((d.hosts as HostEntry[]) || []);
     } else if (action === 'keyscan') {
-      setScanning(false);
+      // Auto-submit: keyscan completed during add/edit flow
+      const pending = pendingSubmitRef.current;
+      if (!pending) return; // stale response
+
       if (d.ok) {
-        setScannedKey(d.host_key as string || '');
-        setScannedFingerprint(d.fingerprint as string || '');
+        const host_key = (d.host_key as string) || '';
+        const common = { ...pending, host_key };
+        if (formMode === 'edit') {
+          chRef.current?.send({ action: 'edit', id: editId, ...common });
+        } else {
+          chRef.current?.send({ action: 'add', ...common });
+        }
       } else {
-        setFormError((d.error as string) || 'Host key scan failed');
+        // Keyscan failed — show error, let user retry
+        pendingSubmitRef.current = null;
+        setSubmitting(false);
+        setFormError((d.error as string) || 'Host key scan failed — check address and port');
       }
     } else if (action === 'add') {
+      pendingSubmitRef.current = null;
+      setSubmitting(false);
       if (d.ok) {
         resetForm();
         refreshList();
@@ -80,6 +93,8 @@ export function Hosts({ onClose, onChange }: HostsProps) {
         setFormError((d.error as string) || 'Failed to add host');
       }
     } else if (action === 'edit') {
+      pendingSubmitRef.current = null;
+      setSubmitting(false);
       if (d.ok) {
         resetForm();
         refreshList();
@@ -89,7 +104,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
     } else if (action === 'remove' && d.ok) {
       refreshList();
     }
-  }, [resetForm, onChange, refreshList]);
+  }, [resetForm, refreshList, formMode, editId]);
 
   /* ── open channel ── */
   useEffect(() => {
@@ -107,34 +122,29 @@ export function Hosts({ onClose, onChange }: HostsProps) {
     return () => { ch.close(); };
   }, [handleData]);
 
-  /* ── keyscan ── */
-  const handleKeyscan = () => {
+  /* ── submit (add or edit) — auto keyscan + save ── */
+  const handleSubmit = () => {
     setTried(true);
     if (!newName || !newAddr) { setFormError('Name and address are required'); return; }
     setFormError('');
-    setScanning(true);
-    setScannedKey('');
-    setScannedFingerprint('');
-    setKeyConfirmed(false);
-    const ssh_port = parseInt(newSshPort, 10) || 22;
-    chRef.current?.send({ action: 'keyscan', address: newAddr, ssh_port });
-  };
+    setSubmitting(true);
 
-  /* ── submit (add or edit) ── */
-  const handleSubmit = () => {
     const ssh_port = parseInt(newSshPort, 10) || 22;
-    const common = {
-      name: newName,
-      address: newAddr,
-      user: newUser,
-      ssh_port,
-      host_key: scannedKey,
-    };
+    const common = { name: newName, address: newAddr, user: newUser, ssh_port };
+
+    // Edit mode: skip re-scan if address and port unchanged
     if (formMode === 'edit') {
-      chRef.current?.send({ action: 'edit', id: editId, ...common });
-    } else {
-      chRef.current?.send({ action: 'add', ...common });
+      const orig = editOrigRef.current;
+      if (newAddr === orig.address && ssh_port === orig.ssh_port && orig.host_key) {
+        // No change — send edit directly with existing key
+        chRef.current?.send({ action: 'edit', id: editId, ...common, host_key: orig.host_key });
+        return;
+      }
     }
+
+    // Keyscan first, then add/edit on success (handled in handleData)
+    pendingSubmitRef.current = common;
+    chRef.current?.send({ action: 'keyscan', address: newAddr, ssh_port });
   };
 
   const handleEdit = (h: HostEntry) => {
@@ -145,9 +155,8 @@ export function Hosts({ onClose, onChange }: HostsProps) {
     setNewUser(h.user);
     setNewSshPort(String(h.ssh_port));
     setFormError('');
-    setScannedKey(h.host_key || '');
-    setScannedFingerprint('');
-    setKeyConfirmed(!!h.host_key);
+    setSubmitting(false);
+    editOrigRef.current = { address: h.address, ssh_port: h.ssh_port, host_key: h.host_key || '' };
   };
 
   const handleRemove = (id: string) => {
@@ -195,88 +204,35 @@ export function Hosts({ onClose, onChange }: HostsProps) {
 
           <label style={S.label}>Name</label>
           <input style={{ ...S.input, borderColor: tried && !newName ? '#f7768e' : newName ? '#7aa2f7' : '#9ece6a' }} placeholder="e.g. Debian 12 VM" value={newName}
-            onChange={e => setNewName(e.target.value)} autoFocus />
+            onChange={e => setNewName(e.target.value)} autoFocus disabled={submitting} />
 
           <label style={S.label}>Address (IP or hostname)</label>
           <input style={{ ...S.input, borderColor: tried && !newAddr ? '#f7768e' : newAddr ? '#7aa2f7' : '#9ece6a' }} placeholder="e.g. 192.168.56.10" value={newAddr}
-            onChange={e => { setNewAddr(e.target.value); setScannedKey(''); setScannedFingerprint(''); setKeyConfirmed(false); }} />
+            onChange={e => setNewAddr(e.target.value)} disabled={submitting} />
 
           <label style={S.label}>SSH User (empty = logged-in user)</label>
           <input style={{ ...S.input, borderColor: newUser ? '#7aa2f7' : '#9ece6a' }} placeholder="leave empty for your login" value={newUser}
-            onChange={e => setNewUser(e.target.value)} />
+            onChange={e => setNewUser(e.target.value)} disabled={submitting} />
 
           <label style={S.label}>SSH Port</label>
           <input style={{ ...S.input, borderColor: newSshPort && newSshPort !== '22' ? '#7aa2f7' : '#9ece6a' }} placeholder="22" value={newSshPort}
-            onChange={e => { setNewSshPort(e.target.value); setScannedKey(''); setScannedFingerprint(''); setKeyConfirmed(false); }} />
+            onChange={e => setNewSshPort(e.target.value)} disabled={submitting} />
 
-          {/* ── Host Key Verification Section ── */}
-          <div style={S.keySection}>
-            <div style={S.keySectionHeader}>
-              <span style={S.keySectionTitle}>SSH Host Key Verification</span>
-              {scannedKey && keyConfirmed && (
-                <span style={S.keyVerified}>Verified</span>
-              )}
-              {scannedKey && !keyConfirmed && (
-                <span style={S.keyPending}>Pending confirmation</span>
-              )}
-              {!scannedKey && (
-                <span style={S.keyMissing}>Not scanned</span>
-              )}
+          {submitting && (
+            <div style={S.submittingMsg}>
+              Scanning host key and saving...
             </div>
-
-            {!scannedKey && !scanning && (
-              <button type="button" style={S.scanBtn} onClick={handleKeyscan}>
-                Scan Host Key
-              </button>
-            )}
-
-            {scanning && (
-              <div style={S.scanningMsg}>Scanning host key from {newAddr}:{newSshPort || '22'}...</div>
-            )}
-
-            {scannedKey && scannedFingerprint && !keyConfirmed && (
-              <div style={S.keyConfirmBox}>
-                <div style={S.keyConfirmLabel}>
-                  Verify the fingerprint below matches the remote host:
-                </div>
-                <div style={S.fingerprint}>{scannedFingerprint}</div>
-                <div style={S.keyConfirmLabel}>
-                  Key type: <b>{keyType(scannedKey)}</b>
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
-                  <button type="button" style={S.confirmBtn} onClick={() => setKeyConfirmed(true)}>
-                    Trust This Key
-                  </button>
-                  <button type="button" style={S.rejectBtn} onClick={() => { setScannedKey(''); setScannedFingerprint(''); }}>
-                    Reject
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {scannedKey && keyConfirmed && (
-              <div style={S.keyTrustedBox}>
-                <div style={S.keyTrustedLabel}>
-                  Key type: <b>{keyType(scannedKey)}</b>
-                  {scannedFingerprint && <> &mdash; {scannedFingerprint}</>}
-                </div>
-                <button type="button" style={S.rescanBtn} onClick={handleKeyscan}>
-                  Re-scan
-                </button>
-              </div>
-            )}
-          </div>
+          )}
 
           <div style={S.modalActions}>
-            <button type="button" style={S.cancelBtn} onClick={resetForm}>Cancel</button>
+            <button type="button" style={S.cancelBtn} onClick={resetForm} disabled={submitting}>Cancel</button>
             <button
               type="button"
-              style={{ ...S.submitBtn, opacity: !keyConfirmed ? 0.5 : 1 }}
-              disabled={!keyConfirmed || !newName || !newAddr}
+              style={{ ...S.submitBtn, opacity: submitting || !newName || !newAddr ? 0.5 : 1 }}
+              disabled={submitting || !newName || !newAddr}
               onClick={handleSubmit}
-              title={!keyConfirmed ? 'Scan and verify the host key first' : ''}
             >
-              {formMode === 'edit' ? 'Save' : 'Add Host'}
+              {submitting ? 'Adding...' : formMode === 'edit' ? 'Save' : 'Add Host'}
             </button>
           </div>
         </div>
@@ -293,7 +249,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
                 {h.host_key ? (
                   <span style={S.keyBadgeOk} title={'Key: ' + keyType(h.host_key)}>&#x1F512;</span>
                 ) : (
-                  <span style={S.keyBadgeWarn} title="No host key — re-edit to scan">&#x26A0;</span>
+                  <span style={S.keyBadgeWarn} title="No host key stored">&#x26A0;</span>
                 )}
               </div>
               <div style={S.cardAddr}>
@@ -478,125 +434,10 @@ const S: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     fontSize: '0.82rem',
   },
-
-  /* ── Host Key Section ── */
-  keySection: {
-    marginTop: '0.75rem',
-    padding: '0.75rem',
-    borderRadius: 6,
-    border: '1px solid var(--border)',
-    background: 'var(--bg-card)',
-  },
-  keySectionHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '0.5rem',
-  },
-  keySectionTitle: {
-    fontSize: '0.82rem',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-  },
-  keyVerified: {
-    fontSize: '0.72rem',
-    fontWeight: 600,
-    color: '#9ece6a',
-    padding: '0.1rem 0.4rem',
-    borderRadius: 3,
-    border: '1px solid #9ece6a',
-  },
-  keyPending: {
-    fontSize: '0.72rem',
-    fontWeight: 600,
-    color: '#e0af68',
-    padding: '0.1rem 0.4rem',
-    borderRadius: 3,
-    border: '1px solid #e0af68',
-  },
-  keyMissing: {
-    fontSize: '0.72rem',
-    fontWeight: 600,
-    color: 'var(--text-secondary)',
-    padding: '0.1rem 0.4rem',
-    borderRadius: 3,
-    border: '1px solid var(--border)',
-  },
-  scanBtn: {
-    padding: '0.4rem 0.8rem',
-    borderRadius: 4,
-    border: '1px solid var(--accent)',
-    background: 'transparent',
-    color: 'var(--accent)',
-    cursor: 'pointer',
-    fontWeight: 600,
-    fontSize: '0.8rem',
-  },
-  scanningMsg: {
+  submittingMsg: {
     fontSize: '0.82rem',
     color: 'var(--text-secondary)',
     fontStyle: 'italic',
-  },
-  keyConfirmBox: {
-    padding: '0.6rem',
-    borderRadius: 4,
-    border: '1px solid #e0af68',
-    background: 'rgba(224, 175, 104, 0.08)',
-  },
-  keyConfirmLabel: {
-    fontSize: '0.78rem',
-    color: 'var(--text-secondary)',
-    marginBottom: '0.3rem',
-  },
-  fingerprint: {
-    fontSize: '0.82rem',
-    fontFamily: 'monospace',
-    color: '#e0af68',
-    padding: '0.4rem 0.5rem',
-    background: 'var(--bg-primary)',
-    borderRadius: 4,
-    border: '1px solid var(--border)',
-    wordBreak: 'break-all' as const,
-    marginBottom: '0.3rem',
-  },
-  confirmBtn: {
-    padding: '0.35rem 0.7rem',
-    borderRadius: 4,
-    border: 'none',
-    background: '#9ece6a',
-    color: '#1a1b26',
-    cursor: 'pointer',
-    fontWeight: 600,
-    fontSize: '0.78rem',
-  },
-  rejectBtn: {
-    padding: '0.35rem 0.7rem',
-    borderRadius: 4,
-    border: '1px solid #f7768e',
-    background: 'transparent',
-    color: '#f7768e',
-    cursor: 'pointer',
-    fontWeight: 600,
-    fontSize: '0.78rem',
-  },
-  keyTrustedBox: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: '0.5rem',
-  },
-  keyTrustedLabel: {
-    fontSize: '0.78rem',
-    color: 'var(--text-secondary)',
-  },
-  rescanBtn: {
-    padding: '0.3rem 0.6rem',
-    borderRadius: 4,
-    border: '1px solid var(--border)',
-    background: 'transparent',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    fontSize: '0.72rem',
-    whiteSpace: 'nowrap' as const,
+    marginTop: '0.75rem',
   },
 };
