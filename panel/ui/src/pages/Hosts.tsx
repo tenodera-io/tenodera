@@ -334,6 +334,8 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     flexDirection: 'column' as const,
     gap: '0.4rem',
+    maxHeight: 150,
+    overflowY: 'auto' as const,
   },
   listItem: {
     display: 'flex',

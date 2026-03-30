@@ -880,7 +880,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 8,
     padding: '0.3rem 0',
     zIndex: 300,
-    maxHeight: 320,
+    maxHeight: 290,
     overflowY: 'auto' as const,
     boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
   },
