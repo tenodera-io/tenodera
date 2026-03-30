@@ -44,8 +44,9 @@ fn config_path() -> PathBuf {
     PathBuf::from("/etc/tenodera/hosts.json")
 }
 
-pub fn find_host(host_id: &str) -> Option<HostEntry> {
-    let config: HostsConfig = std::fs::read_to_string(config_path())
+pub async fn find_host(host_id: &str) -> Option<HostEntry> {
+    let config: HostsConfig = tokio::fs::read_to_string(config_path())
+        .await
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default();

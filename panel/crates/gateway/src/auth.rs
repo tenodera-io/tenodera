@@ -107,7 +107,10 @@ pub async fn login(
     if !result.success {
         tracing::warn!(user = %req.user, ip = %client_ip, "authentication failed");
         crate::audit::log(&req.user, "login", "", false, "authentication failed");
-        state.login_limiter.record_failure(client_ip).await;
+        // Atomic check-and-record: eliminates TOCTOU race between
+        // is_limited() and record_failure() that existed when they
+        // were separate calls with independent lock acquisitions.
+        state.login_limiter.check_and_record(client_ip).await;
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(LoginError {

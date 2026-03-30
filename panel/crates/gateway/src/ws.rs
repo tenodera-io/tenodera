@@ -308,7 +308,7 @@ async fn connect_remote(
     session_password: &str,
     bridge_bin: &str,
 ) -> anyhow::Result<BridgeProcess> {
-    let host = hosts_config::find_host(host_id)
+    let host = hosts_config::find_host(host_id).await
         .ok_or_else(|| anyhow::anyhow!("host not found: {host_id}"))?;
 
     let ssh_user = host.effective_user(session_user);

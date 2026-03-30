@@ -201,10 +201,16 @@ export function Networking() {
   }, [openChannel]);
 
   const sendManage = useCallback((data: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const ch = getManageChannel();
       const sentAction = data.action as string | undefined;
       let resolved = false;
+      const timer = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        removeHandler();
+        reject(new Error('request timed out'));
+      }, 30_000);
       const handler = (msg: Message) => {
         if (resolved) return;
         if (msg.type === 'data' && 'data' in msg) {
@@ -215,6 +221,7 @@ export function Networking() {
             return;
           }
           resolved = true;
+          clearTimeout(timer);
           removeHandler();
           resolve(res);
         }
@@ -368,7 +375,7 @@ export function Networking() {
     setLogsLoading(false);
   }, [sendManage]);
 
-  /* ── load data on tab switch or superuser change ──────── */
+  /* ── load data on tab switch, superuser change, or host change ── */
   useEffect(() => {
     if (tab === 'overview' || tab === 'interfaces') {
       loadInterfaces();
@@ -376,8 +383,7 @@ export function Networking() {
     }
     if (tab === 'firewall') loadFirewall();
     if (tab === 'logs') loadLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, su.active]);
+  }, [tab, su.active, loadInterfaces, loadVpn, loadFirewall, loadLogs]);
 
   /* ── privileged action helper ─────────────────────────── */
   const doPrivileged = useCallback(async (actionData: Record<string, unknown>) => {

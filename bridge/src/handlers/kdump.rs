@@ -342,7 +342,12 @@ async fn read_dmesg_log(dir_path: &str) -> serde_json::Value {
 
 fn is_valid_dump_path(path: &str) -> bool {
     let p = std::path::Path::new(path);
-    p.is_absolute()
-        && !path.contains("..")
-        && (path.starts_with("/var/crash") || path.starts_with("/var/lib/kdump"))
+    // Canonicalize resolves symlinks and ".." components, preventing
+    // path traversal attacks that bypass the prefix check.
+    let canonical = match p.canonicalize() {
+        Ok(c) => c,
+        Err(_) => return false, // non-existent or inaccessible path
+    };
+    let s = canonical.to_string_lossy();
+    s.starts_with("/var/crash") || s.starts_with("/var/lib/kdump")
 }

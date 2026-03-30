@@ -100,13 +100,13 @@ async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
         }
 
     // Resolve path via sudo
-    let resolved = sudo_cmd(password, &["readlink", "-f", path]).await;
+    let resolved = sudo_cmd(password, &["readlink", "-f", "--", path]).await;
     let resolved = resolved.trim();
     if resolved.is_empty() || resolved.starts_with("error:") {
         return serde_json::json!({ "error": format!("cannot resolve path: {path}") });
     }
 
-    let out = sudo_cmd(password, &["ls", "-laH", "--time-style=long-iso", resolved]).await;
+    let out = sudo_cmd(password, &["ls", "-laH", "--time-style=long-iso", "--", resolved]).await;
     if out.contains("Permission denied") || out.starts_with("error:") {
         return serde_json::json!({ "error": format!("cannot read directory: Permission denied") });
     }

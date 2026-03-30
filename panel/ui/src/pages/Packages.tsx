@@ -105,10 +105,16 @@ export function Packages() {
   }, [openChannel]);
 
   const sendManage = useCallback((data: Record<string, unknown>): Promise<Record<string, unknown>> => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const ch = getManageChannel();
       const sentAction = data.action as string | undefined;
       let resolved = false;
+      const timer = setTimeout(() => {
+        if (resolved) return;
+        resolved = true;
+        removeHandler();
+        reject(new Error('request timed out'));
+      }, 30_000);
       const handler = (msg: Message) => {
         if (resolved) return;
         if (msg.type === 'data' && 'data' in msg) {
@@ -119,6 +125,7 @@ export function Packages() {
             return;
           }
           resolved = true;
+          clearTimeout(timer);
           removeHandler();
           resolve(res);
         }

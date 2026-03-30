@@ -42,13 +42,22 @@ impl LoginRateLimiter {
         }
     }
 
-    /// Record a failed login attempt for the given IP.
-    pub async fn record_failure(&self, ip: IpAddr) {
+    /// Atomically check rate limit and record a failure in one lock acquisition.
+    /// Returns `true` if the IP is rate-limited (request should be rejected).
+    /// If not limited, records the failure timestamp before releasing the lock,
+    /// eliminating the TOCTOU race between is_limited() and record_failure().
+    pub async fn check_and_record(&self, ip: IpAddr) -> bool {
         let mut map = self.attempts.lock().await;
         let now = Instant::now();
         let times = map.entry(ip).or_default();
         times.retain(|t| now.duration_since(*t) < self.window);
-        times.push(now);
+
+        if times.len() >= self.max_attempts {
+            return true; // already limited
+        }
+
+        times.push(now); // record failure atomically
+        false
     }
 
     /// Periodic cleanup of stale entries. Call from a background task.
