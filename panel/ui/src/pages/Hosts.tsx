@@ -126,10 +126,21 @@ export function Hosts({ onClose, onChange }: HostsProps) {
   const handleSubmit = () => {
     setTried(true);
     if (!newName || !newAddr) { setFormError('Name and address are required'); return; }
+
+    const ssh_port = parseInt(newSshPort, 10) || 22;
+
+    // Duplicate check (address + port), exclude current host in edit mode
+    const duplicate = hosts.find((h) =>
+      h.address === newAddr && h.ssh_port === ssh_port && (formMode !== 'edit' || h.id !== editId)
+    );
+    if (duplicate) {
+      setFormError(`Host ${newAddr}:${ssh_port} already exists (${duplicate.name})`);
+      return;
+    }
+
     setFormError('');
     setSubmitting(true);
 
-    const ssh_port = parseInt(newSshPort, 10) || 22;
     const common = { name: newName, address: newAddr, user: newUser, ssh_port };
 
     // Edit mode: skip re-scan if address and port unchanged

@@ -11,6 +11,15 @@ interface AdvancedRow {
   port: string;
 }
 
+interface HostEntry {
+  id: string;
+  name: string;
+  address: string;
+  user: string;
+  ssh_port: number;
+  host_key: string;
+}
+
 type HostStep = 'pending' | 'keyscan' | 'adding' | 'resolving' | 'renaming' | 'done' | 'error';
 
 interface HostProgress {
@@ -52,6 +61,56 @@ export function BulkHosts() {
   const activeIdxRef = useRef(0);
   const chRef = useRef<Channel | null>(null);
   const cancelledRef = useRef(false);
+
+  /* Host list state */
+  const [hosts, setHosts] = useState<HostEntry[]>([]);
+  const [hostStatuses, setHostStatuses] = useState<Record<string, 'unknown' | 'ok' | 'error'>>({});
+
+  /* Edit modal state */
+  const [editHost, setEditHost] = useState<HostEntry | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editAddr, setEditAddr] = useState('');
+  const [editUser, setEditUser] = useState('');
+  const [editPort, setEditPort] = useState('22');
+  const [editError, setEditError] = useState('');
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const editOrigRef = useRef<{ address: string; ssh_port: number; host_key: string }>({ address: '', ssh_port: 22, host_key: '' });
+
+  /* ── load host list ── */
+  const loadHosts = useCallback(() => {
+    const ch = openChannel('hosts.manage');
+    ch.onMessage((msg: Message) => {
+      if (msg.type === 'data' && 'data' in msg) {
+        const d = msg.data as Record<string, unknown>;
+        if (d.action === 'list' && d.hosts) {
+          setHosts(d.hosts as HostEntry[]);
+        }
+      }
+    });
+    ch.send({ action: 'list' });
+    setTimeout(() => ch.close(), 2000);
+  }, []);
+
+  /* Load hosts on mount */
+  useEffect(() => {
+    loadHosts();
+  }, [loadHosts]);
+
+  /* Probe host connectivity — on mount and every 15s */
+  useEffect(() => {
+    if (hosts.length === 0) return;
+    let cancelled = false;
+    const probe = () => {
+      for (const h of hosts) {
+        request('system.info', { host: h.id })
+          .then(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'ok' })); })
+          .catch(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'error' })); });
+      }
+    };
+    probe();
+    const interval = setInterval(probe, 15_000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [hosts]);
 
   /* Cleanup channel on unmount */
   useEffect(() => {
@@ -181,6 +240,7 @@ export function BulkHosts() {
     } catch {
       // If system.info fails, keep IP as name — not a fatal error
       updateProgress(idx, { step: 'done', detail: `Added as ${entry.address} (hostname lookup failed)`, hostname: entry.address });
+      loadHosts();
       return;
     }
 
@@ -230,21 +290,23 @@ export function BulkHosts() {
     } catch {
       // Rename failed but host was added — partial success
       updateProgress(idx, { step: 'done', detail: `Added as ${entry.address} (rename failed)`, hostname: entry.address });
+      loadHosts();
       return;
     }
 
     updateProgress(idx, { step: 'done', detail: `Done (${realHostname})`, hostname: realHostname });
-  }, [updateProgress]);
+    loadHosts();
+  }, [updateProgress, loadHosts]);
 
   /* ── start processing all hosts sequentially ── */
-  const startProcessing = useCallback(async (entries: HostProgress[]) => {
+  const startProcessing = useCallback(async (entries: HostProgress[], skipCount = 0) => {
     setProcessing(true);
     cancelledRef.current = false;
     queueRef.current = entries;
-    activeIdxRef.current = 0;
+    activeIdxRef.current = skipCount;
     setProgress([...entries]);
 
-    for (let i = 0; i < entries.length; i++) {
+    for (let i = skipCount; i < entries.length; i++) {
       if (cancelledRef.current) break;
       activeIdxRef.current = i;
       await processHost(i, entries[i]);
@@ -258,15 +320,37 @@ export function BulkHosts() {
     const addrs = parseAddresses(quickText);
     if (addrs.length === 0) return;
 
-    const entries: HostProgress[] = addrs.map((addr) => ({
-      address: addr,
-      user: '',
-      port: 22,
-      step: 'pending' as HostStep,
-      detail: 'Waiting...',
-    }));
+    // Filter out duplicates (already in hosts list)
+    const dupes: string[] = [];
+    const fresh: string[] = [];
+    for (const addr of addrs) {
+      if (isDuplicate(addr, 22)) {
+        dupes.push(addr);
+      } else {
+        fresh.push(addr);
+      }
+    }
 
-    startProcessing(entries);
+    const entries: HostProgress[] = [
+      ...dupes.map((addr) => ({
+        address: addr, user: '', port: 22,
+        step: 'error' as HostStep,
+        detail: `Already exists (${addr}:22)`,
+      })),
+      ...fresh.map((addr) => ({
+        address: addr, user: '', port: 22,
+        step: 'pending' as HostStep,
+        detail: 'Waiting...',
+      })),
+    ];
+
+    if (fresh.length === 0) {
+      // All duplicates — show results but don't process
+      setProgress(entries);
+      return;
+    }
+
+    startProcessing(entries, dupes.length);
   };
 
   /* ── Advanced Add submit ── */
@@ -274,15 +358,37 @@ export function BulkHosts() {
     const valid = rows.filter((r) => r.address.trim());
     if (valid.length === 0) return;
 
-    const entries: HostProgress[] = valid.map((r) => ({
-      address: r.address.trim(),
-      user: r.user.trim(),
-      port: parseInt(r.port, 10) || 22,
-      step: 'pending' as HostStep,
-      detail: 'Waiting...',
-    }));
+    const dupes: { address: string; user: string; port: number }[] = [];
+    const fresh: { address: string; user: string; port: number }[] = [];
+    for (const r of valid) {
+      const addr = r.address.trim();
+      const port = parseInt(r.port, 10) || 22;
+      if (isDuplicate(addr, port)) {
+        dupes.push({ address: addr, user: r.user.trim(), port });
+      } else {
+        fresh.push({ address: addr, user: r.user.trim(), port });
+      }
+    }
 
-    startProcessing(entries);
+    const entries: HostProgress[] = [
+      ...dupes.map((d) => ({
+        address: d.address, user: d.user, port: d.port,
+        step: 'error' as HostStep,
+        detail: `Already exists (${d.address}:${d.port})`,
+      })),
+      ...fresh.map((f) => ({
+        address: f.address, user: f.user, port: f.port,
+        step: 'pending' as HostStep,
+        detail: 'Waiting...',
+      })),
+    ];
+
+    if (fresh.length === 0) {
+      setProgress(entries);
+      return;
+    }
+
+    startProcessing(entries, dupes.length);
   };
 
   /* ── Cancel ── */
@@ -314,6 +420,108 @@ export function BulkHosts() {
     setRows((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  /* ── Remove host from list ── */
+  const handleRemoveHost = useCallback((id: string) => {
+    const ch = openChannel('hosts.manage');
+    ch.onMessage((msg: Message) => {
+      if (msg.type === 'data' && 'data' in msg) {
+        const d = msg.data as Record<string, unknown>;
+        if (d.action === 'remove') {
+          ch.close();
+          if (d.ok) loadHosts();
+        }
+      }
+    });
+    ch.send({ action: 'remove', id });
+    setTimeout(() => ch.close(), 5000);
+  }, [loadHosts]);
+
+  /* ── Duplicate check (address + port) ── */
+  const isDuplicate = useCallback((address: string, port: number, excludeId?: string) => {
+    return hosts.some((h) => h.address === address && h.ssh_port === port && h.id !== excludeId);
+  }, [hosts]);
+
+  /* ── Edit modal helpers ── */
+  const openEditModal = useCallback((h: HostEntry) => {
+    setEditHost(h);
+    setEditName(h.name);
+    setEditAddr(h.address);
+    setEditUser(h.user);
+    setEditPort(String(h.ssh_port));
+    setEditError('');
+    setEditSubmitting(false);
+    editOrigRef.current = { address: h.address, ssh_port: h.ssh_port, host_key: h.host_key || '' };
+  }, []);
+
+  const closeEditModal = useCallback(() => {
+    setEditHost(null);
+    setEditError('');
+    setEditSubmitting(false);
+  }, []);
+
+  const handleEditSubmit = useCallback(() => {
+    if (!editHost) return;
+    if (!editName || !editAddr) { setEditError('Name and address are required'); return; }
+    const port = parseInt(editPort, 10) || 22;
+
+    if (isDuplicate(editAddr, port, editHost.id)) {
+      setEditError(`Host ${editAddr}:${port} already exists`);
+      return;
+    }
+
+    setEditError('');
+    setEditSubmitting(true);
+
+    const orig = editOrigRef.current;
+    const common = { name: editName, address: editAddr, user: editUser, ssh_port: port };
+
+    // If address/port unchanged, edit directly with existing key
+    if (editAddr === orig.address && port === orig.ssh_port && orig.host_key) {
+      const ch = openChannel('hosts.manage');
+      ch.onMessage((msg: Message) => {
+        if (msg.type === 'data' && 'data' in msg) {
+          const d = msg.data as Record<string, unknown>;
+          if (d.action === 'edit') {
+            ch.close();
+            setEditSubmitting(false);
+            if (d.ok) { closeEditModal(); loadHosts(); }
+            else { setEditError((d.error as string) || 'Edit failed'); }
+          }
+        }
+      });
+      ch.send({ action: 'edit', id: editHost.id, ...common, host_key: orig.host_key });
+      setTimeout(() => ch.close(), 10_000);
+      return;
+    }
+
+    // Address/port changed — keyscan first, then edit
+    const ch = openChannel('hosts.manage');
+    let gotKey = false;
+    ch.onMessage((msg: Message) => {
+      if (msg.type === 'data' && 'data' in msg) {
+        const d = msg.data as Record<string, unknown>;
+        if (d.action === 'keyscan' && !gotKey) {
+          gotKey = true;
+          if (!d.ok) {
+            ch.close();
+            setEditSubmitting(false);
+            setEditError((d.error as string) || 'Host key scan failed');
+            return;
+          }
+          const host_key = (d.host_key as string) || '';
+          ch.send({ action: 'edit', id: editHost.id, ...common, host_key });
+        } else if (d.action === 'edit') {
+          ch.close();
+          setEditSubmitting(false);
+          if (d.ok) { closeEditModal(); loadHosts(); }
+          else { setEditError((d.error as string) || 'Edit failed'); }
+        }
+      }
+    });
+    ch.send({ action: 'keyscan', address: editAddr, ssh_port: port });
+    setTimeout(() => ch.close(), 20_000);
+  }, [editHost, editName, editAddr, editUser, editPort, isDuplicate, closeEditModal, loadHosts]);
+
   /* ── Progress summary ── */
   const doneCount = progress.filter((p) => p.step === 'done').length;
   const errorCount = progress.filter((p) => p.step === 'error').length;
@@ -334,182 +542,301 @@ export function BulkHosts() {
 
   /* ── Render ── */
   return (
-    <div style={S.page}>
+    <div>
       <h2 style={S.pageTitle}>Manage Hosts</h2>
       <p style={S.pageDesc}>
         Bulk add remote hosts. Each host is automatically key-scanned, added, and renamed
         to its real hostname via SSH.
       </p>
 
-      {/* Tab selector */}
-      {!processing && progress.length === 0 && (
-        <>
-          <div style={S.tabs}>
-            <button
-              style={{ ...S.tab, ...(tab === 'quick' ? S.tabActive : {}) }}
-              onClick={() => setTab('quick')}
-            >
-              Quick Add
-            </button>
-            <button
-              style={{ ...S.tab, ...(tab === 'advanced' ? S.tabActive : {}) }}
-              onClick={() => setTab('advanced')}
-            >
-              Advanced Add
-            </button>
-          </div>
-
-          {/* Quick Add tab */}
-          {tab === 'quick' && (
-            <div style={S.section}>
-              <label style={S.label}>
-                Paste IP addresses (separated by commas, spaces, or newlines)
-              </label>
-              <textarea
-                style={{
-                  ...S.textarea,
-                  borderColor: quickText.trim() ? '#7aa2f7' : '#9ece6a',
-                }}
-                rows={6}
-                placeholder={'192.168.56.11\n192.168.56.20\n10.0.0.5'}
-                value={quickText}
-                onChange={(e) => setQuickText(e.target.value)}
-              />
-              <div style={S.info}>
-                Port 22, SSH user = your login. Host name auto-detected.
-              </div>
-              <div style={S.actions}>
+      <div style={S.columns}>
+        {/* ── Left column: add form / progress ── */}
+        <div style={S.leftCol}>
+          {/* Tab selector */}
+          {!processing && progress.length === 0 && (
+            <>
+              <div style={S.tabs}>
                 <button
-                  style={{
-                    ...S.submitBtn,
-                    opacity: !quickText.trim() ? 0.5 : 1,
-                  }}
-                  disabled={!quickText.trim()}
-                  onClick={handleQuickSubmit}
+                  style={{ ...S.tab, ...(tab === 'quick' ? S.tabActive : {}) }}
+                  onClick={() => setTab('quick')}
                 >
-                  Add Hosts ({parseAddresses(quickText).length || 0})
+                  Quick Add
+                </button>
+                <button
+                  style={{ ...S.tab, ...(tab === 'advanced' ? S.tabActive : {}) }}
+                  onClick={() => setTab('advanced')}
+                >
+                  Advanced Add
                 </button>
               </div>
-            </div>
-          )}
 
-          {/* Advanced Add tab */}
-          {tab === 'advanced' && (
-            <div style={S.section}>
-              <div style={S.tableHeader}>
-                <span style={{ ...S.thCell, flex: 3 }}>Address</span>
-                <span style={{ ...S.thCell, flex: 2 }}>SSH User</span>
-                <span style={{ ...S.thCell, flex: 1 }}>Port</span>
-                <span style={{ ...S.thCell, width: 32 }} />
-              </div>
-              {rows.map((row, i) => (
-                <div key={i} style={S.tableRow}>
-                  <input
+              {/* Quick Add tab */}
+              {tab === 'quick' && (
+                <div style={S.section}>
+                  <label style={S.label}>
+                    Paste IP addresses (separated by commas, spaces, or newlines)
+                  </label>
+                  <textarea
                     style={{
-                      ...S.rowInput,
-                      flex: 3,
-                      borderColor: row.address.trim() ? '#7aa2f7' : '#9ece6a',
+                      ...S.textarea,
+                      borderColor: quickText.trim() ? '#7aa2f7' : '#9ece6a',
                     }}
-                    placeholder="192.168.56.11"
-                    value={row.address}
-                    onChange={(e) => updateRow(i, 'address', e.target.value)}
+                    rows={6}
+                    placeholder={'192.168.56.11\n192.168.56.20\n10.0.0.5'}
+                    value={quickText}
+                    onChange={(e) => setQuickText(e.target.value)}
                   />
-                  <input
-                    style={{
-                      ...S.rowInput,
-                      flex: 2,
-                      borderColor: row.user.trim() ? '#7aa2f7' : '#9ece6a',
-                    }}
-                    placeholder="(login user)"
-                    value={row.user}
-                    onChange={(e) => updateRow(i, 'user', e.target.value)}
-                  />
-                  <input
-                    style={{
-                      ...S.rowInput,
-                      flex: 1,
-                      borderColor: row.port && row.port !== '22' ? '#7aa2f7' : '#9ece6a',
-                    }}
-                    placeholder="22"
-                    value={row.port}
-                    onChange={(e) => updateRow(i, 'port', e.target.value)}
-                  />
-                  <button
-                    style={S.rowDeleteBtn}
-                    onClick={() => removeRow(i)}
-                    title="Remove row"
-                    disabled={rows.length <= 1}
-                  >
-                    &#x2715;
-                  </button>
+                  <div style={S.info}>
+                    Port 22, SSH user = your login. Host name auto-detected.
+                  </div>
+                  <div style={S.actions}>
+                    <button
+                      style={{
+                        ...S.submitBtn,
+                        opacity: !quickText.trim() ? 0.5 : 1,
+                      }}
+                      disabled={!quickText.trim()}
+                      onClick={handleQuickSubmit}
+                    >
+                      Add Hosts ({parseAddresses(quickText).length || 0})
+                    </button>
+                  </div>
                 </div>
-              ))}
-              <button style={S.addRowBtn} onClick={addRow}>
-                + Add Row
-              </button>
-              <div style={S.actions}>
-                <button
-                  style={{
-                    ...S.submitBtn,
-                    opacity: !rows.some((r) => r.address.trim()) ? 0.5 : 1,
-                  }}
-                  disabled={!rows.some((r) => r.address.trim())}
-                  onClick={handleAdvancedSubmit}
-                >
-                  Add Hosts ({rows.filter((r) => r.address.trim()).length})
-                </button>
+              )}
+
+              {/* Advanced Add tab */}
+              {tab === 'advanced' && (
+                <div style={S.section}>
+                  <div style={S.tableHeader}>
+                    <span style={{ ...S.thCell, flex: 3 }}>Address</span>
+                    <span style={{ ...S.thCell, flex: 2 }}>SSH User</span>
+                    <span style={{ ...S.thCell, flex: 1 }}>Port</span>
+                    <span style={{ ...S.thCell, width: 32 }} />
+                  </div>
+                  {rows.map((row, i) => (
+                    <div key={i} style={S.tableRow}>
+                      <input
+                        style={{
+                          ...S.rowInput,
+                          flex: 3,
+                          borderColor: row.address.trim() ? '#7aa2f7' : '#9ece6a',
+                        }}
+                        placeholder="192.168.56.11"
+                        value={row.address}
+                        onChange={(e) => updateRow(i, 'address', e.target.value)}
+                      />
+                      <input
+                        style={{
+                          ...S.rowInput,
+                          flex: 2,
+                          borderColor: row.user.trim() ? '#7aa2f7' : '#9ece6a',
+                        }}
+                        placeholder="(login user)"
+                        value={row.user}
+                        onChange={(e) => updateRow(i, 'user', e.target.value)}
+                      />
+                      <input
+                        style={{
+                          ...S.rowInput,
+                          flex: 1,
+                          borderColor: row.port && row.port !== '22' ? '#7aa2f7' : '#9ece6a',
+                        }}
+                        placeholder="22"
+                        value={row.port}
+                        onChange={(e) => updateRow(i, 'port', e.target.value)}
+                      />
+                      <button
+                        style={S.rowDeleteBtn}
+                        onClick={() => removeRow(i)}
+                        title="Remove row"
+                        disabled={rows.length <= 1}
+                      >
+                        &#x2715;
+                      </button>
+                    </div>
+                  ))}
+                  <button style={S.addRowBtn} onClick={addRow}>
+                    + Add Row
+                  </button>
+                  <div style={S.actions}>
+                    <button
+                      style={{
+                        ...S.submitBtn,
+                        opacity: !rows.some((r) => r.address.trim()) ? 0.5 : 1,
+                      }}
+                      disabled={!rows.some((r) => r.address.trim())}
+                      onClick={handleAdvancedSubmit}
+                    >
+                      Add Hosts ({rows.filter((r) => r.address.trim()).length})
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ── Progress view ── */}
+          {(processing || progress.length > 0) && (
+            <div style={S.section}>
+              {/* Summary bar */}
+              <div style={S.summary}>
+                <span>
+                  {processing ? 'Processing...' : 'Complete'}{' '}
+                  <span style={{ color: '#9ece6a' }}>{doneCount} added</span>
+                  {errorCount > 0 && (
+                    <span style={{ color: '#f7768e' }}>, {errorCount} failed</span>
+                  )}
+                  <span style={{ color: 'var(--text-secondary)' }}> / {progress.length} total</span>
+                </span>
+                {processing && (
+                  <button style={S.cancelBtn} onClick={handleCancel}>
+                    Cancel
+                  </button>
+                )}
+                {allDone && (
+                  <button style={S.submitBtn} onClick={handleReset}>
+                    Add More
+                  </button>
+                )}
+              </div>
+
+              {/* Per-host progress */}
+              <div style={S.progressList}>
+                {progress.map((p, i) => {
+                  const badge = stepBadge(p.step);
+                  return (
+                    <div key={i} style={S.progressItem}>
+                      <span style={S.progressAddr}>{p.address}</span>
+                      <span
+                        style={{
+                          ...S.progressBadge,
+                          color: badge.color,
+                          background: badge.bg,
+                          borderColor: badge.color + '44',
+                        }}
+                      >
+                        {badge.text}
+                      </span>
+                      <span style={S.progressDetail}>{p.detail}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
-        </>
-      )}
+        </div>
 
-      {/* ── Progress view ── */}
-      {(processing || progress.length > 0) && (
-        <div style={S.section}>
-          {/* Summary bar */}
-          <div style={S.summary}>
-            <span>
-              {processing ? 'Processing...' : 'Complete'}{' '}
-              <span style={{ color: '#9ece6a' }}>{doneCount} added</span>
-              {errorCount > 0 && (
-                <span style={{ color: '#f7768e' }}>, {errorCount} failed</span>
-              )}
-              <span style={{ color: 'var(--text-secondary)' }}> / {progress.length} total</span>
-            </span>
-            {processing && (
-              <button style={S.cancelBtn} onClick={handleCancel}>
+        {/* ── Right column: host list ── */}
+        <div style={S.rightCol}>
+          <div style={S.section}>
+            <div style={S.hostListHeader}>
+              <span style={S.hostListTitle}>Remote Hosts</span>
+              <span style={S.hostCount}>{hosts.length}</span>
+            </div>
+            {hosts.length === 0 ? (
+              <div style={S.emptyList}>No remote hosts configured.</div>
+            ) : (
+              <div style={S.hostList}>
+                {hosts.map((h) => {
+                  const st = hostStatuses[h.id] ?? 'unknown';
+                  const dotColor = st === 'ok' ? '#9ece6a' : st === 'error' ? '#f7768e' : '#565f89';
+                  return (
+                    <div key={h.id} style={S.hostItem}>
+                      <span style={{
+                        display: 'inline-block',
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        background: dotColor,
+                        boxShadow: st !== 'unknown' ? `0 0 4px ${dotColor}` : 'none',
+                        flexShrink: 0,
+                      }} title={st === 'ok' ? 'Online' : st === 'error' ? 'Offline' : 'Checking...'} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={S.hostName}>{h.name}</div>
+                        <div style={S.hostAddr}>
+                          {h.user ? h.user : '(session user)'}@{h.address}{h.ssh_port !== 22 ? `:${h.ssh_port}` : ''}
+                        </div>
+                      </div>
+                      <button
+                        style={S.hostEditBtn}
+                        onClick={() => openEditModal(h)}
+                        title="Edit host"
+                      >
+                        &#x270E;
+                      </button>
+                      <button
+                        style={S.hostRemoveBtn}
+                        onClick={() => handleRemoveHost(h.id)}
+                        title="Remove host"
+                      >
+                        &#x2715;
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Edit host modal ── */}
+      {editHost && (
+        <div style={S.modalOverlay} onClick={closeEditModal}>
+          <div style={S.modal} onClick={(e) => e.stopPropagation()}>
+            <h3 style={S.modalTitle}>Edit Host</h3>
+            {editError && <div style={S.modalError}>{editError}</div>}
+
+            <label style={S.label}>Name</label>
+            <input
+              style={{ ...S.modalInput, borderColor: editName ? '#7aa2f7' : '#9ece6a' }}
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              disabled={editSubmitting}
+              autoFocus
+            />
+
+            <label style={S.label}>Address</label>
+            <input
+              style={{ ...S.modalInput, borderColor: editAddr ? '#7aa2f7' : '#9ece6a' }}
+              value={editAddr}
+              onChange={(e) => setEditAddr(e.target.value)}
+              disabled={editSubmitting}
+            />
+
+            <label style={S.label}>SSH User (empty = session user)</label>
+            <input
+              style={{ ...S.modalInput, borderColor: editUser ? '#7aa2f7' : '#9ece6a' }}
+              value={editUser}
+              onChange={(e) => setEditUser(e.target.value)}
+              disabled={editSubmitting}
+            />
+
+            <label style={S.label}>SSH Port</label>
+            <input
+              style={{ ...S.modalInput, borderColor: editPort && editPort !== '22' ? '#7aa2f7' : '#9ece6a' }}
+              value={editPort}
+              onChange={(e) => setEditPort(e.target.value)}
+              disabled={editSubmitting}
+            />
+
+            {editSubmitting && (
+              <div style={S.editSubmittingMsg}>Scanning host key and saving...</div>
+            )}
+
+            <div style={S.modalActions}>
+              <button type="button" style={S.modalCancelBtn} onClick={closeEditModal} disabled={editSubmitting}>
                 Cancel
               </button>
-            )}
-            {allDone && (
-              <button style={S.submitBtn} onClick={handleReset}>
-                Add More
+              <button
+                type="button"
+                style={{ ...S.submitBtn, opacity: editSubmitting || !editName || !editAddr ? 0.5 : 1 }}
+                disabled={editSubmitting || !editName || !editAddr}
+                onClick={handleEditSubmit}
+              >
+                {editSubmitting ? 'Saving...' : 'Save'}
               </button>
-            )}
-          </div>
-
-          {/* Per-host progress */}
-          <div style={S.progressList}>
-            {progress.map((p, i) => {
-              const badge = stepBadge(p.step);
-              return (
-                <div key={i} style={S.progressItem}>
-                  <span style={S.progressAddr}>{p.address}</span>
-                  <span
-                    style={{
-                      ...S.progressBadge,
-                      color: badge.color,
-                      background: badge.bg,
-                      borderColor: badge.color + '44',
-                    }}
-                  >
-                    {badge.text}
-                  </span>
-                  <span style={S.progressDetail}>{p.detail}</span>
-                </div>
-              );
-            })}
+            </div>
           </div>
         </div>
       )}
@@ -520,9 +847,6 @@ export function BulkHosts() {
 /* ── Styles ────────────────────────────────────────────── */
 
 const S: Record<string, React.CSSProperties> = {
-  page: {
-    maxWidth: 700,
-  },
   pageTitle: {
     fontSize: '1.25rem',
     fontWeight: 700,
@@ -533,6 +857,21 @@ const S: Record<string, React.CSSProperties> = {
     color: 'var(--text-secondary)',
     marginBottom: '1rem',
     lineHeight: 1.5,
+  },
+
+  /* Two-column layout */
+  columns: {
+    display: 'flex',
+    gap: '1.25rem',
+    alignItems: 'flex-start',
+  },
+  leftCol: {
+    flex: 3,
+    minWidth: 0,
+  },
+  rightCol: {
+    flex: 2,
+    minWidth: 240,
   },
 
   /* Tabs */
@@ -721,5 +1060,142 @@ const S: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
+  },
+
+  /* Host list (right column) */
+  hostListHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: '0.6rem',
+  },
+  hostListTitle: {
+    fontSize: '0.9rem',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
+  },
+  hostCount: {
+    fontSize: '0.72rem',
+    fontWeight: 600,
+    padding: '0.1rem 0.45rem',
+    borderRadius: 10,
+    background: '#7aa2f722',
+    color: '#7aa2f7',
+  },
+  emptyList: {
+    fontSize: '0.82rem',
+    color: 'var(--text-secondary)',
+    fontStyle: 'italic',
+    padding: '0.5rem 0',
+  },
+  hostList: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    gap: '0.3rem',
+  },
+  hostItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.45rem 0.6rem',
+    background: 'var(--bg-primary)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+  },
+  hostName: {
+    fontWeight: 600,
+    fontSize: '0.85rem',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+    color: 'var(--text-primary)',
+  },
+  hostAddr: {
+    fontSize: '0.72rem',
+    color: 'var(--text-secondary)',
+    fontFamily: 'monospace',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap' as const,
+  },
+  hostRemoveBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: '#f7768e',
+    fontWeight: 700,
+    fontSize: '0.85rem',
+    cursor: 'pointer',
+    padding: '0 0.3rem',
+    flexShrink: 0,
+  },
+  hostEditBtn: {
+    background: 'transparent',
+    border: 'none',
+    color: 'var(--accent)',
+    fontWeight: 700,
+    fontSize: '0.9rem',
+    cursor: 'pointer',
+    padding: '0 0.3rem',
+    flexShrink: 0,
+  },
+
+  /* Edit modal */
+  modalOverlay: {
+    position: 'fixed' as const,
+    inset: 0,
+    background: 'rgba(0,0,0,0.6)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 500,
+  },
+  modal: {
+    background: '#1a1b26',
+    border: '1px solid #292e42',
+    borderRadius: 10,
+    padding: '1.5rem',
+    width: '100%',
+    maxWidth: 420,
+  },
+  modalTitle: {
+    fontSize: '1rem',
+    fontWeight: 700,
+    marginBottom: '0.75rem',
+  },
+  modalError: {
+    color: '#f7768e',
+    fontSize: '0.82rem',
+    marginBottom: '0.5rem',
+  },
+  modalInput: {
+    width: '100%',
+    padding: '0.5rem 0.6rem',
+    borderRadius: 4,
+    border: '1px solid #9ece6a',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-primary)',
+    fontSize: '0.88rem',
+    marginBottom: '0.5rem',
+  },
+  modalActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '0.5rem',
+    marginTop: '0.75rem',
+  },
+  modalCancelBtn: {
+    padding: '0.4rem 0.9rem',
+    borderRadius: 4,
+    border: '1px solid var(--border)',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    fontSize: '0.82rem',
+  },
+  editSubmittingMsg: {
+    fontSize: '0.82rem',
+    color: 'var(--text-secondary)',
+    fontStyle: 'italic',
+    marginTop: '0.25rem',
   },
 };
