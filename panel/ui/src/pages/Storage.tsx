@@ -37,6 +37,9 @@ interface FlatRow {
 const HISTORY_LEN = 90;
 
 const INTERVAL_OPTIONS = [
+  { label: '1 sec',  ms: 1_000 },
+  { label: '5 sec',  ms: 5_000 },
+  { label: '10 sec', ms: 10_000 },
   { label: '30 sec', ms: 30_000 },
   { label: '1 min',  ms: 60_000 },
   { label: '5 min',  ms: 300_000 },
@@ -116,7 +119,7 @@ export function Storage() {
   const [intervalMs, setIntervalMs] = useState<number>(() => {
     const saved = sessionStorage.getItem(INTERVAL_STORAGE_KEY);
     const parsed = saved ? Number(saved) : NaN;
-    return INTERVAL_OPTIONS.some(o => o.ms === parsed) ? parsed : INTERVAL_OPTIONS[1].ms;
+    return INTERVAL_OPTIONS.some(o => o.ms === parsed) ? parsed : 60_000;
   });
 
   const changeInterval = useCallback((ms: number) => {
