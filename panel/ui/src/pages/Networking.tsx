@@ -69,6 +69,7 @@ const HISTORY_LEN = 90;
 const IFACE_COLORS = ['#7aa2f7', '#f7768e', '#9ece6a', '#e0af68', '#bb9af7', '#7dcfff', '#ff9e64', '#73daca'];
 
 const INTERVAL_OPTIONS = [
+  { label: '30 sec', ms: 30_000 },
   { label: '1 min',  ms: 60_000 },
   { label: '5 min',  ms: 300_000 },
   { label: '10 min', ms: 600_000 },
@@ -133,7 +134,7 @@ export function Networking() {
   const [intervalMs, setIntervalMs] = useState<number>(() => {
     const saved = sessionStorage.getItem(INTERVAL_STORAGE_KEY);
     const parsed = saved ? Number(saved) : NaN;
-    return INTERVAL_OPTIONS.some(o => o.ms === parsed) ? parsed : INTERVAL_OPTIONS[0].ms;
+    return INTERVAL_OPTIONS.some(o => o.ms === parsed) ? parsed : INTERVAL_OPTIONS[1].ms;
   });
   const changeInterval = useCallback((ms: number) => {
     setIntervalMs(ms);
@@ -145,6 +146,7 @@ export function Networking() {
   const [txHistory, setTxHistory] = useState<TrafficPoint[]>([]);
   const [ifaceNames, setIfaceNames] = useState<string[]>([]);
   const mountedRef = useRef(true);
+  const prevRequestRef = useRef(request);
 
   /* ----- interfaces ----- */
   const [interfaces, setInterfaces] = useState<NetInterface[]>([]);
@@ -236,16 +238,6 @@ export function Networking() {
 
   /* ── reset state + manage channel on host change ──────── */
   useEffect(() => {
-    setRxHistory([]);
-    setTxHistory([]);
-    setIfaceNames([]);
-    setInterfaces([]);
-    setFwStatus(null);
-    setFwRules([]);
-    setVpns([]);
-    setNetLogs([]);
-    setFwLogs([]);
-
     // Close stale manage channel from previous host
     manageRef.current?.close();
     manageRef.current = null;
@@ -259,6 +251,20 @@ export function Networking() {
   /* ── polling: networking snapshot ─────────────────────── */
   useEffect(() => {
     mountedRef.current = true;
+
+    // Reset history only when host changes (request reference changed)
+    if (prevRequestRef.current !== request) {
+      prevRequestRef.current = request;
+      setRxHistory([]);
+      setTxHistory([]);
+      setIfaceNames([]);
+      setInterfaces([]);
+      setFwStatus(null);
+      setFwRules([]);
+      setVpns([]);
+      setNetLogs([]);
+      setFwLogs([]);
+    }
 
     const fetchSnapshot = () => {
       request('networking.snapshot').then((results) => {
@@ -297,10 +303,17 @@ export function Networking() {
     };
 
     fetchSnapshot();
+
+    // Second fetch after 2s for quick chart population
+    const kickTimer = setTimeout(() => {
+      if (mountedRef.current) fetchSnapshot();
+    }, 2000);
+
     const timer = setInterval(fetchSnapshot, intervalMs);
 
     return () => {
       mountedRef.current = false;
+      clearTimeout(kickTimer);
       clearInterval(timer);
     };
   }, [request, intervalMs]);
@@ -451,18 +464,15 @@ export function Networking() {
         <h2 style={{ margin: 0 }}>Networking</h2>
         <div style={S.intervalBar}>
           <span style={S.intervalLabel}>Refresh</span>
-          {INTERVAL_OPTIONS.map(opt => (
-            <button
-              key={opt.ms}
-              onClick={() => changeInterval(opt.ms)}
-              style={{
-                ...S.intervalBtn,
-                ...(intervalMs === opt.ms ? S.intervalBtnActive : {}),
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
+          <select
+            value={intervalMs}
+            onChange={e => changeInterval(Number(e.target.value))}
+            style={S.intervalSelect}
+          >
+            {INTERVAL_OPTIONS.map(opt => (
+              <option key={opt.ms} value={opt.ms}>{opt.label}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -962,20 +972,16 @@ const S: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
-  intervalBtn: {
+  intervalSelect: {
     background: '#292e42',
-    border: 'none',
-    color: '#565f89',
-    padding: '0.25rem 0.65rem',
+    border: '1px solid #292e42',
+    color: '#c0caf5',
+    padding: '0.25rem 0.5rem',
     borderRadius: 5,
     fontSize: '0.75rem',
     cursor: 'pointer',
     fontWeight: 500,
-  },
-  intervalBtnActive: {
-    background: '#7aa2f733',
-    color: '#7aa2f7',
-    fontWeight: 600,
+    outline: 'none',
   },
   tabBar: {
     display: 'flex',
