@@ -570,7 +570,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                   <Route path="/services" element={<Services />} />
                   <Route path="/containers" element={<Containers />} />
                   <Route path="/logs" element={<Logs />} />
-                  <Route path="/terminal" element={<Terminal user={user} />} />
+                  <Route path="/terminal" element={<Terminal user={user} hostname={activeHost ? activeHost.name : hostname} />} />
                   <Route path="/storage" element={<Storage />} />
                   <Route path="/networking" element={<Networking />} />
                   <Route path="/packages" element={<Packages />} />

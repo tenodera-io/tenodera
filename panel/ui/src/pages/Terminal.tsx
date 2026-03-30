@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { type Message } from '../api/transport.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -7,12 +7,14 @@ import '@xterm/xterm/css/xterm.css';
 
 interface TerminalProps {
   user: string;
+  hostname?: string;
 }
 
-export function Terminal({ user }: TerminalProps) {
+export function Terminal({ user, hostname }: TerminalProps) {
   const { openChannel } = useTransport();
   const containerRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const initTerminal = useCallback(() => {
     if (!containerRef.current) return;
@@ -48,6 +50,38 @@ export function Terminal({ user }: TerminalProps) {
     const rows = term.rows;
 
     xtermRef.current = term;
+
+    // Auto-copy selection to clipboard
+    term.onSelectionChange(() => {
+      const sel = term.getSelection();
+      if (!sel) return;
+      // Try modern Clipboard API first (requires HTTPS or localhost)
+      if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(sel).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1500);
+        }).catch(() => {
+          fallbackCopy(sel);
+        });
+      } else {
+        fallbackCopy(sel);
+      }
+    });
+
+    function fallbackCopy(text: string) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch (_e) { /* silent */ }
+      document.body.removeChild(ta);
+    }
 
     // Open PTY channel with home directory
     const homeDir = user ? `/home/${user}` : '/tmp';
@@ -106,18 +140,80 @@ export function Terminal({ user }: TerminalProps) {
   }, [initTerminal]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)' }}>
-      <h2 style={{ margin: '0 0 0.5rem 0' }}>Terminal</h2>
-      <div
-        ref={containerRef}
-        style={{
-          background: '#1a1b26',
-          borderRadius: '8px',
-          padding: '4px',
-          flex: 1,
-          minHeight: 0,
-        }}
-      />
+    <div style={S.page}>
+      <h2 style={S.title}>Terminal</h2>
+      <div style={copied ? { ...S.hint, ...S.hintCopied } : S.hint}>
+        {copied ? 'Copied to clipboard' : 'Ctrl+Shift+C is reserved by the browser \u2014 text is copied automatically when selected'}
+      </div>
+      <div style={S.termBorder}>
+        <div style={S.termTitleBar}>
+        <span style={dotStyle('#f7768e')} />
+        <span style={dotStyle('#e0af68')} />
+        <span style={dotStyle('#9ece6a')} />
+          <span style={S.termTitleText}>Tenodera — {user}@{hostname || 'local'}</span>
+        </div>
+        <div ref={containerRef} style={S.termContainer} />
+      </div>
     </div>
   );
 }
+
+/* ── styles ─────────────────────────────────────────────── */
+
+function dotStyle(color: string): React.CSSProperties {
+  return { width: 10, height: 10, borderRadius: '50%', background: color, display: 'inline-block' };
+}
+
+const S: Record<string, React.CSSProperties> = {
+  page: {
+    display: 'flex',
+    flexDirection: 'column',
+    height: 'calc(100vh - 120px)',
+    padding: '0.5rem 0',
+  },
+  title: {
+    margin: 0,
+    fontSize: '1.4rem',
+    color: 'var(--text-primary)',
+  },
+  hint: {
+    color: '#e0af68',
+    fontSize: '0.82rem',
+    margin: '0.25rem 0 0.5rem 0',
+    transition: 'color 0.3s',
+  },
+  hintCopied: {
+    color: '#9ece6a',
+  },
+  termBorder: {
+    flex: 1,
+    minHeight: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    border: '1px solid #414868',
+    borderRadius: 10,
+    overflow: 'hidden',
+    boxShadow: '0 4px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(122,162,247,0.1)',
+  },
+  termTitleBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    padding: '6px 12px',
+    background: '#1e1f2e',
+    borderBottom: '1px solid #2a2b3d',
+    flexShrink: 0,
+  },
+  termTitleText: {
+    color: '#565f89',
+    fontSize: '0.75rem',
+    marginLeft: '6px',
+    fontFamily: 'monospace',
+  },
+  termContainer: {
+    background: '#1a1b26',
+    padding: '4px',
+    flex: 1,
+    minHeight: 0,
+  },
+};
