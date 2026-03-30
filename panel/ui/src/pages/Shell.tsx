@@ -16,6 +16,7 @@ import { Hosts } from './Hosts.tsx';
 import { Kdump } from './Kdump.tsx';
 import { LogFiles } from './LogFiles.tsx';
 import { Users } from './Users.tsx';
+import { BulkHosts } from './BulkHosts.tsx';
 
 /* ── Superuser context ─────────────────────────────────── */
 
@@ -538,6 +539,27 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                   </ul>
                 </li>
               ))}
+              {suActive && (
+                <li>
+                  <div style={S.sectionDivider} />
+                  <div style={S.sectionLabel}>Administration</div>
+                  <ul style={S.sectionList}>
+                    <li>
+                      <NavLink
+                        to="/manage-hosts"
+                        style={({ isActive }) => ({
+                          ...S.navLink,
+                          background: isActive ? 'var(--bg-card)' : 'transparent',
+                          borderLeft: isActive ? '3px solid #9ece6a' : '3px solid transparent',
+                          paddingLeft: 'calc(0.75rem - 3px)',
+                        })}
+                      >
+                        <span style={S.navIcon}>&#x1F5A7;</span>Manage Hosts
+                      </NavLink>
+                    </li>
+                  </ul>
+                </li>
+              )}
             </ul>
           </nav>
           <main style={S.main}>
@@ -556,6 +578,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                   <Route path="/files" element={<Files user={user} />} />
                   <Route path="/kdump" element={<Kdump />} />
                   <Route path="/log-files" element={<LogFiles />} />
+                  <Route path="/manage-hosts" element={<BulkHosts />} />
                 </Routes>
               ) : (
                 <p>Connecting to server...</p>
