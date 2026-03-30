@@ -728,11 +728,11 @@ export function BulkHosts() {
 
         {/* ── Right column: host list ── */}
         <div style={S.rightCol}>
+          <div style={S.hostListHeader}>
+            <span style={S.hostListTitle}>Remote Hosts</span>
+            <span style={S.hostCount}>{hosts.length}</span>
+          </div>
           <div style={S.section}>
-            <div style={S.hostListHeader}>
-              <span style={S.hostListTitle}>Remote Hosts</span>
-              <span style={S.hostCount}>{hosts.length}</span>
-            </div>
             {hosts.length === 0 ? (
               <div style={S.emptyList}>No remote hosts configured.</div>
             ) : (
@@ -1067,7 +1067,8 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: '0.6rem',
+    marginBottom: '1rem',
+    padding: '0.45rem 0',
   },
   hostListTitle: {
     fontSize: '0.9rem',
