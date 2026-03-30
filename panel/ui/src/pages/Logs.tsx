@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
+import { useSuperuser } from './Shell.tsx';
 
 interface LogEntry {
   MESSAGE?: string | number[];
@@ -11,6 +12,7 @@ interface LogEntry {
 
 export function Logs() {
   const { request } = useTransport();
+  const su = useSuperuser();
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [lines, setLines] = useState(100);
   const [unit, setUnit] = useState('');
@@ -18,12 +20,13 @@ export function Logs() {
   const fetchLogs = useCallback(() => {
     const opts: Record<string, unknown> = { lines };
     if (unit) opts.unit = unit;
+    if (su.active && su.password) opts.password = su.password;
 
     request('journal.query', opts).then((results) => {
       const data = results[0] as { entries: LogEntry[] } | undefined;
       if (data?.entries) setEntries(data.entries);
     });
-  }, [request, lines, unit]);
+  }, [request, lines, unit, su]);
 
   useEffect(() => {
     setEntries([]);

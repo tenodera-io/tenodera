@@ -35,7 +35,13 @@ impl ChannelHandler for JournalQueryHandler {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 
-        let entries = query_journal(lines, unit.as_deref(), priority.as_deref()).await;
+        let password = options
+            .extra
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+
+        let entries = query_journal(lines, unit.as_deref(), priority.as_deref(), password).await;
 
         vec![
             Message::Ready {
@@ -57,6 +63,7 @@ async fn query_journal(
     lines: u64,
     unit: Option<&str>,
     priority: Option<&str>,
+    password: &str,
 ) -> serde_json::Value {
     // Validate unit name if provided
     if let Some(u) = unit
@@ -75,20 +82,54 @@ async fn query_journal(
         }
     }
 
-    let mut cmd = tokio::process::Command::new("journalctl");
-    cmd.args(["--output=json", "--no-pager"]);
-    cmd.arg(format!("--lines={lines}"));
+    let am_root = unsafe { libc::geteuid() } == 0;
+    let use_sudo = !am_root && !password.is_empty();
 
+    let mut args: Vec<String> = Vec::new();
+    args.push("--output=json".to_string());
+    args.push("--no-pager".to_string());
+    args.push(format!("--lines={lines}"));
     if let Some(u) = unit {
-        cmd.arg(format!("--unit={u}"));
+        args.push(format!("--unit={u}"));
     }
     if let Some(p) = priority {
-        cmd.arg(format!("--priority={p}"));
+        args.push(format!("--priority={p}"));
     }
 
-    let output = cmd.output().await;
+    let (program, cmd_args) = if use_sudo {
+        let mut sa = vec!["-S".to_string(), "journalctl".to_string()];
+        sa.extend(args);
+        ("sudo".to_string(), sa)
+    } else {
+        ("journalctl".to_string(), args)
+    };
 
-    match output {
+    let child = tokio::process::Command::new(&program)
+        .args(&cmd_args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+
+    let mut child = match child {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!(error = %e, "failed to spawn journalctl");
+            return serde_json::json!({ "entries": [], "error": e.to_string() });
+        }
+    };
+
+    if use_sudo {
+        if let Some(mut stdin) = child.stdin.take() {
+            use tokio::io::AsyncWriteExt;
+            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
+            drop(stdin);
+        }
+    } else {
+        drop(child.stdin.take());
+    }
+
+    match child.wait_with_output().await {
         Ok(out) if out.status.success() => {
             // journalctl --output=json outputs one JSON object per line
             let entries: Vec<serde_json::Value> = String::from_utf8_lossy(&out.stdout)
@@ -99,8 +140,13 @@ async fn query_journal(
         }
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
-            tracing::warn!(%stderr, "journalctl error");
-            serde_json::json!({ "entries": [], "error": stderr.to_string() })
+            let filtered: String = stderr
+                .lines()
+                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            tracing::warn!(stderr = %filtered, "journalctl error");
+            serde_json::json!({ "entries": [], "error": filtered })
         }
         Err(e) => {
             tracing::error!(error = %e, "failed to run journalctl");
