@@ -58,7 +58,7 @@ export function Packages() {
     const saved = sessionStorage.getItem('pkg_tab');
     return (saved === 'search' || saved === 'updates' || saved === 'repos') ? saved : 'installed';
   });
-  const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('pkg_tab', t); };
+  const changeTab = (t: Tab) => { if (updating) return; setTab(t); sessionStorage.setItem('pkg_tab', t); };
   const [backend, setBackend] = useState('');
   const [distroName, setDistroName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -274,6 +274,14 @@ export function Packages() {
     else { setActionMsg('Repository removed'); loadRepos(); }
   };
 
+  /* ── block navigation while updating ─────────────────── */
+  useEffect(() => {
+    if (!updating) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [updating]);
+
   /* ── filtered installed list ──────────────────────────── */
   const filteredInstalled = installedFilter
     ? installed.filter(p => p.name.toLowerCase().includes(installedFilter.toLowerCase()))
@@ -301,7 +309,7 @@ export function Packages() {
           <button
             key={t.id}
             onClick={() => changeTab(t.id)}
-            style={tab === t.id ? { ...S.tab, ...S.tabActive } : S.tab}
+            style={tab === t.id ? { ...S.tab, ...S.tabActive } : updating ? { ...S.tab, opacity: 0.5, cursor: 'not-allowed' } : S.tab}
           >
             {t.icon} {t.label}
             {t.id === 'updates' && updateCount > 0 && (
@@ -470,12 +478,18 @@ export function Packages() {
               <span style={S.count}>{updateCount} update{updateCount !== 1 ? 's' : ''} available</span>
             </div>
             {updating && (
-              <div style={S.progressWrap}>
-                <span style={S.progressLabel}>⬆️ Updating system packages...</span>
-                <div style={S.progressTrack}>
-                  <div style={S.progressBar} />
+              <>
+                <div style={S.warningBanner}>
+                  Do not leave this page while the system update is in progress.
+                  Navigating away may interrupt the update and leave the system in an inconsistent state.
                 </div>
-              </div>
+                <div style={S.progressWrap}>
+                  <span style={S.progressLabel}>⬆️ Updating system packages...</span>
+                  <div style={S.progressTrack}>
+                    <div style={S.progressBar} />
+                  </div>
+                </div>
+              </>
             )}
             {updates.length > 0 && (
               <div style={S.tableWrap}>
@@ -1238,6 +1252,16 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.75rem',
     margin: '0.4rem 0 0 0',
     fontStyle: 'italic' as const,
+  },
+  warningBanner: {
+    background: 'rgba(224,175,104,0.15)',
+    border: '1px solid #e0af68',
+    color: '#e0af68',
+    padding: '0.6rem 1rem',
+    borderRadius: 8,
+    fontSize: '0.85rem',
+    marginBottom: '0.5rem',
+    fontWeight: 500,
   },
   // ── Progress bar styles ──
   progressWrap: {
