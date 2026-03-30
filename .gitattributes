@@ -1,0 +1,4 @@
+# Exclude README screenshots from GitHub release tarballs (git archive).
+# Images stay in the repo for GitHub rendering but are not needed at install time.
+src/ export-ignore
+src/** export-ignore
