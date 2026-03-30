@@ -17,3 +17,6 @@ pub mod hosts;
 pub mod kdump;
 pub mod log_files;
 pub mod users;
+pub mod metrics_snapshot;
+pub mod networking_snapshot;
+pub mod storage_snapshot;

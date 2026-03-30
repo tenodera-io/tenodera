@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
-import type { Message } from '../api/transport.ts';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -16,19 +15,16 @@ interface SystemInfo {
   boot_time?: string;
 }
 
-interface RawMetrics {
+interface SnapshotMetrics {
   timestamp: string;
-  cpu: { user: number; system: number; idle: number } | null;
-  cpu_cores: { core: string; user: number; system: number; idle: number }[] | null;
+  cpu: { user_pct: number; system_pct: number; idle_pct: number } | null;
+  cpu_cores: { core: string; usage_pct: number }[] | null;
   memory: { memtotal?: number; memfree?: number; memavailable?: number } | null;
   swap: { total: number; free: number; used: number } | null;
   loadavg: { '1min': number; '5min': number; '15min': number } | null;
-  disk_io: { read_bytes: number; write_bytes: number } | null;
-  net_io: { rx_bytes: number; tx_bytes: number } | null;
+  disk_io: { read_bytes_sec: number; write_bytes_sec: number } | null;
+  net_io: { rx_bytes_sec: number; tx_bytes_sec: number } | null;
 }
-
-interface CpuPct { user: number; system: number; idle: number }
-interface CorePct { core: string; usage: number }
 
 interface HistoryPoint {
   t: string;
@@ -87,7 +83,7 @@ interface TopProcess {
   command: string;
 }
 
-const HISTORY_LEN = 60;  // 2 min at 2s interval
+const HISTORY_LEN = 60;
 const COLORS = {
   user:   '#7aa2f7',  // blue
   system: '#f7768e',  // red
@@ -97,45 +93,41 @@ const COLORS = {
   free:   '#33394d',
 };
 
+const INTERVAL_OPTIONS = [
+  { label: '1 min',  ms: 60_000 },
+  { label: '5 min',  ms: 300_000 },
+  { label: '10 min', ms: 600_000 },
+  { label: '30 min', ms: 1_800_000 },
+];
+
+const INTERVAL_STORAGE_KEY = 'dashboard_interval';
+
 /* ── component ─────────────────────────────────────────── */
 
 export function Dashboard() {
-  const { request, openChannel } = useTransport();
+  const { request } = useTransport();
   const [info, setInfo] = useState<SystemInfo | null>(null);
-  const [raw, setRaw]   = useState<RawMetrics | null>(null);
-  const [cpuPct, setCpuPct] = useState<CpuPct | null>(null);
-  const [corePcts, setCorePcts] = useState<CorePct[]>([]);
+  const [snapshot, setSnapshot] = useState<SnapshotMetrics | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [disks, setDisks] = useState<DiskPartition[]>([]);
   const [netIfaces, setNetIfaces] = useState<NetInterface[]>([]);
   const [hwInfo, setHwInfo] = useState<HardwareInfo | null>(null);
   const [topProcs, setTopProcs] = useState<TopProcess[]>([]);
   const [procSort, setProcSort] = useState<'cpu' | 'mem'>('cpu');
-  const prevCpu = useRef<{ user: number; system: number; idle: number } | null>(null);
-  const prevCores = useRef<Map<string, { user: number; system: number; idle: number }>>(new Map());
-  const prevDiskIo = useRef<{ read_bytes: number; write_bytes: number } | null>(null);
-  const prevNetIo = useRef<{ rx_bytes: number; tx_bytes: number } | null>(null);
+  const [intervalMs, setIntervalMs] = useState<number>(() => {
+    const saved = sessionStorage.getItem(INTERVAL_STORAGE_KEY);
+    const parsed = saved ? Number(saved) : NaN;
+    return INTERVAL_OPTIONS.some(o => o.ms === parsed) ? parsed : INTERVAL_OPTIONS[0].ms;
+  });
 
-  // Derive CPU percentages from cumulative jiffies deltas
-  const processCpu = useCallback((cpu: RawMetrics['cpu']) => {
-    if (!cpu) return;
-    const prev = prevCpu.current;
-    prevCpu.current = cpu;
-    if (!prev) return;
+  const mountedRef = useRef(true);
 
-    const dUser = cpu.user - prev.user;
-    const dSys  = cpu.system - prev.system;
-    const dIdle = cpu.idle - prev.idle;
-    const total = dUser + dSys + dIdle;
-    if (total === 0) return;
-
-    setCpuPct({
-      user:   Math.round((dUser / total) * 100),
-      system: Math.round((dSys  / total) * 100),
-      idle:   Math.round((dIdle / total) * 100),
-    });
+  const changeInterval = useCallback((ms: number) => {
+    setIntervalMs(ms);
+    sessionStorage.setItem(INTERVAL_STORAGE_KEY, String(ms));
   }, []);
 
+  // ── One-shot static data (loaded once per host) ──
   useEffect(() => {
     request('system.info').then((results) => {
       if (results[0]) setInfo(results[0] as SystemInfo);
@@ -151,55 +143,19 @@ export function Dashboard() {
     request('hardware.info').then((results) => {
       if (results[0]) setHwInfo(results[0] as HardwareInfo);
     });
-    const loadProcs = () => {
-      request('top.processes').then((results) => {
-        const data = results[0] as { processes: TopProcess[] } | undefined;
-        if (data?.processes) setTopProcs(data.processes);
-      });
-    };
-    loadProcs();
-    const procTimer = setInterval(loadProcs, 5000);
-    return () => clearInterval(procTimer);
   }, [request]);
 
+  // ── Polling: metrics snapshot + top processes ──
   useEffect(() => {
-    const ch = openChannel('metrics.stream', { interval: 2000 });
+    mountedRef.current = true;
 
-    ch.onMessage((msg: Message) => {
-      if (msg.type === 'data' && 'data' in msg) {
-        const m = msg.data as RawMetrics;
-        setRaw(m);
+    const fetchSnapshot = () => {
+      request('metrics.snapshot').then((results) => {
+        if (!mountedRef.current) return;
+        const m = results[0] as SnapshotMetrics | undefined;
+        if (!m) return;
 
-        // Capture previous CPU jiffies BEFORE processCpu overwrites them
-        const prev = prevCpu.current;
-        processCpu(m.cpu);
-
-        // Per-core CPU percentages
-        if (m.cpu_cores) {
-          const newCorePcts: CorePct[] = [];
-          const newPrevCores = new Map<string, { user: number; system: number; idle: number }>();
-          for (const c of m.cpu_cores) {
-            const p = prevCores.current.get(c.core);
-            newPrevCores.set(c.core, { user: c.user, system: c.system, idle: c.idle });
-            if (p) {
-              const du = c.user - p.user;
-              const ds = c.system - p.system;
-              const di = c.idle - p.idle;
-              const t = du + ds + di || 1;
-              newCorePcts.push({ core: c.core, usage: Math.round(((du + ds) / t) * 100) });
-            }
-          }
-          prevCores.current = newPrevCores;
-          if (newCorePcts.length > 0) setCorePcts(newCorePcts);
-        }
-
-        // Disk I/O rates (bytes/sec)
-        const prevDisk = prevDiskIo.current;
-        if (m.disk_io) prevDiskIo.current = m.disk_io;
-
-        // Net I/O rates (bytes/sec)
-        const prevNet = prevNetIo.current;
-        if (m.net_io) prevNetIo.current = m.net_io;
+        setSnapshot(m);
 
         // Append to history
         const time = m.timestamp ? new Date(m.timestamp).toLocaleTimeString('en-GB', { hour12: false }) : '';
@@ -207,60 +163,56 @@ export function Dashboard() {
         const memAvail = m.memory?.memavailable ?? memTotal;
         const memUsedPct = Math.round(((memTotal - memAvail) / memTotal) * 100);
 
-        let cpuU = 0, cpuS = 0;
-        if (prev && m.cpu) {
-          const dU = m.cpu.user - prev.user;
-          const dS = m.cpu.system - prev.system;
-          const dI = m.cpu.idle - prev.idle;
-          const t  = dU + dS + dI || 1;
-          cpuU = Math.round((dU / t) * 100);
-          cpuS = Math.round((dS / t) * 100);
-        }
-
-        // Disk I/O rate (bytes per interval → bytes/sec, interval=2s)
-        let diskReadRate = 0, diskWriteRate = 0;
-        if (prevDisk && m.disk_io) {
-          diskReadRate = Math.max(0, (m.disk_io.read_bytes - prevDisk.read_bytes) / 2);
-          diskWriteRate = Math.max(0, (m.disk_io.write_bytes - prevDisk.write_bytes) / 2);
-        }
-
-        // Net I/O rate
-        let netRxRate = 0, netTxRate = 0;
-        if (prevNet && m.net_io) {
-          netRxRate = Math.max(0, (m.net_io.rx_bytes - prevNet.rx_bytes) / 2);
-          netTxRate = Math.max(0, (m.net_io.tx_bytes - prevNet.tx_bytes) / 2);
-        }
-
         setHistory((h) => {
           const next = [...h, {
             t: time,
-            cpuUser: cpuU,
-            cpuSys: cpuS,
+            cpuUser: m.cpu?.user_pct ?? 0,
+            cpuSys: m.cpu?.system_pct ?? 0,
             memUsedPct,
             load1: m.loadavg?.['1min'] ?? 0,
-            diskReadRate,
-            diskWriteRate,
-            netRxRate,
-            netTxRate,
+            diskReadRate: m.disk_io?.read_bytes_sec ?? 0,
+            diskWriteRate: m.disk_io?.write_bytes_sec ?? 0,
+            netRxRate: m.net_io?.rx_bytes_sec ?? 0,
+            netTxRate: m.net_io?.tx_bytes_sec ?? 0,
           }];
           return next.length > HISTORY_LEN ? next.slice(next.length - HISTORY_LEN) : next;
         });
-      }
-    });
+      }).catch(() => {});
+    };
 
-    return () => ch.close();
-  }, [processCpu, openChannel]);
+    const fetchProcs = () => {
+      request('top.processes').then((results) => {
+        if (!mountedRef.current) return;
+        const data = results[0] as { processes: TopProcess[] } | undefined;
+        if (data?.processes) setTopProcs(data.processes);
+      }).catch(() => {});
+    };
+
+    // Initial fetch immediately
+    fetchSnapshot();
+    fetchProcs();
+
+    const timer = setInterval(() => {
+      fetchSnapshot();
+      fetchProcs();
+    }, intervalMs);
+
+    return () => {
+      mountedRef.current = false;
+      clearInterval(timer);
+    };
+  }, [request, intervalMs]);
 
   /* memory breakdown for pie */
-  const memTotal = raw?.memory?.memtotal ?? 0;
-  const memFree  = raw?.memory?.memfree ?? 0;
-  const memAvail = raw?.memory?.memavailable ?? 0;
+  const memTotal = snapshot?.memory?.memtotal ?? 0;
+  const memFree  = snapshot?.memory?.memfree ?? 0;
+  const memAvail = snapshot?.memory?.memavailable ?? 0;
   const memUsed  = memTotal - memAvail;
 
   /* swap */
-  const swapTotal = raw?.swap?.total ?? 0;
-  const swapUsed  = raw?.swap?.used ?? 0;
-  const swapFree  = raw?.swap?.free ?? 0;
+  const swapTotal = snapshot?.swap?.total ?? 0;
+  const swapUsed  = snapshot?.swap?.used ?? 0;
+  const swapFree  = snapshot?.swap?.free ?? 0;
   const swapUsedPct = swapTotal > 0 ? Math.round((swapUsed / swapTotal) * 100) : 0;
 
   const swapPie = swapTotal > 0
@@ -270,11 +222,14 @@ export function Dashboard() {
       ]
     : [];
 
+  const cpuPct = snapshot?.cpu ?? null;
+  const corePcts = snapshot?.cpu_cores ?? [];
+
   const cpuPie = cpuPct
     ? [
-        { name: 'User',   value: cpuPct.user,   color: COLORS.user },
-        { name: 'System', value: cpuPct.system,  color: COLORS.system },
-        { name: 'Idle',   value: cpuPct.idle,    color: COLORS.idle },
+        { name: 'User',   value: cpuPct.user_pct,   color: COLORS.user },
+        { name: 'System', value: cpuPct.system_pct,  color: COLORS.system },
+        { name: 'Idle',   value: cpuPct.idle_pct,    color: COLORS.idle },
       ]
     : [];
 
@@ -286,7 +241,7 @@ export function Dashboard() {
       ]
     : [];
 
-  const cpuTotalPct = cpuPct ? cpuPct.user + cpuPct.system : 0;
+  const cpuTotalPct = cpuPct ? cpuPct.user_pct + cpuPct.system_pct : 0;
   const memUsedPct  = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0;
 
   const sortedProcs = [...topProcs].sort((a, b) =>
@@ -295,7 +250,24 @@ export function Dashboard() {
 
   return (
     <div>
-      <h2>Dashboard</h2>
+      <div style={styles.headerRow}>
+        <h2 style={{ margin: 0 }}>Dashboard</h2>
+        <div style={styles.intervalBar}>
+          <span style={styles.intervalLabel}>Refresh</span>
+          {INTERVAL_OPTIONS.map(opt => (
+            <button
+              key={opt.ms}
+              onClick={() => changeInterval(opt.ms)}
+              style={{
+                ...styles.intervalBtn,
+                ...(intervalMs === opt.ms ? styles.intervalBtnActive : {}),
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* ── Row 1: Host + CPU donut + Memory donut ── */}
       <div className="dashboard-grid3" style={styles.grid3}>
@@ -493,11 +465,11 @@ export function Dashboard() {
         )}
 
         <Card title="Load Average">
-          {raw?.loadavg ? (
+          {snapshot?.loadavg ? (
             <div style={styles.loadGrid}>
-              <LoadRing label="1 min"  value={raw.loadavg['1min']} />
-              <LoadRing label="5 min"  value={raw.loadavg['5min']} />
-              <LoadRing label="15 min" value={raw.loadavg['15min']} />
+              <LoadRing label="1 min"  value={snapshot.loadavg['1min']} />
+              <LoadRing label="5 min"  value={snapshot.loadavg['5min']} />
+              <LoadRing label="15 min" value={snapshot.loadavg['15min']} />
             </div>
           ) : (
             <p style={styles.muted}>Waiting…</p>
@@ -618,11 +590,11 @@ export function Dashboard() {
                   <div style={styles.coreBarBg}>
                     <div style={{
                       ...styles.coreBarFill,
-                      width: `${c.usage}%`,
-                      background: c.usage > 90 ? '#f7768e' : c.usage > 60 ? '#e0af68' : '#7aa2f7',
+                      width: `${c.usage_pct}%`,
+                      background: c.usage_pct > 90 ? '#f7768e' : c.usage_pct > 60 ? '#e0af68' : '#7aa2f7',
                     }} />
                   </div>
-                  <div style={styles.corePct}>{c.usage}%</div>
+                  <div style={styles.corePct}>{c.usage_pct}%</div>
                 </div>
               ))}
             </div>
@@ -732,7 +704,6 @@ function DonutChart({ data, centerLabel, tooltipFmt }: {
 }
 
 function LoadRing({ label, value }: { label: string; value: number }) {
-  // Max scale: consider 100% at number of CPU cores, fallback to 8
   const maxLoad = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 8;
   const pct = Math.min((value / maxLoad) * 100, 100);
   const rest = 100 - pct;
@@ -828,10 +799,8 @@ function ensureReadable(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
-  // sRGB → linear
   const lin = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  // If luminance is below threshold, use white instead
   return L < 0.15 ? '#c0caf5' : hex;
 }
 
@@ -850,6 +819,39 @@ const tooltipItemStyle: React.CSSProperties = {
 };
 
 const styles: Record<string, React.CSSProperties> = {
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  intervalBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+  },
+  intervalLabel: {
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary)',
+    marginRight: '0.25rem',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+  },
+  intervalBtn: {
+    background: '#292e42',
+    border: 'none',
+    color: '#565f89',
+    padding: '0.25rem 0.65rem',
+    borderRadius: 5,
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    fontWeight: 500,
+  },
+  intervalBtnActive: {
+    background: '#7aa2f733',
+    color: '#7aa2f7',
+    fontWeight: 600,
+  },
   grid3: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',

@@ -68,6 +68,15 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 const HISTORY_LEN = 90;
 const IFACE_COLORS = ['#7aa2f7', '#f7768e', '#9ece6a', '#e0af68', '#bb9af7', '#7dcfff', '#ff9e64', '#73daca'];
 
+const INTERVAL_OPTIONS = [
+  { label: '1 min',  ms: 60_000 },
+  { label: '5 min',  ms: 300_000 },
+  { label: '10 min', ms: 600_000 },
+  { label: '30 min', ms: 1_800_000 },
+];
+
+const INTERVAL_STORAGE_KEY = 'net_interval';
+
 /* ── helpers ────────────────────────────────────────────── */
 
 function formatRate(bytesPerSec: number): string {
@@ -112,7 +121,7 @@ const tooltipItemStyle: React.CSSProperties = { color: '#c0caf5' };
 /* ── component ─────────────────────────────────────────── */
 
 export function Networking() {
-  const { openChannel } = useTransport();
+  const { request, openChannel } = useTransport();
   const su = useSuperuser();
   const [tab, setTab] = useState<Tab>(() => {
     const saved = sessionStorage.getItem('net_tab');
@@ -120,11 +129,22 @@ export function Networking() {
   });
   const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('net_tab', t); };
 
-  /* ----- streaming traffic data ----- */
+  /* ----- polling interval ----- */
+  const [intervalMs, setIntervalMs] = useState<number>(() => {
+    const saved = sessionStorage.getItem(INTERVAL_STORAGE_KEY);
+    const parsed = saved ? Number(saved) : NaN;
+    return INTERVAL_OPTIONS.some(o => o.ms === parsed) ? parsed : INTERVAL_OPTIONS[0].ms;
+  });
+  const changeInterval = useCallback((ms: number) => {
+    setIntervalMs(ms);
+    sessionStorage.setItem(INTERVAL_STORAGE_KEY, String(ms));
+  }, []);
+
+  /* ----- traffic chart data ----- */
   const [rxHistory, setRxHistory] = useState<TrafficPoint[]>([]);
   const [txHistory, setTxHistory] = useState<TrafficPoint[]>([]);
   const [ifaceNames, setIfaceNames] = useState<string[]>([]);
-  const streamRef = useRef<ReturnType<typeof openChannel> | null>(null);
+  const mountedRef = useRef(true);
 
   /* ----- interfaces ----- */
   const [interfaces, setInterfaces] = useState<NetInterface[]>([]);
@@ -214,7 +234,7 @@ export function Networking() {
     });
   }, [su]);
 
-  /* ── start traffic stream ─────────────────────────────── */
+  /* ── reset state + manage channel on host change ──────── */
   useEffect(() => {
     setRxHistory([]);
     setTxHistory([]);
@@ -230,12 +250,22 @@ export function Networking() {
     manageRef.current?.close();
     manageRef.current = null;
 
-    const ch = openChannel('networking.stream', { interval: 1000 });
-    streamRef.current = ch;
+    return () => {
+      manageRef.current?.close();
+      manageRef.current = null;
+    };
+  }, [request]);
 
-    ch.onMessage((msg: Message) => {
-      if (msg.type === 'data' && 'data' in msg) {
-        const d = msg.data as Record<string, unknown>;
+  /* ── polling: networking snapshot ─────────────────────── */
+  useEffect(() => {
+    mountedRef.current = true;
+
+    const fetchSnapshot = () => {
+      request('networking.snapshot').then((results) => {
+        if (!mountedRef.current) return;
+        const d = results[0] as Record<string, unknown> | undefined;
+        if (!d) return;
+
         const ts = d.timestamp as string | undefined;
         const time = ts ? new Date(ts).toLocaleTimeString('en-GB', { hour12: false }) : '';
         const ifaces = d.interfaces as { name: string; rx_bps: number; tx_bps: number }[] | undefined;
@@ -263,15 +293,17 @@ export function Networking() {
             return next.length > HISTORY_LEN ? next.slice(next.length - HISTORY_LEN) : next;
           });
         }
-      }
-    });
+      }).catch(() => {});
+    };
+
+    fetchSnapshot();
+    const timer = setInterval(fetchSnapshot, intervalMs);
 
     return () => {
-      ch.close();
-      manageRef.current?.close();
-      manageRef.current = null;
+      mountedRef.current = false;
+      clearInterval(timer);
     };
-  }, [openChannel]);
+  }, [request, intervalMs]);
 
   /* ── load interfaces ──────────────────────────────────── */
   const loadInterfaces = useCallback(async () => {
@@ -415,7 +447,24 @@ export function Networking() {
 
   return (
     <div>
-      <h2>Networking</h2>
+      <div style={S.headerRow}>
+        <h2 style={{ margin: 0 }}>Networking</h2>
+        <div style={S.intervalBar}>
+          <span style={S.intervalLabel}>Refresh</span>
+          {INTERVAL_OPTIONS.map(opt => (
+            <button
+              key={opt.ms}
+              onClick={() => changeInterval(opt.ms)}
+              style={{
+                ...S.intervalBtn,
+                ...(intervalMs === opt.ms ? S.intervalBtnActive : {}),
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* ── Tab bar ── */}
       <div style={S.tabBar}>
@@ -895,6 +944,39 @@ export function Networking() {
 /* ── styles ────────────────────────────────────────────── */
 
 const S: Record<string, React.CSSProperties> = {
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  intervalBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+  },
+  intervalLabel: {
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary)',
+    marginRight: '0.25rem',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+  },
+  intervalBtn: {
+    background: '#292e42',
+    border: 'none',
+    color: '#565f89',
+    padding: '0.25rem 0.65rem',
+    borderRadius: 5,
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    fontWeight: 500,
+  },
+  intervalBtnActive: {
+    background: '#7aa2f733',
+    color: '#7aa2f7',
+    fontWeight: 600,
+  },
   tabBar: {
     display: 'flex',
     gap: '0.25rem',

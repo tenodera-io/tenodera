@@ -1,5 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
-import { type Message } from '../api/transport.ts';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -36,6 +35,15 @@ interface FlatRow {
 }
 
 const HISTORY_LEN = 90;
+
+const INTERVAL_OPTIONS = [
+  { label: '1 min',  ms: 60_000 },
+  { label: '5 min',  ms: 300_000 },
+  { label: '10 min', ms: 600_000 },
+  { label: '30 min', ms: 1_800_000 },
+];
+
+const INTERVAL_STORAGE_KEY = 'storage_interval';
 
 /* ── helpers ───────────────────────────────────────────── */
 
@@ -99,21 +107,31 @@ const tooltipItemStyle: React.CSSProperties = { color: '#c0caf5' };
 /* ── component ─────────────────────────────────────────── */
 
 export function Storage() {
-  const { openChannel } = useTransport();
+  const { request } = useTransport();
   const [history, setHistory] = useState<IoPoint[]>([]);
   const [blockRows, setBlockRows] = useState<FlatRow[]>([]);
-  const channelRef = useRef<ReturnType<typeof openChannel> | null>(null);
+  const mountedRef = useRef(true);
+  const [intervalMs, setIntervalMs] = useState<number>(() => {
+    const saved = sessionStorage.getItem(INTERVAL_STORAGE_KEY);
+    const parsed = saved ? Number(saved) : NaN;
+    return INTERVAL_OPTIONS.some(o => o.ms === parsed) ? parsed : INTERVAL_OPTIONS[0].ms;
+  });
+
+  const changeInterval = useCallback((ms: number) => {
+    setIntervalMs(ms);
+    sessionStorage.setItem(INTERVAL_STORAGE_KEY, String(ms));
+  }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     setHistory([]);
     setBlockRows([]);
 
-    const ch = openChannel('storage.stream', { interval: 2000 });
-    channelRef.current = ch;
-
-    ch.onMessage((msg: Message) => {
-      if (msg.type === 'data' && 'data' in msg) {
-        const d = msg.data as Record<string, unknown>;
+    const fetchSnapshot = () => {
+      request('storage.snapshot').then((results) => {
+        if (!mountedRef.current) return;
+        const d = results[0] as Record<string, unknown> | undefined;
+        if (!d) return;
 
         const io = d.io as { read_bytes_sec: number; write_bytes_sec: number } | undefined;
         const ts = d.timestamp as string | undefined;
@@ -132,15 +150,38 @@ export function Storage() {
 
         const bd = d.block_devices as BlockDevice[] | undefined;
         if (bd) setBlockRows(flattenTree(bd));
-      }
-    });
+      }).catch(() => {});
+    };
 
-    return () => ch.close();
-  }, [openChannel]);
+    fetchSnapshot();
+    const timer = setInterval(fetchSnapshot, intervalMs);
+
+    return () => {
+      mountedRef.current = false;
+      clearInterval(timer);
+    };
+  }, [request, intervalMs]);
 
   return (
     <div>
-      <h2>Storage</h2>
+      <div style={S.headerRow}>
+        <h2 style={{ margin: 0 }}>Storage</h2>
+        <div style={S.intervalBar}>
+          <span style={S.intervalLabel}>Refresh</span>
+          {INTERVAL_OPTIONS.map(opt => (
+            <button
+              key={opt.ms}
+              onClick={() => changeInterval(opt.ms)}
+              style={{
+                ...S.intervalBtn,
+                ...(intervalMs === opt.ms ? S.intervalBtnActive : {}),
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {/* ── I/O Charts ── */}
       <div style={S.chartsRow}>
@@ -260,6 +301,39 @@ export function Storage() {
 /* ── styles ────────────────────────────────────────────── */
 
 const S: Record<string, React.CSSProperties> = {
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  intervalBar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.35rem',
+  },
+  intervalLabel: {
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary)',
+    marginRight: '0.25rem',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    letterSpacing: '0.05em',
+  },
+  intervalBtn: {
+    background: '#292e42',
+    border: 'none',
+    color: '#565f89',
+    padding: '0.25rem 0.65rem',
+    borderRadius: 5,
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    fontWeight: 500,
+  },
+  intervalBtnActive: {
+    background: '#7aa2f733',
+    color: '#7aa2f7',
+    fontWeight: 600,
+  },
   chartsRow: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr',
