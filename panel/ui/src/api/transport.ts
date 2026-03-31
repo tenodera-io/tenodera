@@ -74,6 +74,14 @@ export function connect(): Promise<void> {
     };
 
     ws.onclose = () => {
+      // Notify all channel listeners of disconnect before clearing
+      const closeMsg: Message = { type: 'close', channel: '', problem: 'disconnected' };
+      for (const [ch, cbs] of channelListeners) {
+        const msg = { ...closeMsg, channel: ch };
+        for (const cb of cbs) {
+          try { cb(msg); } catch { /* ignore listener errors */ }
+        }
+      }
       ws = null;
       connectPromise = null;
       channelListeners.clear();
@@ -152,7 +160,8 @@ export function request(
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
-      channelListeners.delete(ch.channel);
+      // Send close to server so it can clean up the channel
+      ch.close();
       reject(new Error('request timeout'));
     }, REQUEST_TIMEOUT_MS);
 

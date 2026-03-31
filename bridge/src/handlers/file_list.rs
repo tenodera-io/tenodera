@@ -5,6 +5,7 @@ use tenodera_protocol::message::Message;
 use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
+use crate::util::run_cmd;
 
 pub struct FileListHandler;
 
@@ -91,7 +92,10 @@ fn list_directory(path: &str) -> serde_json::Value {
 }
 
 /// List directory using sudo — parses `ls -la` output.
+/// When running as root, skips sudo to avoid stdin password interference.
 async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
+    let am_root = unsafe { libc::geteuid() } == 0;
+
     // First try without sudo; fall back to sudo only on permission error
     let dir = Path::new(path);
     if let Ok(canonical) = dir.canonicalize()
@@ -99,14 +103,22 @@ async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
             return list_directory(path);
         }
 
-    // Resolve path via sudo
-    let resolved = sudo_cmd(password, &["readlink", "-f", "--", path]).await;
+    // Resolve path — skip sudo when already root
+    let resolved = if am_root {
+        run_cmd(&["readlink", "-f", "--", path]).await
+    } else {
+        sudo_cmd(password, &["readlink", "-f", "--", path]).await
+    };
     let resolved = resolved.trim();
     if resolved.is_empty() || resolved.starts_with("error:") {
         return serde_json::json!({ "error": format!("cannot resolve path: {path}") });
     }
 
-    let out = sudo_cmd(password, &["ls", "-laH", "--time-style=long-iso", "--", resolved]).await;
+    let out = if am_root {
+        run_cmd(&["ls", "-laH", "--time-style=long-iso", "--", resolved]).await
+    } else {
+        sudo_cmd(password, &["ls", "-laH", "--time-style=long-iso", "--", resolved]).await
+    };
     if out.contains("Permission denied") || out.starts_with("error:") {
         return serde_json::json!({ "error": format!("cannot read directory: Permission denied") });
     }

@@ -2,9 +2,11 @@ use std::path::Path;
 
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
-use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
+use crate::util::{
+    extract_string_array, run_cmd, sudo_action, sudo_stdin_write, which,
+};
 
 // ──────────────────────────────────────────────────────────────
 //  Package management handler
@@ -88,11 +90,10 @@ impl ChannelHandler for PackagesHandler {
 
         // Always echo back the action field so the frontend can match responses
         let mut result = result;
-        if let Some(obj) = result.as_object_mut() {
-            if !obj.contains_key("action") && !action.is_empty() {
+        if let Some(obj) = result.as_object_mut()
+            && !obj.contains_key("action") && !action.is_empty() {
                 obj.insert("action".to_string(), serde_json::json!(action));
             }
-        }
 
         vec![Message::Data {
             channel: channel.into(),
@@ -300,29 +301,63 @@ async fn search_pacman(query: &str) -> Vec<serde_json::Value> {
 async fn search_apt(query: &str) -> Vec<serde_json::Value> {
     // apt-cache search <query>
     let out = run_cmd(&["apt-cache", "search", "--", query]).await;
-    let mut pkgs = Vec::new();
+    let mut names = Vec::new();
+    let mut descs = Vec::new();
     for line in out.lines() {
         let parts: Vec<&str> = line.splitn(2, " - ").collect();
         if parts.len() == 2 {
-            let name = parts[0].trim();
-            let desc = parts[1].trim();
-
-            // Check if installed
-            let installed = is_apt_installed(name).await;
-            // Get version from apt-cache policy
-            let version = get_apt_candidate_version(name).await;
-
-            pkgs.push(serde_json::json!({
-                "name": name,
-                "version": version,
-                "installed": installed,
-                "description": desc,
-            }));
+            names.push(parts[0].trim().to_string());
+            descs.push(parts[1].trim().to_string());
         }
-        // Limit results for performance
-        if pkgs.len() >= 200 {
+        if names.len() >= 200 {
             break;
         }
+    }
+
+    if names.is_empty() {
+        return Vec::new();
+    }
+
+    // Batch: get installed status + version for all packages in one dpkg-query call.
+    // dpkg-query accepts multiple package names and outputs one line per package.
+    let mut cmd_args: Vec<String> = vec![
+        "dpkg-query".into(),
+        "-W".into(),
+        "-f".into(),
+        "${Package}\t${Status}\t${Version}\n".into(),
+        "--".into(),
+    ];
+    cmd_args.extend(names.iter().cloned());
+    let cmd_refs: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
+    let dpkg_out = run_cmd(&cmd_refs).await;
+
+    // Parse dpkg-query output into a lookup map: name → (installed, version)
+    let mut installed_map: std::collections::HashMap<&str, (bool, &str)> =
+        std::collections::HashMap::new();
+    for line in dpkg_out.lines() {
+        let fields: Vec<&str> = line.split('\t').collect();
+        if fields.len() >= 3 {
+            let pkg = fields[0].trim();
+            let status = fields[1].trim();
+            let version = fields[2].trim();
+            let is_installed = status.contains("install ok installed");
+            installed_map.insert(pkg, (is_installed, version));
+        }
+    }
+
+    // Build result using the lookup map
+    let mut pkgs = Vec::with_capacity(names.len());
+    for (name, desc) in names.iter().zip(descs.iter()) {
+        let (installed, version) = installed_map
+            .get(name.as_str())
+            .copied()
+            .unwrap_or((false, ""));
+        pkgs.push(serde_json::json!({
+            "name": name,
+            "version": version,
+            "installed": installed,
+            "description": desc,
+        }));
     }
     pkgs
 }
@@ -338,37 +373,12 @@ async fn is_apt_installed(name: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn is_rpm_installed(name: &str) -> bool {
-    tokio::process::Command::new("rpm")
-        .args(["-q", "--", name])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-async fn get_apt_candidate_version(name: &str) -> String {
-    let out = run_cmd(&["apt-cache", "policy", name]).await;
-    for line in out.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with("Candidate:") {
-            return trimmed
-                .strip_prefix("Candidate:")
-                .unwrap_or("")
-                .trim()
-                .to_string();
-        }
-    }
-    String::new()
-}
-
 async fn search_dnf(query: &str) -> Vec<serde_json::Value> {
     // dnf search <query>
     // dnf5 does not support "--" after subcommands; query is validated by is_valid_package_name
     let out = run_cmd(&["dnf", "search", "--quiet", query]).await;
-    let mut pkgs = Vec::new();
+    let mut names = Vec::new();
+    let mut descs = Vec::new();
     for line in out.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty()
@@ -402,18 +412,54 @@ async fn search_dnf(query: &str) -> Vec<serde_json::Value> {
             name_arch
         };
 
-        let installed = is_rpm_installed(name).await;
+        names.push(name.to_string());
+        descs.push(desc.to_string());
 
+        if names.len() >= 200 {
+            break;
+        }
+    }
+
+    if names.is_empty() {
+        return Vec::new();
+    }
+
+    // Batch: check which packages are installed with a single rpm -q call.
+    // rpm -q outputs "<name>-<ver>-<rel>.<arch>" for installed packages
+    // and "package <name> is not installed" (on stderr) for missing ones.
+    // We use --qf to get just the package name on stdout for installed ones.
+    let mut cmd_args: Vec<String> = vec![
+        "rpm".into(),
+        "-q".into(),
+        "--qf".into(),
+        "%{NAME}\n".into(),
+        "--".into(),
+    ];
+    cmd_args.extend(names.iter().cloned());
+    let cmd_refs: Vec<&str> = cmd_args.iter().map(|s| s.as_str()).collect();
+    let rpm_out = tokio::process::Command::new(cmd_refs[0])
+        .args(&cmd_refs[1..])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .await;
+    let installed_set: std::collections::HashSet<String> = match rpm_out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect(),
+        Err(_) => std::collections::HashSet::new(),
+    };
+
+    let mut pkgs = Vec::with_capacity(names.len());
+    for (name, desc) in names.iter().zip(descs.iter()) {
         pkgs.push(serde_json::json!({
             "name": name,
             "version": "",
-            "installed": installed,
+            "installed": installed_set.contains(name.as_str()),
             "description": desc,
         }));
-
-        if pkgs.len() >= 200 {
-            break;
-        }
     }
     pkgs
 }
@@ -1074,201 +1120,6 @@ fn is_valid_package_name(name: &str) -> bool {
         && name.chars().all(|c| c.is_alphanumeric() || "-._+:".contains(c))
 }
 
-async fn which(cmd: &str) -> bool {
-    tokio::process::Command::new("which")
-        .arg(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-async fn run_cmd(args: &[&str]) -> String {
-    let Some((cmd, rest)) = args.split_first() else {
-        return String::new();
-    };
-    match tokio::process::Command::new(cmd)
-        .args(rest)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-    {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            if stdout.is_empty() {
-                String::from_utf8_lossy(&out.stderr).to_string()
-            } else {
-                stdout
-            }
-        }
-        Err(e) => format!("error: {e}"),
-    }
-}
-
-async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> serde_json::Value {
-    let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
-
-    // When running as root, skip sudo entirely — avoid stdin password interference
-    let am_root = unsafe { libc::geteuid() } == 0;
-
-    if !am_root && password.is_empty() {
-        return serde_json::json!({ "error": "password required" });
-    }
-
-    let (cmd, cmd_args) = if am_root {
-        let first = str_args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = str_args.iter().skip(1).copied().collect();
-        (first.to_string(), rest)
-    } else {
-        let mut sa = vec!["-S"];
-        sa.extend_from_slice(&str_args);
-        ("sudo".to_string(), sa)
-    };
-
-    let child = tokio::process::Command::new(&cmd)
-        .args(&cmd_args)
-        .env("DEBIAN_FRONTEND", "noninteractive")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return serde_json::json!({ "error": e.to_string() }),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        if !am_root {
-            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        }
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            serde_json::json!({ "ok": true, "output": stdout })
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let clean = stderr
-                .lines()
-                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let msg = if clean.is_empty() {
-                "command failed".to_string()
-            } else {
-                clean
-            };
-            serde_json::json!({ "error": msg })
-        }
-        Err(e) => serde_json::json!({ "error": e.to_string() }),
-    }
-}
-
-/// Write `content` to a command's stdin via sudo, avoiding shell execution.
-async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> serde_json::Value {
-    // When running as root, skip sudo entirely — write content directly to
-    // the command's stdin.
-    //
-    // When non-root, sudo -S reads the password from stdin **and** closes
-    // all fd >= 3 before exec, so we cannot mix the sudo password with the
-    // command's data on the same stdin, nor pass data on a separate fd.
-    //
-    // Solution: base64-encode the content and embed it inside a
-    //   sudo -S sh -c 'printf "<b64>" | base64 -d | <command> [args]'
-    // invocation. Only the sudo password goes on stdin.
-    let am_root = unsafe { libc::geteuid() } == 0;
-
-    if !am_root && password.is_empty() {
-        return serde_json::json!({ "error": "password required" });
-    }
-
-    if am_root {
-        let first = args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = args.iter().skip(1).copied().collect();
-
-        let child = tokio::process::Command::new(first)
-            .args(&rest)
-            .env("DEBIAN_FRONTEND", "noninteractive")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
-
-        let mut child = match child {
-            Ok(c) => c,
-            Err(e) => return serde_json::json!({ "error": e.to_string() }),
-        };
-
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(content.as_bytes()).await;
-            drop(stdin);
-        }
-
-        return match child.wait_with_output().await {
-            Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
-            Ok(out) => pkg_stderr_to_error(&out.stderr),
-            Err(e) => serde_json::json!({ "error": e.to_string() }),
-        };
-    }
-
-    // Non-root path — base64-encode content, embed in sh -c.
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
-
-    let escaped_args: Vec<String> = args.iter().map(|a| pkg_shell_escape(a)).collect();
-    let inner = format!("printf '{}' | base64 -d | {}", b64, escaped_args.join(" "));
-
-    let child = tokio::process::Command::new("sudo")
-        .args(["-S", "sh", "-c", &inner])
-        .env("DEBIAN_FRONTEND", "noninteractive")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return serde_json::json!({ "error": e.to_string() }),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
-        Ok(out) => pkg_stderr_to_error(&out.stderr),
-        Err(e) => serde_json::json!({ "error": e.to_string() }),
-    }
-}
-
-fn pkg_stderr_to_error(stderr: &[u8]) -> serde_json::Value {
-    let raw = String::from_utf8_lossy(stderr).trim().to_string();
-    let clean = raw
-        .lines()
-        .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let msg = if clean.is_empty() {
-        "operation failed".to_string()
-    } else {
-        clean
-    };
-    serde_json::json!({ "error": msg })
-}
-
-fn pkg_shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
 fn is_valid_repo_url(url: &str) -> bool {
     // Must start with a valid protocol and not contain shell metacharacters
     let has_valid_proto = url.starts_with("http://")
@@ -1283,15 +1134,4 @@ fn is_valid_repo_url(url: &str) -> bool {
         && !url.contains('|')
         && !url.contains('&');
     has_valid_proto && no_dangerous_chars
-}
-
-fn extract_string_array(data: &serde_json::Value, key: &str) -> Vec<String> {
-    data.get(key)
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
 }

@@ -63,6 +63,7 @@ export function LogFiles() {
   // Persistent channel ref
   const channelRef = useRef<ReturnType<typeof openChannel> | null>(null);
   const readyRef = useRef(false);
+  const pendingQueue = useRef<Record<string, unknown>[]>([]);
   const selectedFileRef = useRef('');
   const viewModeRef = useRef<'tail' | 'search'>('tail');
 
@@ -78,6 +79,11 @@ export function LogFiles() {
     ch.onMessage((msg: Message) => {
       if (msg.type === 'ready') {
         readyRef.current = true;
+        // Flush any commands queued before ready
+        for (const cmd of pendingQueue.current) {
+          ch.send(cmd);
+        }
+        pendingQueue.current = [];
         // Request file list once channel is ready (include password if superuser active)
         const currentSu = suRef.current;
         const listCmd: Record<string, unknown> = { action: 'list' };
@@ -159,17 +165,21 @@ export function LogFiles() {
       ch.close();
       channelRef.current = null;
       readyRef.current = false;
+      pendingQueue.current = [];
     };
   }, [openChannel]);
 
   // Helper: send command through persistent channel (injects superuser password)
   const send = useCallback((data: Record<string, unknown>) => {
+    const currentSu = suRef.current;
+    if (currentSu.active && currentSu.password) {
+      data.password = currentSu.password;
+    }
     if (readyRef.current && channelRef.current) {
-      const currentSu = suRef.current;
-      if (currentSu.active && currentSu.password) {
-        data.password = currentSu.password;
-      }
       channelRef.current.send(data);
+    } else {
+      // Queue until ready
+      pendingQueue.current.push(data);
     }
   }, []);
 

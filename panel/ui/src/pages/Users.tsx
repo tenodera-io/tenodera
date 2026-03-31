@@ -76,7 +76,8 @@ export function Users() {
     return (saved === 'groups' || saved === 'create') ? saved : 'users';
   });
   const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('users_tab', t); };
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(0);
+  const isLoading = loading > 0;
 
   // Users
   const [users, setUsers] = useState<UserInfo[]>([]);
@@ -153,6 +154,7 @@ export function Users() {
 
   /* ── manage channel ────────────────────────────────────── */
   const manageRef = useRef<ReturnType<typeof openChannel> | null>(null);
+  const pwResolveRef = useRef<((pw: string) => void) | null>(null);
 
   const getManageChannel = useCallback(() => {
     if (!manageRef.current) {
@@ -197,10 +199,12 @@ export function Users() {
     return new Promise((resolve) => {
       setPwPrompt(true);
       setPwInput('');
+      pwResolveRef.current = resolve;
       setPendingAction(() => () => {
         const el = document.getElementById('users-pw-input') as HTMLInputElement;
         const pw = el?.value || '';
         setPwPrompt(false);
+        pwResolveRef.current = null;
         resolve(pw);
       });
     });
@@ -208,6 +212,7 @@ export function Users() {
 
   const sudoAction = useCallback(async (actionData: Record<string, unknown>) => {
     const pw = await getPassword();
+    if (!pw) return { cancelled: true };
     return sendManage({ ...actionData, password: pw });
   }, [getPassword, sendManage]);
 
@@ -243,32 +248,38 @@ export function Users() {
 
   /* ── load users ───────────────────────────────────────── */
   const loadUsers = useCallback(async () => {
-    setLoading(true);
-    const res = await sendManage({ action: 'list' });
-    setUsers((res.users as UserInfo[]) || []);
-    setLoading(false);
+    setLoading(n => n + 1);
+    try {
+      const res = await sendManage({ action: 'list' });
+      setUsers((res.users as UserInfo[]) || []);
+    } catch { /* best-effort */ }
+    setLoading(n => n - 1);
   }, [sendManage]);
 
   /* ── load groups ──────────────────────────────────────── */
   const loadGroups = useCallback(async () => {
-    setLoading(true);
-    const res = await sendManage({ action: 'list_groups' });
-    setGroups((res.groups as GroupInfo[]) || []);
-    setLoading(false);
+    setLoading(n => n + 1);
+    try {
+      const res = await sendManage({ action: 'list_groups' });
+      setGroups((res.groups as GroupInfo[]) || []);
+    } catch { /* best-effort */ }
+    setLoading(n => n - 1);
   }, [sendManage]);
 
   /* ── load shells ──────────────────────────────────────── */
   const loadShells = useCallback(async () => {
-    const res = await sendManage({ action: 'list_shells' });
-    const s = (res.shells as string[]) || [];
-    setShells(s);
-    if (s.length > 0) {
-      setNewShell(prev => {
-        if (prev) return prev;
-        const bash = s.find(sh => sh.endsWith('/bash'));
-        return bash || s[0];
-      });
-    }
+    try {
+      const res = await sendManage({ action: 'list_shells' });
+      const s = (res.shells as string[]) || [];
+      setShells(s);
+      if (s.length > 0) {
+        setNewShell(prev => {
+          if (prev) return prev;
+          const bash = s.find(sh => sh.endsWith('/bash'));
+          return bash || s[0];
+        });
+      }
+    } catch { /* best-effort */ }
   }, [sendManage]);
 
   useEffect(() => {
@@ -311,56 +322,76 @@ export function Users() {
     if (!newUsername.trim()) { setActionError('Username is required'); return; }
     if (newPassword && newPassword !== newPasswordConfirm) { setActionError('Passwords do not match'); return; }
 
-    const res = await sudoAction({
-      action: 'create',
-      username: newUsername.trim(),
-      gecos: newGecos.trim(),
-      home: newHome.trim() || undefined,
-      shell: newShell || undefined,
-      create_home: newCreateHome,
-      new_password: newPassword || undefined,
-      force_change: newForceChange,
-      groups: newGroups.length > 0 ? newGroups : undefined,
-    });
+    try {
+      const res = await sudoAction({
+        action: 'create',
+        username: newUsername.trim(),
+        gecos: newGecos.trim(),
+        home: newHome.trim() || undefined,
+        shell: newShell || undefined,
+        create_home: newCreateHome,
+        new_password: newPassword || undefined,
+        force_change: newForceChange,
+        groups: newGroups.length > 0 ? newGroups : undefined,
+      });
 
-    if (res.error) {
-      setActionError(String(res.error));
-    } else {
-      setActionMsg(`User "${newUsername}" created successfully`);
-      setNewUsername(''); setNewGecos(''); setNewHome('');
-      setNewPassword(''); setNewPasswordConfirm('');
-      setNewForceChange(false); setNewGroups([]);
-      loadUsers();
-      changeTab('users');
+      if (res.cancelled) return;
+      if (res.error) {
+        setActionError(String(res.error));
+      } else {
+        setActionMsg(`User "${newUsername}" created successfully`);
+        setNewUsername(''); setNewGecos(''); setNewHome('');
+        setNewPassword(''); setNewPasswordConfirm('');
+        setNewForceChange(false); setNewGroups([]);
+        loadUsers();
+        changeTab('users');
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Create user failed');
     }
   };
 
   const handleDeleteUser = async () => {
     if (!deleteUser) return;
     clearMsg();
-    const res = await sudoAction({
-      action: 'delete',
-      username: deleteUser,
-      remove_home: deleteRemoveHome,
-    });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`User "${deleteUser}" deleted`); loadUsers(); }
+    try {
+      const res = await sudoAction({
+        action: 'delete',
+        username: deleteUser,
+        remove_home: deleteRemoveHome,
+      });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg(`User "${deleteUser}" deleted`); loadUsers(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Delete user failed');
+    }
     setDeleteUser(null);
     setDeleteRemoveHome(false);
   };
 
   const handleLock = async (username: string) => {
     clearMsg();
-    const res = await sudoAction({ action: 'lock', username });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`User "${username}" locked`); loadUsers(); }
+    try {
+      const res = await sudoAction({ action: 'lock', username });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg(`User "${username}" locked`); loadUsers(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Lock failed');
+    }
   };
 
   const handleUnlock = async (username: string) => {
     clearMsg();
-    const res = await sudoAction({ action: 'unlock', username });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`User "${username}" unlocked`); loadUsers(); }
+    try {
+      const res = await sudoAction({ action: 'unlock', username });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg(`User "${username}" unlocked`); loadUsers(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Unlock failed');
+    }
   };
 
   const handleSetPassword = async () => {
@@ -368,29 +399,39 @@ export function Users() {
     clearMsg();
     if (!pwNew) { setActionError('Password cannot be empty'); return; }
     if (pwNew !== pwConfirm) { setActionError('Passwords do not match'); return; }
-    const res = await sudoAction({
-      action: 'set_password',
-      username: pwUser,
-      new_password: pwNew,
-      force_change: pwForce,
-    });
-    if (res.error) setActionError(String(res.error));
-    else setActionMsg(`Password set for "${pwUser}"`);
+    try {
+      const res = await sudoAction({
+        action: 'set_password',
+        username: pwUser,
+        new_password: pwNew,
+        force_change: pwForce,
+      });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else setActionMsg(`Password set for "${pwUser}"`);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Set password failed');
+    }
     setPwUser(null); setPwNew(''); setPwConfirm(''); setPwForce(false);
   };
 
   const handleEditSave = async () => {
     if (!editUser) return;
     clearMsg();
-    const res = await sudoAction({
-      action: 'modify',
-      username: editUser.username,
-      gecos: editGecos,
-      shell: editShell,
-      groups: editGroups,
-    });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`User "${editUser.username}" updated`); loadUsers(); }
+    try {
+      const res = await sudoAction({
+        action: 'modify',
+        username: editUser.username,
+        gecos: editGecos,
+        shell: editShell,
+        groups: editGroups,
+      });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg(`User "${editUser.username}" updated`); loadUsers(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Edit user failed');
+    }
     setEditUser(null);
   };
 
@@ -409,20 +450,30 @@ export function Users() {
       setActionError('GID must be a number between 0 and 65534');
       return;
     }
-    const res = await sudoAction({
-      action: 'create_group',
-      name: newGroupName.trim(),
-      ...(gidNum !== undefined ? { gid: gidNum } : {}),
-    });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`Group "${newGroupName}" created`); setNewGroupName(''); setNewGroupGid(''); loadGroups(); }
+    try {
+      const res = await sudoAction({
+        action: 'create_group',
+        name: newGroupName.trim(),
+        ...(gidNum !== undefined ? { gid: gidNum } : {}),
+      });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg(`Group "${newGroupName}" created`); setNewGroupName(''); setNewGroupGid(''); loadGroups(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Create group failed');
+    }
   };
 
   const handleDeleteGroup = async (name: string) => {
     clearMsg();
-    const res = await sudoAction({ action: 'delete_group', name });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg(`Group "${name}" deleted`); loadGroups(); }
+    try {
+      const res = await sudoAction({ action: 'delete_group', name });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg(`Group "${name}" deleted`); loadGroups(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Delete group failed');
+    }
   };
 
   /* ── group toggle for create/edit forms ── */
@@ -484,8 +535,8 @@ export function Users() {
                 />
                 Show system accounts
               </label>
-              <button onClick={loadUsers} style={S.btn} disabled={loading}>
-                {loading ? '...' : 'Refresh'}
+              <button onClick={loadUsers} style={S.btn} disabled={isLoading}>
+                {isLoading ? '...' : 'Refresh'}
               </button>
               <span style={S.count}>{filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}</span>
             </div>
@@ -619,7 +670,7 @@ export function Users() {
                 </tbody>
               </table>
             </div>
-            {loading && <div style={S.loadingText}>Loading...</div>}
+            {isLoading && <div style={S.loadingText}>Loading...</div>}
           </div>
         )}
 
@@ -642,8 +693,8 @@ export function Users() {
                 />
                 Show system groups
               </label>
-              <button onClick={loadGroups} style={S.btn} disabled={loading}>
-                {loading ? '...' : 'Refresh'}
+              <button onClick={loadGroups} style={S.btn} disabled={isLoading}>
+                {isLoading ? '...' : 'Refresh'}
               </button>
               <span style={S.count}>{filteredGroups.length} group{filteredGroups.length !== 1 ? 's' : ''}</span>
             </div>
@@ -711,7 +762,7 @@ export function Users() {
                 </tbody>
               </table>
             </div>
-            {loading && <div style={S.loadingText}>Loading...</div>}
+            {isLoading && <div style={S.loadingText}>Loading...</div>}
           </div>
         )}
 
@@ -979,7 +1030,7 @@ export function Users() {
               autoComplete="current-password"
             />
             <div style={S.modalActions}>
-              <button type="button" onClick={() => setPwPrompt(false)} style={S.btnCancel}>Cancel</button>
+              <button type="button" onClick={() => { setPwPrompt(false); if (pwResolveRef.current) { pwResolveRef.current(''); pwResolveRef.current = null; } }} style={S.btnCancel}>Cancel</button>
               <button type="submit" style={S.btnSuccess}>Authenticate</button>
             </div>
           </form>

@@ -40,17 +40,18 @@ fn config_path() -> PathBuf {
     PathBuf::from("/etc/tenodera/hosts.json")
 }
 
-fn load_config() -> HostsConfig {
-    std::fs::read_to_string(config_path())
+async fn load_config() -> HostsConfig {
+    tokio::fs::read_to_string(config_path())
+        .await
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or_default()
 }
 
-fn save_config(config: &HostsConfig) -> Result<(), String> {
+async fn save_config(config: &HostsConfig) -> Result<(), String> {
     let path = config_path();
     let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
 
     // Enforce restrictive permissions — hosts.json may contain sensitive
     // host information and should only be readable by root.
@@ -58,7 +59,7 @@ fn save_config(config: &HostsConfig) -> Result<(), String> {
     {
         use std::os::unix::fs::PermissionsExt;
         let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(&path, perms).map_err(|e| e.to_string())?;
+        tokio::fs::set_permissions(&path, perms).await.map_err(|e| e.to_string())?;
     }
 
     Ok(())
@@ -85,7 +86,7 @@ impl ChannelHandler for HostsManageHandler {
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
         let result = match action {
-            "list" => action_list(),
+            "list" => action_list().await,
             "keyscan" => {
                 let address = data.get("address").and_then(|v| v.as_str()).unwrap_or("");
                 let ssh_port = data
@@ -103,7 +104,7 @@ impl ChannelHandler for HostsManageHandler {
                     .and_then(|v| v.as_u64())
                     .unwrap_or(22) as u16;
                 let host_key = data.get("host_key").and_then(|v| v.as_str()).unwrap_or("");
-                let r = action_add(name, address, user_field, ssh_port, host_key);
+                let r = action_add(name, address, user_field, ssh_port, host_key).await;
                 let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 crate::audit::log(user, "host.add", address, ok, name);
                 r
@@ -118,14 +119,14 @@ impl ChannelHandler for HostsManageHandler {
                     .and_then(|v| v.as_u64())
                     .unwrap_or(22) as u16;
                 let host_key = data.get("host_key").and_then(|v| v.as_str()).unwrap_or("");
-                let r = action_edit(id, name, address, user_field, ssh_port, host_key);
+                let r = action_edit(id, name, address, user_field, ssh_port, host_key).await;
                 let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 crate::audit::log(user, "host.edit", address, ok, name);
                 r
             }
             "remove" => {
                 let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
-                let r = action_remove(id);
+                let r = action_remove(id).await;
                 let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                 crate::audit::log(user, "host.remove", id, ok, "");
                 r
@@ -142,17 +143,17 @@ impl ChannelHandler for HostsManageHandler {
 
 // ── Action implementations ──────────────────────────────────────
 
-fn action_list() -> Value {
-    let config = load_config();
+async fn action_list() -> Value {
+    let config = load_config().await;
     json!({ "action": "list", "hosts": config.hosts })
 }
 
-fn action_add(name: &str, address: &str, user: &str, ssh_port: u16, host_key: &str) -> Value {
+async fn action_add(name: &str, address: &str, user: &str, ssh_port: u16, host_key: &str) -> Value {
     if name.is_empty() || address.is_empty() {
         return json!({ "action": "add", "ok": false, "error": "name and address are required" });
     }
 
-    let mut config = load_config();
+    let mut config = load_config().await;
     let entry = HostEntry {
         id: uuid::Uuid::new_v4().to_string(),
         name: name.to_string(),
@@ -165,18 +166,18 @@ fn action_add(name: &str, address: &str, user: &str, ssh_port: u16, host_key: &s
     let id = entry.id.clone();
     config.hosts.push(entry);
 
-    match save_config(&config) {
+    match save_config(&config).await {
         Ok(()) => json!({ "action": "add", "ok": true, "id": id }),
         Err(e) => json!({ "action": "add", "ok": false, "error": e }),
     }
 }
 
-fn action_edit(id: &str, name: &str, address: &str, user: &str, ssh_port: u16, host_key: &str) -> Value {
+async fn action_edit(id: &str, name: &str, address: &str, user: &str, ssh_port: u16, host_key: &str) -> Value {
     if id.is_empty() || name.is_empty() || address.is_empty() {
         return json!({ "action": "edit", "ok": false, "error": "id, name and address are required" });
     }
 
-    let mut config = load_config();
+    let mut config = load_config().await;
     let Some(entry) = config.hosts.iter_mut().find(|h| h.id == id) else {
         return json!({ "action": "edit", "ok": false, "error": "host not found" });
     };
@@ -189,14 +190,14 @@ fn action_edit(id: &str, name: &str, address: &str, user: &str, ssh_port: u16, h
         entry.host_key = host_key.to_string();
     }
 
-    match save_config(&config) {
+    match save_config(&config).await {
         Ok(()) => json!({ "action": "edit", "ok": true }),
         Err(e) => json!({ "action": "edit", "ok": false, "error": e }),
     }
 }
 
-fn action_remove(id: &str) -> Value {
-    let mut config = load_config();
+async fn action_remove(id: &str) -> Value {
+    let mut config = load_config().await;
     let before = config.hosts.len();
     config.hosts.retain(|h| h.id != id);
 
@@ -204,7 +205,7 @@ fn action_remove(id: &str) -> Value {
         return json!({ "action": "remove", "ok": false, "error": "host not found" });
     }
 
-    match save_config(&config) {
+    match save_config(&config).await {
         Ok(()) => json!({ "action": "remove", "ok": true }),
         Err(e) => json!({ "action": "remove", "ok": false, "error": e }),
     }

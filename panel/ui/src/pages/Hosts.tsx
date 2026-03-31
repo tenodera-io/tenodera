@@ -106,6 +106,9 @@ export function Hosts({ onClose, onChange }: HostsProps) {
     }
   }, [resetForm, refreshList, formMode, editId]);
 
+  const handleDataRef = useRef(handleData);
+  handleDataRef.current = handleData;
+
   /* ── open channel ── */
   useEffect(() => {
     const ch = openChannel('hosts.manage');
@@ -113,14 +116,14 @@ export function Hosts({ onClose, onChange }: HostsProps) {
 
     ch.onMessage((msg) => {
       if (msg.type === 'data' && 'data' in msg) {
-        handleData(msg.data as Record<string, unknown>);
+        handleDataRef.current(msg.data as Record<string, unknown>);
       }
     });
 
     ch.send({ action: 'list' });
 
     return () => { ch.close(); };
-  }, [handleData]);
+  }, []);
 
   /* ── submit (add or edit) — auto keyscan + save ── */
   const handleSubmit = () => {

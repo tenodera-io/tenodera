@@ -4,6 +4,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, watch};
 
 use crate::handler::ChannelHandler;
+use crate::util::{run_cmd, sudo_action, which};
 
 // ──────────────────────────────────────────────────────────────
 //  Streaming handler  –  network traffic (TX / RX rates)
@@ -241,11 +242,10 @@ impl ChannelHandler for NetworkManageHandler {
 
         // Always echo back the action field so the frontend can match responses
         let mut result = result;
-        if let Some(obj) = result.as_object_mut() {
-            if !obj.contains_key("action") && !action.is_empty() {
+        if let Some(obj) = result.as_object_mut()
+            && !obj.contains_key("action") && !action.is_empty() {
                 obj.insert("action".to_string(), serde_json::json!(action));
             }
-        }
 
         vec![Message::Data {
             channel: channel.into(),
@@ -308,17 +308,6 @@ fn parse_backend(s: &str) -> Option<FirewallBackend> {
         "iptables" => Some(FirewallBackend::Iptables),
         _ => None,
     }
-}
-
-async fn which(cmd: &str) -> bool {
-    tokio::process::Command::new("which")
-        .arg(cmd)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
 }
 
 async fn firewall_status_single(backend: FirewallBackend, password: &str) -> (bool, String) {
@@ -744,7 +733,21 @@ async fn firewall_remove_rule(password: &str, rule: &serde_json::Value, target: 
                         serde_json::json!({ "error": "rule number required for iptables delete" })
                     }
                 }
-                _ => serde_json::json!({ "error": "manual removal not supported for this backend" }),
+                FirewallBackend::Nftables => {
+                    // nft delete rule <family> <table> <chain> handle <handle>
+                    let table = rule.get("table").and_then(|v| v.as_str()).unwrap_or("filter");
+                    let chain = rule.get("chain").and_then(|v| v.as_str()).unwrap_or("input");
+                    let family = rule.get("family").and_then(|v| v.as_str()).unwrap_or("inet");
+                    if let Some(handle) = number {
+                        let handle_str = handle.to_string();
+                        sudo_action(password, &[
+                            "nft", "delete", "rule", family, table, chain, "handle", &handle_str,
+                        ]).await
+                    } else {
+                        serde_json::json!({ "error": "rule handle required for nftables delete" })
+                    }
+                }
+                _ => serde_json::json!({ "error": "no firewall backend available" }),
             }
         }
     }
@@ -755,9 +758,10 @@ async fn firewall_remove_rule(password: &str, rule: &serde_json::Value, target: 
 // ──────────────────────────────────────────────────────────────
 
 async fn list_interfaces_detailed() -> serde_json::Value {
-    let out = std::process::Command::new("ip")
+    let out = tokio::process::Command::new("ip")
         .args(["-j", "addr", "show"])
-        .output();
+        .output()
+        .await;
 
     let parsed: Vec<serde_json::Value> = match out {
         Ok(o) if o.status.success() => {
@@ -977,31 +981,8 @@ async fn network_logs(lines: u64) -> serde_json::Value {
 }
 
 // ──────────────────────────────────────────────────────────────
-//  Utility  –  run command / sudo
+//  Utility  –  sudo_run_cmd (networking-specific, returns String)
 // ──────────────────────────────────────────────────────────────
-
-async fn run_cmd(args: &[&str]) -> String {
-    let Some((cmd, rest)) = args.split_first() else {
-        return String::new();
-    };
-    match tokio::process::Command::new(cmd)
-        .args(rest)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-    {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            if stdout.is_empty() {
-                String::from_utf8_lossy(&out.stderr).to_string()
-            } else {
-                stdout
-            }
-        }
-        Err(e) => format!("error: {e}"),
-    }
-}
 
 /// Like `run_cmd` but uses `sudo -S` when password is non-empty.
 /// Falls back to unprivileged `run_cmd` when no password is supplied.
@@ -1045,67 +1026,5 @@ async fn sudo_run_cmd(password: &str, args: &[&str]) -> String {
             }
         }
         Err(e) => format!("error: {e}"),
-    }
-}
-
-async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> serde_json::Value {
-    let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
-
-    // When running as root, skip sudo entirely — avoid stdin password interference
-    let am_root = unsafe { libc::geteuid() } == 0;
-
-    if !am_root && password.is_empty() {
-        return serde_json::json!({ "error": "password required" });
-    }
-
-    let (cmd, cmd_args) = if am_root {
-        let first = str_args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = str_args.iter().skip(1).copied().collect();
-        (first.to_string(), rest)
-    } else {
-        let mut sa = vec!["-S"];
-        sa.extend_from_slice(&str_args);
-        ("sudo".to_string(), sa)
-    };
-
-    let child = tokio::process::Command::new(&cmd)
-        .args(&cmd_args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return serde_json::json!({ "error": e.to_string() }),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        if !am_root {
-            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        }
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            serde_json::json!({ "ok": true, "output": stdout })
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let clean = stderr
-                .lines()
-                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let msg = if clean.is_empty() {
-                "command failed".to_string()
-            } else {
-                clean
-            };
-            serde_json::json!({ "error": msg })
-        }
-        Err(e) => serde_json::json!({ "error": e.to_string() }),
     }
 }

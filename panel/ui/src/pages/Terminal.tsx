@@ -84,7 +84,7 @@ export function Terminal({ user, hostname }: TerminalProps) {
     }
 
     // Open PTY channel with home directory
-    const homeDir = user ? `/home/${user}` : '/tmp';
+    const homeDir = user === 'root' ? '/root' : user ? `/home/${user}` : '/tmp';
     const ch = openChannel('terminal.pty', {
       cols,
       rows,

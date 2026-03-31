@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 
 use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
@@ -117,9 +117,9 @@ impl ChannelHandler for TerminalPtyHandler {
         let audit_user = target_user.as_deref().unwrap_or("unknown");
         crate::audit::log(audit_user, "terminal.open", &format!("shell={shell}"), true, "");
 
-        // Open PTY — returns (async reader via AsyncFd, writer OwnedFd)
-        let (reader, writer) = match open_pty(&shell, cols, rows, cwd, target_user.as_deref()) {
-            Ok(pair) => pair,
+        // Open PTY — returns (async reader via AsyncFd, writer OwnedFd, child process)
+        let (reader, writer, child) = match open_pty(&shell, cols, rows, cwd, target_user.as_deref()) {
+            Ok(tuple) => tuple,
             Err(e) => {
                 tracing::error!(error = %e, "failed to open PTY");
                 let _ = tx
@@ -131,6 +131,22 @@ impl ChannelHandler for TerminalPtyHandler {
                 return;
             }
         };
+
+        // Spawn a background task to reap the child process.
+        // Without this, the child becomes a zombie after exit because
+        // dropping a std::process::Child does NOT call wait() on Unix.
+        let reaper_channel = channel.clone();
+        tokio::task::spawn_blocking(move || {
+            let mut child = child;
+            match child.wait() {
+                Ok(status) => {
+                    tracing::debug!(channel = %reaper_channel, ?status, "PTY child reaped");
+                }
+                Err(e) => {
+                    tracing::warn!(channel = %reaper_channel, error = %e, "PTY child wait failed");
+                }
+            }
+        });
 
         // Store writer for this channel so data() can write to it
         self.writers.lock().await.insert(channel.clone(), writer);
@@ -216,16 +232,24 @@ impl ChannelHandler for TerminalPtyHandler {
                 }
             }
 
-            // Handle keyboard input
+            // Handle keyboard input.
+            // Release the mutex before the potentially-blocking write so other
+            // channels are not starved if the PTY buffer is full.
             if let Some(input) = data.get("input").and_then(|v| v.as_str()) {
-                let bytes = input.as_bytes();
-                let ret = unsafe {
-                    libc::write(fd, bytes.as_ptr() as *const libc::c_void, bytes.len())
-                };
-                if ret < 0 {
-                    let e = std::io::Error::last_os_error();
-                    tracing::warn!(error = %e, channel = %channel, "failed to write to PTY");
-                }
+                let bytes = input.as_bytes().to_vec();
+                // Drop the lock before the blocking write
+                drop(writers);
+                let channel_name = channel.to_string();
+                tokio::task::spawn_blocking(move || {
+                    let ret = unsafe {
+                        libc::write(fd, bytes.as_ptr() as *const libc::c_void, bytes.len())
+                    };
+                    if ret < 0 {
+                        let e = std::io::Error::last_os_error();
+                        tracing::warn!(error = %e, channel = %channel_name, "failed to write to PTY");
+                    }
+                }).await.ok();
+                return vec![];
             }
         }
         vec![]
@@ -279,14 +303,15 @@ fn lookup_user(username: &str) -> Option<(u32, u32, String, String)> {
 /// on all non-stdio fds, and `pre_exec` runs in the child between fork and
 /// exec for PTY/session/user setup.
 ///
-/// Returns (AsyncFd reader, OwnedFd writer) for the master side.
+/// Returns (AsyncFd reader, OwnedFd writer, Child) for the master side.
+/// The caller MUST reap the Child (via wait/spawn_blocking) to avoid zombies.
 fn open_pty(
     shell: &str,
     cols: u16,
     rows: u16,
     cwd: &str,
     run_as_user: Option<&str>,
-) -> anyhow::Result<(AsyncFd<OwnedFd>, OwnedFd)> {
+) -> anyhow::Result<(AsyncFd<OwnedFd>, OwnedFd, Child)> {
     use std::os::unix::process::CommandExt;
 
     let winsize = nix::pty::Winsize {
@@ -363,7 +388,7 @@ fn open_pty(
     }
 
     // Spawn the child process — this does fork+exec safely
-    let _child = cmd.spawn().map_err(|e| {
+    let child = cmd.spawn().map_err(|e| {
         anyhow::anyhow!("failed to spawn shell {shell}: {e}")
     })?;
 
@@ -392,5 +417,5 @@ fn open_pty(
     // Wrap master OwnedFd in AsyncFd (takes ownership, no manual close needed)
     let reader = AsyncFd::new(pty.master)?;
 
-    Ok((reader, writer))
+    Ok((reader, writer, child))
 }

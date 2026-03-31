@@ -43,7 +43,18 @@ pub async fn serve_tls(
     use hyper_util::rt::TokioIo;
 
     loop {
-        let (stream, addr) = listener.accept().await?;
+        let (stream, addr) = match listener.accept().await {
+            Ok(conn) => conn,
+            Err(e) => {
+                // TCP accept errors (fd exhaustion, connection reset) must not
+                // kill the entire server — log and continue accepting.
+                tracing::error!(error = %e, "TCP accept failed");
+                // Brief sleep to avoid tight loop on persistent errors
+                // (e.g. fd exhaustion).
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                continue;
+            }
+        };
         let acceptor = acceptor.clone();
         let app = app.clone();
 

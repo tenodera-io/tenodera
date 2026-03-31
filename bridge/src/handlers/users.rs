@@ -5,6 +5,7 @@ use tokio::io::AsyncWriteExt;
 use serde_json::{json, Value};
 
 use crate::handler::ChannelHandler;
+use crate::util::{extract_string_array, run_cmd, sudo_stdin_write};
 
 // ──────────────────────────────────────────────────────────────
 //  User & group management handler
@@ -105,11 +106,10 @@ impl ChannelHandler for UsersManageHandler {
 
         // Always echo back the action field so the frontend can match responses
         let mut result = result;
-        if let Some(obj) = result.as_object_mut() {
-            if !obj.contains_key("action") && !action.is_empty() {
+        if let Some(obj) = result.as_object_mut()
+            && !obj.contains_key("action") && !action.is_empty() {
                 obj.insert("action".to_string(), json!(action));
             }
-        }
 
         vec![Message::Data {
             channel: channel.into(),
@@ -405,11 +405,10 @@ async fn read_valid_shells() -> Vec<String> {
 
     // Always include nologin options if not already present
     for nologin in &["/usr/sbin/nologin", "/sbin/nologin", "/bin/false"] {
-        if !shells.iter().any(|s| s == nologin) {
-            if std::path::Path::new(nologin).exists() {
+        if !shells.iter().any(|s| s == nologin)
+            && std::path::Path::new(nologin).exists() {
                 shells.push(nologin.to_string());
             }
-        }
     }
 
     shells
@@ -546,8 +545,8 @@ async fn modify_user(data: &Value, password: &str) -> Value {
         changed = true;
     }
 
-    if let Some(groups_val) = data.get("groups") {
-        if let Some(arr) = groups_val.as_array() {
+    if let Some(groups_val) = data.get("groups")
+        && let Some(arr) = groups_val.as_array() {
             let groups: Vec<String> = arr.iter()
                 .filter_map(|v| v.as_str().map(|s| s.to_string()))
                 .collect();
@@ -560,7 +559,6 @@ async fn modify_user(data: &Value, password: &str) -> Value {
             args.push(groups.join(","));
             changed = true;
         }
-    }
 
     if !changed {
         return json!({ "error": "No changes specified" });
@@ -733,29 +731,6 @@ fn is_valid_gecos(gecos: &str) -> bool {
 //  Helpers
 // ──────────────────────────────────────────────────────────────
 
-async fn run_cmd(args: &[&str]) -> String {
-    let Some((cmd, rest)) = args.split_first() else {
-        return String::new();
-    };
-    match tokio::process::Command::new(cmd)
-        .args(rest)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-    {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            if stdout.is_empty() {
-                String::from_utf8_lossy(&out.stderr).to_string()
-            } else {
-                stdout
-            }
-        }
-        Err(e) => format!("error: {e}"),
-    }
-}
-
 async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> Value {
     let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
 
@@ -845,116 +820,4 @@ async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> Value {
             Err(e) => json!({ "error": e.to_string() }),
         }
     }
-}
-
-async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> Value {
-    // When running as root, skip sudo entirely — write content directly to
-    // the command's stdin.
-    //
-    // When non-root, sudo -S reads the password from stdin **and** closes
-    // all fd >= 3 before exec, so we cannot mix the sudo password with the
-    // command's data on the same stdin, nor pass data on a separate fd.
-    //
-    // Solution: base64-encode the content and embed it inside a
-    //   sudo -S sh -c 'printf "<b64>" | base64 -d | <command> [args]'
-    // invocation. Only the sudo password goes on stdin.  Using printf
-    // instead of echo avoids issues with content containing backslashes.
-    let am_root = unsafe { libc::geteuid() } == 0;
-
-    if !am_root && password.is_empty() {
-        return json!({ "error": "password required" });
-    }
-
-    if am_root {
-        // Root path — run command directly, content goes on stdin.
-        let first = args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = args.iter().skip(1).copied().collect();
-
-        let child = tokio::process::Command::new(first)
-            .args(&rest)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
-
-        let mut child = match child {
-            Ok(c) => c,
-            Err(e) => return json!({ "error": e.to_string() }),
-        };
-
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(content.as_bytes()).await;
-            drop(stdin);
-        }
-
-        return match child.wait_with_output().await {
-            Ok(out) if out.status.success() => json!({ "ok": true }),
-            Ok(out) => sudo_stderr_to_error(&out.stderr),
-            Err(e) => json!({ "error": e.to_string() }),
-        };
-    }
-
-    // Non-root path — base64-encode content, embed in sh -c.
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
-
-    // Build: printf '<b64>' | base64 -d | <command> [args...]
-    let escaped_args: Vec<String> = args.iter().map(|a| shell_escape(a)).collect();
-    let inner = format!("printf '{}' | base64 -d | {}", b64, escaped_args.join(" "));
-
-    let child = tokio::process::Command::new("sudo")
-        .args(["-S", "sh", "-c", &inner])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return json!({ "error": e.to_string() }),
-    };
-
-    // Write only the sudo password on stdin.
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => json!({ "ok": true }),
-        Ok(out) => sudo_stderr_to_error(&out.stderr),
-        Err(e) => json!({ "error": e.to_string() }),
-    }
-}
-
-/// Parse stderr from a sudo/command invocation into a JSON error.
-fn sudo_stderr_to_error(stderr: &[u8]) -> Value {
-    let raw = String::from_utf8_lossy(stderr).trim().to_string();
-    let clean = raw
-        .lines()
-        .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let msg = if clean.is_empty() {
-        "operation failed".to_string()
-    } else {
-        clean
-    };
-    json!({ "error": msg })
-}
-
-/// Minimal POSIX shell escaping — wraps in single quotes.
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
-fn extract_string_array(data: &Value, key: &str) -> Vec<String> {
-    data.get(key)
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
 }

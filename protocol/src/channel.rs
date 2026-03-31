@@ -38,15 +38,23 @@ impl ChannelId {
 }
 
 /// Trusted conversions for internal use — channel IDs that already passed
-/// validation at the deserialization boundary.
+/// validation at the deserialization boundary.  Debug builds assert validity.
 impl From<String> for ChannelId {
     fn from(s: String) -> Self {
+        debug_assert!(
+            ChannelId::new(&s).is_ok(),
+            "ChannelId::from(String) called with invalid id: {s:?}"
+        );
         Self(s)
     }
 }
 
 impl From<&str> for ChannelId {
     fn from(s: &str) -> Self {
+        debug_assert!(
+            ChannelId::new(s).is_ok(),
+            "ChannelId::from(&str) called with invalid id: {s:?}"
+        );
         Self(s.to_owned())
     }
 }
@@ -87,15 +95,6 @@ impl<'de> Deserialize<'de> for ChannelId {
         let s = String::deserialize(deserializer)?;
         ChannelId::new(s).map_err(serde::de::Error::custom)
     }
-}
-
-/// Channel state machine.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChannelState {
-    Opening,
-    Ready,
-    Closing,
-    Closed,
 }
 
 /// Options sent when opening a channel.

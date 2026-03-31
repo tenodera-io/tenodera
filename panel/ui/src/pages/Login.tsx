@@ -54,7 +54,6 @@ export function Login({ onLogin }: LoginProps) {
           onChange={(e) => setPassword(e.target.value)}
           style={{ ...styles.input, borderColor: tried && !password ? '#f7768e' : password ? '#7aa2f7' : '#9ece6a' }}
           autoComplete="current-password"
-          onKeyDown={(e) => { if (e.key === 'Enter') handleSubmit(e); }}
         />
         <button type="submit" disabled={loading} style={styles.button}>
           {loading ? 'Logging in...' : 'Log In'}

@@ -22,10 +22,11 @@ static RATE_LIMITER: LazyLock<Mutex<HashMap<String, (u32, Instant)>>> =
 
 /// Check whether the user is currently locked out.
 fn is_locked_out(user: &str) -> bool {
-    let Ok(map) = RATE_LIMITER.lock() else { return false };
+    let Ok(mut map) = RATE_LIMITER.lock() else { return false };
     if let Some((count, since)) = map.get(user) {
         if since.elapsed().as_secs() > LOCKOUT_WINDOW_SECS {
-            return false; // window expired
+            map.remove(user); // clean up expired entry
+            return false;
         }
         return *count >= MAX_ATTEMPTS;
     }
@@ -41,7 +42,15 @@ fn record_failure(user: &str) -> bool {
         *entry = (0, Instant::now());
     }
     entry.0 += 1;
-    entry.0 >= MAX_ATTEMPTS
+    let locked = entry.0 >= MAX_ATTEMPTS;
+
+    // Prune expired entries to prevent unbounded growth.
+    // Only runs when the map exceeds a reasonable threshold.
+    if map.len() > 50 {
+        map.retain(|_, (_, since)| since.elapsed().as_secs() <= LOCKOUT_WINDOW_SECS);
+    }
+
+    locked
 }
 
 /// Clear the failure counter on success.

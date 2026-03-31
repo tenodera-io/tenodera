@@ -15,7 +15,7 @@ impl ChannelHandler for KdumpInfoHandler {
         let status = collect_kdump_status().await;
         let dumps = list_crash_dumps().await;
         let config = read_kdump_config().await;
-        let crashkernel = read_crashkernel_param();
+        let crashkernel = read_crashkernel_param().await;
 
         let info = serde_json::json!({
             "status": status,
@@ -62,17 +62,20 @@ async fn collect_kdump_status() -> serde_json::Value {
     let service_active = check_service_active(service_name).await;
     let service_enabled = check_service_enabled(service_name).await;
 
-    let crash_loaded = std::fs::read_to_string("/sys/kernel/kexec_crash_loaded")
+    let crash_loaded = tokio::fs::read_to_string("/sys/kernel/kexec_crash_loaded")
+        .await
         .ok()
         .map(|s| s.trim() == "1")
         .unwrap_or(false);
 
-    let crash_size = std::fs::read_to_string("/sys/kernel/kexec_crash_size")
+    let crash_size = tokio::fs::read_to_string("/sys/kernel/kexec_crash_size")
+        .await
         .ok()
         .and_then(|s| s.trim().parse::<u64>().ok())
         .unwrap_or(0);
 
-    let kernel_version = std::fs::read_to_string("/proc/version")
+    let kernel_version = tokio::fs::read_to_string("/proc/version")
+        .await
         .ok()
         .and_then(|s| s.split_whitespace().nth(2).map(String::from))
         .unwrap_or_default();
@@ -108,8 +111,8 @@ async fn check_service_enabled(name: &str) -> String {
         .unwrap_or_else(|_| "unknown".into())
 }
 
-fn read_crashkernel_param() -> serde_json::Value {
-    let cmdline = std::fs::read_to_string("/proc/cmdline").unwrap_or_default();
+async fn read_crashkernel_param() -> serde_json::Value {
+    let cmdline = tokio::fs::read_to_string("/proc/cmdline").await.unwrap_or_default();
     let param = cmdline
         .split_whitespace()
         .find(|s| s.starts_with("crashkernel="))

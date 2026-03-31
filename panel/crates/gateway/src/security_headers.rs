@@ -38,25 +38,39 @@ pub async fn security_headers(
                 // Fallback: extract host portion from Referer URL
                 request.headers().get("referer")
                     .and_then(|v| v.to_str().ok())
-                    .and_then(|r| {
+                    .map(|r| {
                         // Referer format: https://host:port/path
                         let after_scheme = r.strip_prefix("https://")
                             .or_else(|| r.strip_prefix("http://"))
                             .unwrap_or(r);
                         // Take only the host:port part (before first '/')
                         let host_part = after_scheme.split('/').next().unwrap_or(after_scheme);
-                        Some(format!("http://{host_part}"))
+                        format!("http://{host_part}")
                     })
             });
 
-        if let Some(origin_str) = check_value {
-            if !origin_matches_host(&origin_str, host) {
+        match check_value {
+            Some(origin_str) => {
+                if !origin_matches_host(&origin_str, host) {
+                    tracing::warn!(
+                        origin = %origin_str,
+                        host = %host,
+                        method = %method,
+                        path = %request.uri().path(),
+                        "CSRF: rejected cross-origin state-changing request"
+                    );
+                    return Err(StatusCode::FORBIDDEN);
+                }
+            }
+            None => {
+                // Neither Origin nor Referer present on a mutating request.
+                // Browsers always send at least one of these; their absence
+                // means either a non-browser tool or header stripping.
+                // Reject to prevent CSRF attacks.
                 tracing::warn!(
-                    origin = %origin_str,
-                    host = %host,
                     method = %method,
                     path = %request.uri().path(),
-                    "CSRF: rejected cross-origin state-changing request"
+                    "CSRF: rejected mutating request with no Origin or Referer"
                 );
                 return Err(StatusCode::FORBIDDEN);
             }
@@ -80,17 +94,13 @@ pub async fn security_headers(
         "Referrer-Policy",
         HeaderValue::from_static("strict-origin-when-cross-origin"),
     );
-    // Only allow wss: when TLS is active; plain ws: only in unencrypted dev mode.
+    // 'self' already covers same-origin ws:/wss: connections — no need
+    // for a blanket ws: or wss: directive that would allow connections to
+    // arbitrary WebSocket hosts.
     let tls_active = state.config.tls_cert.is_some() && state.config.tls_key.is_some();
-    let csp = if tls_active {
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data:; connect-src 'self' wss:; font-src 'self'; \
-         frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-    } else {
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
-         img-src 'self' data:; connect-src 'self' ws:; font-src 'self'; \
-         frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
-    };
+    let csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
+         img-src 'self' data:; connect-src 'self'; font-src 'self'; \
+         frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
     headers.insert(
         "Content-Security-Policy",
         HeaderValue::from_str(csp).unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),

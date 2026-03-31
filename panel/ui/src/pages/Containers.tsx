@@ -58,6 +58,31 @@ function sortArrow(dir: SortDir): string {
 
 /* ── helpers ───────────────────────────────────────────── */
 
+function friendlyError(action: string, raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes('image is being used by running container')) {
+    const m = raw.match(/running container ([a-f0-9]+)/i);
+    const cid = m ? m[1].slice(0, 12) : '';
+    return `Cannot remove image — it is used by a running container${cid ? ` (${cid})` : ''}. Stop the container first.`;
+  }
+  if (lower.includes('image is being used by') || lower.includes('image has dependent child')) {
+    return `Cannot remove image — it is in use. Remove dependent containers first.`;
+  }
+  if (lower.includes('is already in progress')) {
+    return `Operation already in progress. Please wait.`;
+  }
+  if (lower.includes('no such container')) {
+    return `Container not found — it may have already been removed.`;
+  }
+  if (lower.includes('no such image')) {
+    return `Image not found — it may have already been removed.`;
+  }
+  if (lower.includes('authentication failed') || lower.includes('incorrect password')) {
+    return `Authentication failed — check your password.`;
+  }
+  return `${action}: ${raw}`;
+}
+
 function getId(c: Container | ContainerImage): string {
   return (c.Id || c.ID || '').slice(0, 12);
 }
@@ -135,14 +160,20 @@ export function Containers() {
   const [pullImage, setPullImage] = useState('');
   const [pulling, setPulling] = useState<string | null>(null);
 
+  // Inline confirmation for remove actions (replaces browser confirm())
+  const [confirmingRemove, setConfirmingRemove] = useState<string | null>(null);
+
+  // Search state — containers tab
+  const [ctrSearch, setCtrSearch] = useState('');
+
   // Sorting state — containers tab
-  const [ctrSortCol, setCtrSortCol] = useState<'state' | 'owner' | null>(null);
+  const [ctrSortCol, setCtrSortCol] = useState<'name' | 'state' | 'owner' | null>(null);
   const [ctrSortDir, setCtrSortDir] = useState<SortDir>(null);
   // Sorting state — images tab
   const [imgSortCol, setImgSortCol] = useState<'owner' | null>(null);
   const [imgSortDir, setImgSortDir] = useState<SortDir>(null);
 
-  const handleCtrSort = (col: 'state' | 'owner') => {
+  const handleCtrSort = (col: 'name' | 'state' | 'owner') => {
     if (ctrSortCol === col) {
       const nd = nextDir(ctrSortDir);
       setCtrSortDir(nd);
@@ -165,10 +196,18 @@ export function Containers() {
   };
 
   const sortedContainers = (() => {
-    if (!ctrSortCol || !ctrSortDir) return containers;
-    const sorted = [...containers];
+    // Filter by search query (case-insensitive substring match on name)
+    const needle = ctrSearch.toLowerCase();
+    const filtered = needle
+      ? containers.filter(c => getContainerName(c).toLowerCase().includes(needle))
+      : containers;
+
+    if (!ctrSortCol || !ctrSortDir) return filtered;
+    const sorted = [...filtered];
     const mul = ctrSortDir === 'desc' ? 1 : -1;
-    if (ctrSortCol === 'state') {
+    if (ctrSortCol === 'name') {
+      sorted.sort((a, b) => mul * getContainerName(a).localeCompare(getContainerName(b)));
+    } else if (ctrSortCol === 'state') {
       sorted.sort((a, b) => mul * ((CTR_STATE_ORDER[(a.State || '').toLowerCase()] ?? 99) - (CTR_STATE_ORDER[(b.State || '').toLowerCase()] ?? 99)));
     } else {
       sorted.sort((a, b) => mul * ((OWNER_ORDER[a._owner || 'user'] ?? 99) - (OWNER_ORDER[b._owner || 'user'] ?? 99)));
@@ -212,6 +251,8 @@ export function Containers() {
     setError(null);
     setLogs(null);
     setPulling(null);
+    setCtrSearch('');
+    setConfirmingRemove(null);
 
     const ch = openChannel('container.manage');
     channelRef.current = ch;
@@ -259,12 +300,12 @@ export function Containers() {
           } else if (['start', 'stop', 'restart', 'remove', 'remove_image', 'pull', 'create'].includes(action)) {
             if (action === 'pull') setPulling(null);
             if (data && typeof data === 'object' && 'error' in data && data.error) {
-              setError(`${action}: ${data.error}`);
+              setError(friendlyError(action, String(data.error)));
             }
             // Refresh after any mutation
-            setTimeout(() => refresh(), 500);
+            setTimeout(() => refresh(), 150);
           } else if (['service_start', 'service_stop', 'service_restart'].includes(action)) {
-            setTimeout(() => sendAction('service_status'), 500);
+            setTimeout(() => sendAction('service_status'), 150);
           }
         }
 
@@ -447,13 +488,29 @@ export function Containers() {
       {/* Containers tab */}
       {tab === 'containers' && (
         <div style={S.card}>
-          {containers.length === 0 ? (
-            <p style={S.muted}>No containers found.</p>
+          <div style={S.searchRow}>
+            <input
+              style={{ ...S.searchInput, borderColor: ctrSearch ? '#7aa2f7' : '#9ece6a' }}
+              placeholder="Search containers by name…"
+              value={ctrSearch}
+              onChange={(e) => setCtrSearch(e.target.value)}
+            />
+            {ctrSearch && (
+              <button style={S.searchClear} onClick={() => setCtrSearch('')}>✕</button>
+            )}
+            <span style={S.searchCount}>
+              {sortedContainers.length}/{containers.length}
+            </span>
+          </div>
+          {sortedContainers.length === 0 ? (
+            <p style={S.muted}>{ctrSearch ? 'No containers match the filter.' : 'No containers found.'}</p>
           ) : (
             <table style={S.table}>
               <thead>
                 <tr>
-                  <th style={S.th}>Name</th>
+                  <th style={S.thSort} onClick={() => handleCtrSort('name')}>
+                    Name{ctrSortCol === 'name' ? sortArrow(ctrSortDir) : ''}
+                  </th>
                   <th style={S.th}>Image</th>
                   <th style={S.thSort} onClick={() => handleCtrSort('state')}>
                     State{ctrSortCol === 'state' ? sortArrow(ctrSortDir) : ''}
@@ -499,10 +556,18 @@ export function Containers() {
                           <button style={S.actBtn} onClick={() => {
                             sendAction('logs', { id, tail: 200, owner });
                           }} title="Logs">📋</button>
-                          <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => {
-                            if (confirm(`Remove container ${getContainerName(c)}?`))
-                              requestPrivileged('remove', `Remove ${getContainerName(c)}`, id, { force: state === 'running', owner });
-                          }} title="Remove">✕</button>
+                          {confirmingRemove === `ctr:${id}:${owner}` ? (
+                            <span style={S.confirmInline}>
+                              <span style={{ color: '#f7768e', fontSize: '0.75rem' }}>Sure?</span>
+                              <button style={{ ...S.actBtn, color: '#f7768e', fontWeight: 600 }} onClick={() => {
+                                setConfirmingRemove(null);
+                                requestPrivileged('remove', `Remove ${getContainerName(c)}`, id, { force: true, owner });
+                              }}>Yes</button>
+                              <button style={S.actBtn} onClick={() => setConfirmingRemove(null)}>No</button>
+                            </span>
+                          ) : (
+                            <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => setConfirmingRemove(`ctr:${id}:${owner}`)} title="Remove">✕</button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -571,10 +636,18 @@ export function Containers() {
                         <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{id}</td>
                         <td style={S.td}>{formatSize(img.Size)}</td>
                         <td style={S.td}>
-                          <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => {
-                            if (confirm(`Remove image ${getImageName(img)}?`))
-                              requestPrivileged('remove_image', `Remove image ${getImageName(img)}`, id, { force: false, owner });
-                          }} title="Remove">✕</button>
+                          {confirmingRemove === `img:${id}:${owner}` ? (
+                            <span style={S.confirmInline}>
+                              <span style={{ color: '#f7768e', fontSize: '0.75rem' }}>Sure?</span>
+                              <button style={{ ...S.actBtn, color: '#f7768e', fontWeight: 600 }} onClick={() => {
+                                setConfirmingRemove(null);
+                                requestPrivileged('remove_image', `Remove image ${getImageName(img)}`, id, { force: true, owner });
+                              }}>Yes</button>
+                              <button style={S.actBtn} onClick={() => setConfirmingRemove(null)}>No</button>
+                            </span>
+                          ) : (
+                            <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => setConfirmingRemove(`img:${id}:${owner}`)} title="Remove">✕</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -1019,6 +1092,43 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: '0.75rem',
     color: '#7aa2f7',
     fontSize: '0.8rem',
+  },
+  // ── Search styles ──
+  searchRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    marginBottom: '0.75rem',
+  },
+  searchInput: {
+    padding: '0.4rem 0.6rem',
+    borderRadius: 4,
+    border: '1px solid #9ece6a',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-primary)',
+    fontSize: '0.85rem',
+    outline: 'none',
+    flex: 1,
+    minWidth: 0,
+  },
+  searchClear: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    padding: '0 0.2rem',
+  },
+  searchCount: {
+    color: 'var(--text-secondary)',
+    fontSize: '0.75rem',
+    whiteSpace: 'nowrap' as const,
+  },
+  // ── Inline confirmation ──
+  confirmInline: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.3rem',
   },
   // ── Progress bar styles ──
   progressWrap: {

@@ -103,7 +103,35 @@ async fn main() -> anyhow::Result<()> {
     match tls_acceptor {
         Some(acceptor) => {
             tracing::info!("tenodera-gateway listening on {} (TLS)", bind_addr);
-            tls::serve_tls(listener, acceptor, app).await?;
+            // Graceful shutdown on SIGTERM (systemd stop) or SIGINT (Ctrl-C).
+            // tokio::signal::ctrl_c covers SIGINT; we add SIGTERM explicitly.
+            let shutdown = async {
+                let ctrl_c = tokio::signal::ctrl_c();
+                #[cfg(unix)]
+                {
+                    let mut sigterm = tokio::signal::unix::signal(
+                        tokio::signal::unix::SignalKind::terminate(),
+                    ).expect("failed to register SIGTERM handler");
+                    tokio::select! {
+                        _ = ctrl_c => tracing::info!("received SIGINT, shutting down"),
+                        _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down"),
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    ctrl_c.await.ok();
+                    tracing::info!("received SIGINT, shutting down");
+                }
+            };
+            // TLS server runs until shutdown signal
+            tokio::select! {
+                result = tls::serve_tls(listener, acceptor, app) => {
+                    if let Err(e) = result {
+                        tracing::error!(error = %e, "TLS server error");
+                    }
+                }
+                _ = shutdown => {}
+            }
         }
         None => {
             if !allow_unencrypted {
@@ -111,13 +139,34 @@ async fn main() -> anyhow::Result<()> {
                     Set TENODERA_TLS_CERT and TENODERA_TLS_KEY, or set TENODERA_ALLOW_UNENCRYPTED=1 for dev.");
             }
             tracing::info!("tenodera-gateway listening on {} (plaintext)", bind_addr);
+            let shutdown = async {
+                let ctrl_c = tokio::signal::ctrl_c();
+                #[cfg(unix)]
+                {
+                    let mut sigterm = tokio::signal::unix::signal(
+                        tokio::signal::unix::SignalKind::terminate(),
+                    ).expect("failed to register SIGTERM handler");
+                    tokio::select! {
+                        _ = ctrl_c => tracing::info!("received SIGINT, shutting down"),
+                        _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down"),
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    ctrl_c.await.ok();
+                    tracing::info!("received SIGINT, shutting down");
+                }
+            };
             axum::serve(
                 listener,
                 app.into_make_service_with_connect_info::<SocketAddr>(),
-            ).await?;
+            )
+            .with_graceful_shutdown(shutdown)
+            .await?;
         }
     }
 
+    tracing::info!("tenodera-gateway stopped");
     Ok(())
 }
 

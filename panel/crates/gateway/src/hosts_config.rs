@@ -45,11 +45,21 @@ fn config_path() -> PathBuf {
 }
 
 pub async fn find_host(host_id: &str) -> Option<HostEntry> {
-    let config: HostsConfig = tokio::fs::read_to_string(config_path())
-        .await
-        .ok()
-        .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or_default();
+    let path = config_path();
+    let content = match tokio::fs::read_to_string(&path).await {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "failed to read hosts config");
+            return None;
+        }
+    };
+    let config: HostsConfig = match serde_json::from_str(&content) {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::warn!(path = %path.display(), error = %e, "failed to parse hosts config");
+            return None;
+        }
+    };
 
     config.hosts.into_iter().find(|h| h.id == host_id)
 }

@@ -45,11 +45,16 @@ impl Default for GatewayConfig {
             max_startups: std::env::var("TENODERA_MAX_STARTUPS")
                 .ok()
                 .and_then(|s| s.parse().ok())
+                .map(|n: usize| n.max(1)) // min 1 to prevent disabling all auth
                 .unwrap_or(20),
             bridge_bin: std::env::var("TENODERA_BRIDGE_BIN")
                 .unwrap_or_else(|_| "tenodera-bridge".to_string()),
-            tls_cert: std::env::var("TENODERA_TLS_CERT").ok(),
-            tls_key: std::env::var("TENODERA_TLS_KEY").ok(),
+            tls_cert: std::env::var("TENODERA_TLS_CERT")
+                .ok()
+                .filter(|s| !s.is_empty()),
+            tls_key: std::env::var("TENODERA_TLS_KEY")
+                .ok()
+                .filter(|s| !s.is_empty()),
         }
     }
 }

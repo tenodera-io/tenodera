@@ -13,7 +13,7 @@ impl ChannelHandler for ContainersHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         // On open: detect which runtime is available and return info + container list
-        let runtime = detect_runtime();
+        let runtime = detect_runtime().await;
         let info = match &runtime {
             Some(rt) => get_info(rt).await,
             None => serde_json::json!({ "available": false }),
@@ -41,7 +41,7 @@ impl ChannelHandler for ContainersHandler {
         let password = data.get("password").and_then(|v| v.as_str()).unwrap_or("");
 
         // Detect runtime: try user-level first, then sudo if password available
-        let user_rt = detect_runtime();
+        let user_rt = detect_runtime().await;
         let sudo_rt = if !password.is_empty() {
             detect_runtime_sudo(password).await
         } else {
@@ -138,31 +138,37 @@ impl ChannelHandler for ContainersHandler {
 // ── Runtime detection ──────────────────────────────────────
 
 /// Detect which container runtime is available as the current user.
-fn detect_runtime() -> Option<String> {
-    for rt in &["docker", "podman"] {
-        if std::process::Command::new(rt)
-            .args(["info", "--format", "{{.ID}}"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-        {
-            return Some((*rt).to_string());
+/// Uses spawn_blocking to avoid blocking the tokio runtime with
+/// synchronous process spawns.
+async fn detect_runtime() -> Option<String> {
+    tokio::task::spawn_blocking(|| {
+        for rt in &["docker", "podman"] {
+            if std::process::Command::new(rt)
+                .args(["info", "--format", "{{.ID}}"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+            {
+                return Some((*rt).to_string());
+            }
         }
-    }
-    // Fallback: binary exists but daemon may not respond
-    for rt in &["docker", "podman"] {
-        if std::process::Command::new(rt)
-            .arg("--version")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
-        {
-            return Some((*rt).to_string());
+        // Fallback: binary exists but daemon may not respond
+        for rt in &["docker", "podman"] {
+            if std::process::Command::new(rt)
+                .arg("--version")
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .is_ok_and(|s| s.success())
+            {
+                return Some((*rt).to_string());
+            }
         }
-    }
-    None
+        None
+    })
+    .await
+    .unwrap_or(None)
 }
 
 /// Detect container runtime via sudo (for users not in docker group).
@@ -571,8 +577,15 @@ async fn create_container(rt: &str, data: &serde_json::Value, password: &str) ->
     args.push("--".into());
     args.push(image.into());
 
-    // Optional command
-    if let Some(cmd) = data.get("command").and_then(|v| v.as_str())
+    // Optional command — accept either a string (split by whitespace) or
+    // an array of strings (used as-is, preserving arguments with spaces).
+    if let Some(cmd_arr) = data.get("command").and_then(|v| v.as_array()) {
+        for part in cmd_arr.iter().filter_map(|v| v.as_str()) {
+            if !part.is_empty() {
+                args.push(part.into());
+            }
+        }
+    } else if let Some(cmd) = data.get("command").and_then(|v| v.as_str())
         && !cmd.is_empty() {
             for part in cmd.split_whitespace() {
                 args.push(part.into());

@@ -82,13 +82,15 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
   /* ── active host context (null = local) ── */
   const [activeHost, setActiveHost] = useState<HostEntry | null>(null);
   const pendingHostId = useRef<string | null>(sessionStorage.getItem('active_host_id'));
-  const [hostRestored, setHostRestored] = useState(!pendingHostId.current);
+  const [_hostRestored, setHostRestored] = useState(!pendingHostId.current);
   const [hosts, setHosts]           = useState<HostEntry[]>([]);
   const [hostSelectorOpen, setHostSelectorOpen] = useState(false);
   const [hostManageOpen, setHostManageOpen]     = useState(false);
   const hostSelectorRef = useRef<HTMLDivElement>(null);
   const [remoteStatus, setRemoteStatus] = useState<'unknown' | 'ok' | 'error'>('unknown');
   const [hostStatuses, setHostStatuses] = useState<Record<string, 'unknown' | 'ok' | 'error'>>({});
+  const hostsRef = useRef(hosts);
+  hostsRef.current = hosts;
 
   /* superuser state – password encrypted in sessionStorage via Web Crypto (HTTPS only) */
   const [suActive, setSuActive] = useState(false);
@@ -107,6 +109,8 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
   /* ── load hosts list ── */
   const loadHosts = useCallback(() => {
     const ch = openChannel('hosts.manage');
+    let closed = false;
+    const closeOnce = () => { if (!closed) { closed = true; ch.close(); } };
     ch.onMessage((msg: Message) => {
       if (msg.type === 'data' && 'data' in msg) {
         const d = msg.data as { action?: string; hosts?: HostEntry[] };
@@ -120,12 +124,14 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
             pendingHostId.current = null;
           }
           setHostRestored(true);
+          closeOnce();
         }
       }
+      if (msg.type === 'close') closeOnce();
     });
     ch.send({ action: 'list' });
-    // close the channel after a short delay so the response arrives
-    setTimeout(() => ch.close(), 2000);
+    /* fallback: close if no response within 5s */
+    setTimeout(closeOnce, 5000);
   }, []);
 
   /* ── restore superuser state from encrypted storage on mount ── */
@@ -148,10 +154,11 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
     connect()
       .then(() => {
         setConnected(true);
+        /* fire hostname lookup and host list load in parallel */
         request('system.info').then((results) => {
           const info = results[0] as { hostname?: string } | undefined;
           if (info?.hostname) setHostname(info.hostname);
-        });
+        }).catch(() => { /* best-effort */ });
         loadHosts();
       })
       .catch((err) => {
@@ -162,10 +169,10 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
     return () => disconnect();
   }, [loadHosts]);
 
-  /* ── poll hosts list every 5s ── */
+  /* ── poll hosts list every 30s ── */
   useEffect(() => {
     if (!connected) return;
-    const interval = setInterval(loadHosts, 5000);
+    const interval = setInterval(loadHosts, 30000);
     return () => clearInterval(interval);
   }, [connected, loadHosts]);
 
@@ -195,21 +202,21 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
     return () => { cancelled = true; };
   }, [activeHost, connected]);
 
-  /* ── probe all hosts on connect, refresh every 10s — hide inaccessible hosts (H1) ── */
+  /* ── probe all hosts on connect, refresh every 60s — hide inaccessible hosts (H1) ── */
   useEffect(() => {
     if (!connected || hosts.length === 0) return;
     let cancelled = false;
     const probe = () => {
-      for (const h of hosts) {
+      for (const h of hostsRef.current) {
         request('system.info', { host: h.id })
           .then(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'ok' })); })
           .catch(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'error' })); });
       }
     };
     probe();
-    const interval = setInterval(probe, 10000);
+    const interval = setInterval(probe, 60000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [connected, hosts]);
+  }, [connected, hosts.length]);
 
   /* close dropdowns on outside click */
   useEffect(() => {
@@ -223,7 +230,17 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
   }, []);
 
   const handleLogout = () => {
+    // Invalidate server-side session
+    const sessionId = sessionStorage.getItem('session_id') ?? '';
+    if (sessionId) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionId}` },
+        body: JSON.stringify({ session_id: sessionId }),
+      }).catch(() => { /* best-effort */ });
+    }
     disconnect();
+    sessionStorage.removeItem('session_id');
     sessionStorage.removeItem('su_active');
     sessionStorage.removeItem('active_host_id');
     clearSuperuserPassword(); /* remove encrypted password & key */
@@ -562,9 +579,9 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
               )}
             </ul>
           </nav>
-          <main style={S.main}>
+          <main style={S.main} className="page-fade-in">
             <HostTransportProvider value={activeHost?.id ?? null}>
-              {connected && hostRestored ? (
+              {connected ? (
                 <Routes>
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/services" element={<Services />} />

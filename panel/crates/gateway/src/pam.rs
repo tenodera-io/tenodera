@@ -157,19 +157,18 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
 /// Verify that the user has sudo privileges by running `sudo -l -U <user>`.
 ///
 /// The gateway runs as root, so `sudo -l -U <user>` queries the sudoers
-/// policy for the given user without requiring their password.  When the
-/// user has NO sudo rights, the output contains "is not allowed to run sudo".
+/// policy for the given user without requiring their password.
 ///
-/// This ensures the authenticated user can actually perform privileged
-/// operations (package management, firewall changes, etc.) rather than
-/// failing later with cryptic "permission denied" errors.
+/// Primary check: exit code (0 = has privileges, non-zero = denied).
+/// Secondary (fallback): scan output for "is not allowed" in case the
+/// exit code is unreliable on exotic sudo builds.
 ///
 /// Returns `Ok(())` on success or `Err(message)` on failure.
 pub async fn verify_sudo(user: &str) -> Result<(), String> {
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(30),
         Command::new("sudo")
-            .args(["-l", "-U", "--", user])
+            .args(["-l", "-U", user])
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -185,15 +184,26 @@ pub async fn verify_sudo(user: &str) -> Result<(), String> {
         "unable to verify user privileges".to_string()
     })?;
 
+    // Primary check: exit code. sudo -l -U exits 0 when the user has
+    // at least one allowed command, non-zero otherwise.
+    if !output.status.success() {
+        tracing::warn!(
+            user = %user,
+            code = ?output.status.code(),
+            "user has no sudo privileges (exit code)"
+        );
+        return Err("user does not have sudo privileges".to_string());
+    }
+
+    // Secondary check: even with exit 0, verify the output doesn't
+    // contain denial text (belt-and-suspenders for unusual sudo configs).
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // sudo -l -U prints "User X is not allowed to run sudo on <host>."
-    // when the user has no sudoers entries.
-    if stdout.contains("is not allowed to run sudo")
-        || stderr.contains("is not allowed to run sudo")
+    if stdout.contains("is not allowed")
+        || stderr.contains("is not allowed")
     {
-        tracing::warn!(user = %user, "user has no sudo privileges");
+        tracing::warn!(user = %user, "user has no sudo privileges (output text)");
         return Err("user does not have sudo privileges".to_string());
     }
 

@@ -160,6 +160,10 @@ export function Dashboard() {
       setHistory([]);
       setSnapshot(null);
       setTopProcs([]);
+      setInfo(null);
+      setDisks([]);
+      setNetIfaces([]);
+      setHwInfo(null);
     }
 
     const fetchSnapshot = () => {
@@ -257,9 +261,9 @@ export function Dashboard() {
 
   const memPie = memTotal > 0
     ? [
-        { name: 'Used',      value: memUsed,           color: COLORS.used },
-        { name: 'Available', value: memAvail - memFree, color: COLORS.avail },
-        { name: 'Free',      value: memFree,           color: COLORS.free },
+        { name: 'Used',      value: memUsed,                          color: COLORS.used },
+        { name: 'Available', value: Math.max(0, memAvail - memFree),  color: COLORS.avail },
+        { name: 'Free',      value: memFree,                          color: COLORS.free },
       ]
     : [];
 
@@ -486,9 +490,9 @@ export function Dashboard() {
         <Card title="Load Average">
           {snapshot?.loadavg ? (
             <div style={styles.loadGrid}>
-              <LoadRing label="1 min"  value={snapshot.loadavg['1min']} />
-              <LoadRing label="5 min"  value={snapshot.loadavg['5min']} />
-              <LoadRing label="15 min" value={snapshot.loadavg['15min']} />
+              <LoadRing label="1 min"  value={snapshot.loadavg['1min']} cpuCount={hwInfo?.cpu_threads ?? 0} />
+              <LoadRing label="5 min"  value={snapshot.loadavg['5min']} cpuCount={hwInfo?.cpu_threads ?? 0} />
+              <LoadRing label="15 min" value={snapshot.loadavg['15min']} cpuCount={hwInfo?.cpu_threads ?? 0} />
             </div>
           ) : (
             <p style={styles.muted}>Waiting…</p>
@@ -722,11 +726,11 @@ function DonutChart({ data, centerLabel, tooltipFmt }: {
   );
 }
 
-function LoadRing({ label, value }: { label: string; value: number }) {
-  const maxLoad = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 8;
+function LoadRing({ label, value, cpuCount }: { label: string; value: number; cpuCount: number }) {
+  const maxLoad = cpuCount > 0 ? cpuCount : 8;
   const pct = Math.min((value / maxLoad) * 100, 100);
   const rest = 100 - pct;
-  const color = value < 1 ? '#9ece6a' : value < 4 ? '#e0af68' : '#f7768e';
+  const color = value < 1 ? '#9ece6a' : value < maxLoad ? '#e0af68' : '#f7768e';
   const bgColor = '#292e42';
 
   const data = [

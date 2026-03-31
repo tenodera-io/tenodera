@@ -1352,12 +1352,8 @@ dependencies = [
 name = "tenodera-protocol"
 version = "0.1.0"
 dependencies = [
- "bytes",
- "chrono",
  "serde",
  "serde_json",
- "thiserror",
- "uuid",
 ]
 
 [[package]]

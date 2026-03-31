@@ -152,13 +152,12 @@ fn normalize_mountpoints(val: &mut serde_json::Value) {
             };
             obj.insert("mountpoints".to_string(), arr);
         }
-        if let Some(children) = obj.get_mut("children") {
-            if let Some(arr) = children.as_array_mut() {
+        if let Some(children) = obj.get_mut("children")
+            && let Some(arr) = children.as_array_mut() {
                 for child in arr {
                     normalize_mountpoints(child);
                 }
             }
-        }
     }
     if let Some(arr) = val.get_mut("blockdevices").and_then(|v| v.as_array_mut()) {
         for dev in arr {

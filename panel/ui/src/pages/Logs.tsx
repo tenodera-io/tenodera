@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from './Shell.tsx';
 
@@ -16,17 +16,25 @@ export function Logs() {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [lines, setLines] = useState(100);
   const [unit, setUnit] = useState('');
+  const [debouncedUnit, setDebouncedUnit] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
+  // Debounce unit filter — wait 400ms after last keystroke
+  useEffect(() => {
+    debounceRef.current = setTimeout(() => setDebouncedUnit(unit), 400);
+    return () => clearTimeout(debounceRef.current);
+  }, [unit]);
 
   const fetchLogs = useCallback(() => {
     const opts: Record<string, unknown> = { lines };
-    if (unit) opts.unit = unit;
+    if (debouncedUnit) opts.unit = debouncedUnit;
     if (su.active && su.password) opts.password = su.password;
 
     request('journal.query', opts).then((results) => {
       const data = results[0] as { entries: LogEntry[] } | undefined;
       if (data?.entries) setEntries(data.entries);
     });
-  }, [request, lines, unit, su]);
+  }, [request, lines, debouncedUnit, su]);
 
   useEffect(() => {
     setEntries([]);

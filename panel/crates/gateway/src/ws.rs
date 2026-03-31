@@ -34,17 +34,29 @@ pub async fn ws_upgrade(
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Validate Origin header against Host to prevent CSWSH
-    if let Some(origin) = headers.get("origin") {
-        let origin_str = origin.to_str().unwrap_or("");
-        let host = headers
-            .get("host")
-            .and_then(|h| h.to_str().ok())
-            .unwrap_or("");
+    // Validate Origin header against Host to prevent CSWSH.
+    // Browsers always send Origin on WebSocket upgrades; a missing
+    // Origin indicates a non-browser client or suppressed header.
+    let origin = headers.get("origin");
+    let host = headers
+        .get("host")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("");
 
-        if !origin_matches_host(origin_str, host) {
-            tracing::warn!(origin = %origin_str, host = %host, "WS upgrade rejected: origin mismatch");
-            return Err(StatusCode::FORBIDDEN);
+    match origin {
+        Some(o) => {
+            let origin_str = o.to_str().unwrap_or("");
+            if !origin_matches_host(origin_str, host) {
+                tracing::warn!(origin = %origin_str, host = %host, "WS upgrade rejected: origin mismatch");
+                return Err(StatusCode::FORBIDDEN);
+            }
+        }
+        None => {
+            // Allow missing Origin only in plaintext dev mode (non-browser tools)
+            if !state.config.allow_unencrypted {
+                tracing::warn!(host = %host, "WS upgrade rejected: missing Origin header");
+                return Err(StatusCode::FORBIDDEN);
+            }
         }
     }
 
@@ -52,13 +64,22 @@ pub async fn ws_upgrade(
 }
 
 /// Spawn a task forwarding messages from a bridge to the WebSocket sink.
+/// When the bridge sends a Close message, the channel ID is also sent to
+/// `close_notify` so the main loop can clean up its routing table.
 fn spawn_bridge_forwarder(
     label: String,
     mut from_bridge: mpsc::Receiver<message::Message>,
     sink: Arc<Mutex<futures::stream::SplitSink<WebSocket, Message>>>,
+    close_notify: mpsc::UnboundedSender<ChannelId>,
 ) {
     tokio::spawn(async move {
         while let Some(msg) = from_bridge.recv().await {
+            // Detect bridge-initiated Close to notify the main loop
+            let close_channel = match &msg {
+                message::Message::Close { channel, .. } => Some(channel.clone()),
+                _ => None,
+            };
+
             match serde_json::to_string(&msg) {
                 Ok(json) => {
                     tracing::trace!(bridge = %label, raw = %json, "bridge → WS client");
@@ -70,6 +91,10 @@ fn spawn_bridge_forwarder(
                 Err(e) => {
                     tracing::warn!(error = %e, bridge = %label, "failed to serialize bridge msg");
                 }
+            }
+
+            if let Some(ch) = close_channel {
+                let _ = close_notify.send(ch);
             }
         }
         tracing::debug!(bridge = %label, "bridge->ws forwarder ended");
@@ -205,15 +230,13 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         Err(e) => {
             audit::log(&user, "bridge_spawn", "local", false, &format!("failed: {e}"));
             tracing::error!(error = %e, bin = %bridge_bin, "failed to spawn bridge");
-            let err_msg = message::Message::AuthResult {
-                success: false,
-                problem: Some(format!("bridge-spawn-failed: {e}")),
-                user: None,
-            };
+            // Auth already succeeded — close the WebSocket with a reason
+            // instead of sending a second (contradictory) AuthResult.
             let mut s = sink.lock().await;
-            let _ = s
-                .send(Message::Text(serde_json::to_string(&err_msg).unwrap().into()))
-                .await;
+            let _ = s.send(Message::Close(Some(axum::extract::ws::CloseFrame {
+                code: 1011, // Internal Error
+                reason: format!("bridge-spawn-failed: {e}").into(),
+            }))).await;
             return;
         }
     };
@@ -229,8 +252,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     // Keep temp known_hosts files alive for SSH connections
     let mut _temp_files: Vec<tempfile::NamedTempFile> = Vec::new();
 
+    // Channel for bridge-initiated Close notifications → main loop cleanup
+    let (close_tx, mut close_rx) = mpsc::unbounded_channel::<ChannelId>();
+
     // Forward local bridge -> WebSocket
-    spawn_bridge_forwarder("local".into(), local_receiver, sink.clone());
+    spawn_bridge_forwarder("local".into(), local_receiver, sink.clone(), close_tx.clone());
 
     // Channel -> bridge sender routing table
     let mut channel_routes: HashMap<ChannelId, mpsc::Sender<message::Message>> = HashMap::new();
@@ -312,6 +338,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                                     format!("remote:{hid}"),
                                                     from_bridge,
                                                     sink.clone(),
+                                                    close_tx.clone(),
                                                 );
                                                 remote_senders.insert(hid.clone(), sender.clone());
                                                 sender
@@ -336,7 +363,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                 };
 
                                 // Store channel -> bridge mapping
-                                channel_routes.insert(channel.clone(), target_sender.clone());
+                                let channel_key = channel.clone();
+                                channel_routes.insert(channel_key.clone(), target_sender.clone());
 
                                 // Inject authenticated user and strip host field before forwarding
                                 let open_msg = {
@@ -351,6 +379,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
                                 if target_sender.send(open_msg).await.is_err() {
                                     tracing::warn!("bridge channel closed on Open");
+                                    // Dead bridge — remove the route we just added
+                                    channel_routes.remove(&channel_key);
                                 }
                             }
                             Ok(parsed) => {
@@ -368,6 +398,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                     if let Some(sender) = channel_routes.get(&ch) {
                                         if sender.send(parsed).await.is_err() {
                                             tracing::warn!(channel = %ch, "bridge closed");
+                                            // G8: dead sender — remove from routing
+                                            channel_routes.remove(&ch);
                                         }
                                     } else {
                                         tracing::warn!(channel = %ch, "message for unknown channel — dropped");
@@ -389,6 +421,12 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                     }
                     _ => {}
                 }
+            }
+            // Bridge-initiated Close: clean up the channel routing entry.
+            // The forwarder already sent the Close to the WS client; we just
+            // need to remove the stale route from our table (G7).
+            Some(closed_ch) = close_rx.recv() => {
+                channel_routes.remove(&closed_ch);
             }
             // Periodically verify the session still exists — logout or
             // the reaper may have removed it while the WS was idle.

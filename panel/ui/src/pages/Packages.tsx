@@ -95,6 +95,7 @@ export function Packages() {
 
   /* ── manage channel ────────────────────────────────────── */
   const manageRef = useRef<ReturnType<typeof openChannel> | null>(null);
+  const pwResolveRef = useRef<((pw: string) => void) | null>(null);
 
   const getManageChannel = useCallback(() => {
     if (!manageRef.current) {
@@ -140,10 +141,12 @@ export function Packages() {
     return new Promise((resolve) => {
       setPwPrompt(true);
       setPwInput('');
+      pwResolveRef.current = resolve;
       setPendingAction(() => () => {
         const el = document.getElementById('pkg-pw-input') as HTMLInputElement;
         const pw = el?.value || '';
         setPwPrompt(false);
+        pwResolveRef.current = null;
         resolve(pw);
       });
     });
@@ -151,6 +154,7 @@ export function Packages() {
 
   const sudoAction = useCallback(async (actionData: Record<string, unknown>, timeoutMs = 600_000) => {
     const pw = await getPassword();
+    if (!pw) return { cancelled: true };
     return sendManage({ ...actionData, password: pw }, timeoutMs);
   }, [getPassword, sendManage]);
 
@@ -237,59 +241,90 @@ export function Packages() {
   const installPkg = async (name: string) => {
     setActionMsg(''); setActionError('');
     setBusyPkg({ name, op: 'install' });
-    const res = await sudoAction({ action: 'install', names: [name] });
-    setBusyPkg(null);
-    if (res.error) setActionError(String(res.error));
-    else {
-      setActionMsg(`Installed ${name}`);
-      loadInstalled();
-      // Mark as installed in search results without re-searching
-      setSearchResults(prev => prev.map(p => p.name === name ? { ...p, installed: true } : p));
+    try {
+      const res = await sudoAction({ action: 'install', names: [name] });
+      if (res.cancelled) { setBusyPkg(null); return; }
+      if (res.error) setActionError(String(res.error));
+      else {
+        setActionMsg(`Installed ${name}`);
+        loadInstalled();
+        setSearchResults(prev => prev.map(p => p.name === name ? { ...p, installed: true } : p));
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Install failed');
+    } finally {
+      setBusyPkg(null);
     }
   };
 
   const removePkg = async (name: string) => {
     setActionMsg(''); setActionError('');
     setBusyPkg({ name, op: 'remove' });
-    const res = await sudoAction({ action: 'remove', names: [name] });
-    setBusyPkg(null);
-    if (res.error) setActionError(String(res.error));
-    else {
-      setActionMsg(`Removed ${name}`);
-      loadInstalled();
-      // Mark as uninstalled in search results without re-searching
-      setSearchResults(prev => prev.map(p => p.name === name ? { ...p, installed: false } : p));
+    try {
+      const res = await sudoAction({ action: 'remove', names: [name] });
+      if (res.cancelled) { setBusyPkg(null); return; }
+      if (res.error) setActionError(String(res.error));
+      else {
+        setActionMsg(`Removed ${name}`);
+        loadInstalled();
+        setSearchResults(prev => prev.map(p => p.name === name ? { ...p, installed: false } : p));
+      }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Remove failed');
+    } finally {
+      setBusyPkg(null);
     }
   };
 
   const updateSystem = async () => {
     setUpdating(true); setUpdateOutput(''); setActionError('');
-    const res = await sudoAction({ action: 'update_system' });
-    if (res.error) { setActionError(String(res.error)); }
-    else { setUpdateOutput(String(res.output || 'System updated successfully')); loadUpdates(); }
-    setUpdating(false);
+    try {
+      const res = await sudoAction({ action: 'update_system' });
+      if (res.cancelled) { setUpdating(false); return; }
+      if (res.error) { setActionError(String(res.error)); }
+      else { setUpdateOutput(String(res.output || 'System updated successfully')); loadUpdates(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Update failed');
+    } finally {
+      setUpdating(false);
+    }
   };
 
   const refreshRepos = async () => {
     setActionMsg(''); setActionError('');
-    const res = await sudoAction({ action: 'refresh_repos' });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg('Repositories refreshed'); loadRepos(); }
+    try {
+      const res = await sudoAction({ action: 'refresh_repos' });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg('Repositories refreshed'); loadRepos(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Refresh failed');
+    }
   };
 
   const addRepo = async () => {
     if (!newRepoUrl.trim()) return;
     setActionMsg(''); setActionError('');
-    const res = await sudoAction({ action: 'add_repo', repo: newRepoUrl.trim(), name: newRepoName.trim() });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg('Repository added'); setNewRepoUrl(''); setNewRepoName(''); loadRepos(); }
+    try {
+      const res = await sudoAction({ action: 'add_repo', repo: newRepoUrl.trim(), name: newRepoName.trim() });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg('Repository added'); setNewRepoUrl(''); setNewRepoName(''); loadRepos(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Add repo failed');
+    }
   };
 
   const removeRepo = async (repo: string) => {
     setActionMsg(''); setActionError('');
-    const res = await sudoAction({ action: 'remove_repo', repo });
-    if (res.error) setActionError(String(res.error));
-    else { setActionMsg('Repository removed'); loadRepos(); }
+    try {
+      const res = await sudoAction({ action: 'remove_repo', repo });
+      if (res.cancelled) return;
+      if (res.error) setActionError(String(res.error));
+      else { setActionMsg('Repository removed'); loadRepos(); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Remove repo failed');
+    }
   };
 
   /* ── block navigation while updating ─────────────────── */
@@ -875,7 +910,7 @@ export function Packages() {
               autoComplete="current-password"
             />
             <div style={S.modalActions}>
-              <button type="button" onClick={() => setPwPrompt(false)} style={S.btnCancel}>Cancel</button>
+              <button type="button" onClick={() => { setPwPrompt(false); if (pwResolveRef.current) { pwResolveRef.current(''); pwResolveRef.current = null; } }} style={S.btnCancel}>Cancel</button>
               <button type="submit" style={S.btnSuccess}>Authenticate</button>
             </div>
           </form>

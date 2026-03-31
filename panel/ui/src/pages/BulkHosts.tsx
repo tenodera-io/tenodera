@@ -79,16 +79,18 @@ export function BulkHosts() {
   /* ── load host list ── */
   const loadHosts = useCallback(() => {
     const ch = openChannel('hosts.manage');
+    const timer = setTimeout(() => ch.close(), 10_000);
     ch.onMessage((msg: Message) => {
       if (msg.type === 'data' && 'data' in msg) {
         const d = msg.data as Record<string, unknown>;
         if (d.action === 'list' && d.hosts) {
           setHosts(d.hosts as HostEntry[]);
+          clearTimeout(timer);
+          ch.close();
         }
       }
     });
     ch.send({ action: 'list' });
-    setTimeout(() => ch.close(), 2000);
   }, []);
 
   /* Load hosts on mount */

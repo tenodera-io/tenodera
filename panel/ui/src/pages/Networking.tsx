@@ -172,6 +172,8 @@ export function Networking() {
 
   /* ----- firewall rule form ----- */
   const [ruleBackend, setRuleBackend] = useState('');
+  const ruleBackendRef = useRef(ruleBackend);
+  ruleBackendRef.current = ruleBackend;
   const [rulePort, setRulePort] = useState('');
   const [ruleProto, setRuleProto] = useState('tcp');
   const [ruleAction, setRuleAction] = useState('allow');
@@ -191,6 +193,7 @@ export function Networking() {
 
   /* ── manage channel helper ────────────────────────────── */
   const manageRef = useRef<ReturnType<typeof openChannel> | null>(null);
+  const pwResolveRef = useRef<((pw: string) => void) | null>(null);
 
   const getManageChannel = useCallback(() => {
     if (!manageRef.current) {
@@ -237,10 +240,12 @@ export function Networking() {
       setPwPrompt(true);
       setPwInput('');
       setActionError('');
+      pwResolveRef.current = resolve;
       setPendingAction(() => () => {
         const el = document.getElementById('net-pw-input') as HTMLInputElement;
         const pw = el?.value || '';
         setPwPrompt(false);
+        pwResolveRef.current = null;
         resolve(pw);
       });
     });
@@ -348,7 +353,7 @@ export function Networking() {
       setFwStatus(status as unknown as FirewallStatusAll);
       const available = ((status as unknown as FirewallStatusAll).backends || []).map(b => b.backend);
       setFwAvailableBackends(available);
-      if (!ruleBackend && available.length > 0) {
+      if (!ruleBackendRef.current && available.length > 0) {
         setRuleBackend(available.find(b => b === 'ufw' || b === 'firewalld') || available[0]);
       }
 
@@ -358,20 +363,24 @@ export function Networking() {
       setFwError(String(e));
     }
     setFwLoading(false);
-  }, [sendManage, ruleBackend, su]);
+  }, [sendManage, su]);
 
   /* ── load VPN ─────────────────────────────────────────── */
   const loadVpn = useCallback(async () => {
-    const res = await sendManage({ action: 'vpn_list' });
-    setVpns((res.vpns as VpnEntry[]) || []);
+    try {
+      const res = await sendManage({ action: 'vpn_list' });
+      setVpns((res.vpns as VpnEntry[]) || []);
+    } catch { /* best-effort */ }
   }, [sendManage]);
 
   /* ── load logs ────────────────────────────────────────── */
   const loadLogs = useCallback(async () => {
     setLogsLoading(true);
-    const res = await sendManage({ action: 'network_logs', lines: 200 });
-    setNetLogs((res.network_logs as string[]) || []);
-    setFwLogs((res.firewall_logs as string[]) || []);
+    try {
+      const res = await sendManage({ action: 'network_logs', lines: 200 });
+      setNetLogs((res.network_logs as string[]) || []);
+      setFwLogs((res.firewall_logs as string[]) || []);
+    } catch { /* best-effort */ }
     setLogsLoading(false);
   }, [sendManage]);
 
@@ -389,10 +398,14 @@ export function Networking() {
   const doPrivileged = useCallback(async (actionData: Record<string, unknown>) => {
     setActionError('');
     const pw = await getPassword();
-    if (!pw) { setActionError('Password required'); return; }
-    const res = await sendManage({ ...actionData, password: pw });
-    if (res.error) setActionError(res.error as string);
-    return res;
+    if (!pw) return;
+    try {
+      const res = await sendManage({ ...actionData, password: pw });
+      if (res.error) setActionError(res.error as string);
+      return res;
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Action failed');
+    }
   }, [getPassword, sendManage]);
 
   /* ───────────────────────────────────────────────────────── */
@@ -524,7 +537,7 @@ export function Networking() {
             />
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
               <button onClick={() => pendingAction?.()} style={S.btnPrimary}>Authenticate</button>
-              <button onClick={() => { setPwPrompt(false); setPendingAction(null); }} style={S.btnSecondary}>Cancel</button>
+              <button onClick={() => { setPwPrompt(false); setPendingAction(null); if (pwResolveRef.current) { pwResolveRef.current(''); pwResolveRef.current = null; } }} style={S.btnSecondary}>Cancel</button>
             </div>
           </div>
         </div>
