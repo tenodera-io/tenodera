@@ -94,6 +94,30 @@ After install, the gateway config is at:
 /etc/tenodera/gateway.env
 ```
 
+Example with all available options:
+
+```bash
+# ── Network ──────────────────────────────────────────────
+TENODERA_BIND_ADDR=0.0.0.0        # Listen address (default: 0.0.0.0)
+TENODERA_BIND_PORT=9090            # Listen port (default: 9090)
+
+# ── TLS ──────────────────────────────────────────────────
+TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem   # TLS certificate (PEM)
+TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem     # TLS private key (PEM)
+# TENODERA_ALLOW_UNENCRYPTED=1     # Allow plaintext HTTP (dev only!)
+
+# ── Paths ────────────────────────────────────────────────
+TENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge  # Bridge binary path
+TENODERA_UI_DIR=/usr/share/tenodera/ui              # Built UI assets
+
+# ── Security ─────────────────────────────────────────────
+TENODERA_IDLE_TIMEOUT=900          # Session idle timeout in seconds (default: 900)
+TENODERA_MAX_STARTUPS=20           # Max failed logins per IP in 5-min window (default: 20, min: 1)
+
+# ── Logging ──────────────────────────────────────────────
+RUST_LOG=tenodera_gateway=info     # Log filter (e.g. debug, info, warn)
+```
+
 Edit and restart: `sudo systemctl restart tenodera-gateway`
 
 ### TLS (recommended)
@@ -124,20 +148,7 @@ TENODERA_ALLOW_UNENCRYPTED=1
 
 > **Warning:** Without TLS, passwords and session tokens are sent in cleartext.
 
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `TENODERA_BIND_ADDR` | `0.0.0.0` | Listen address |
-| `TENODERA_BIND_PORT` | `9090` | Listen port |
-| `TENODERA_BRIDGE_BIN` | `/usr/local/bin/tenodera-bridge` | Path to bridge binary |
-| `TENODERA_UI_DIR` | `/usr/share/tenodera/ui` | Path to built UI assets |
-| `TENODERA_TLS_CERT` | *(none)* | TLS certificate path (PEM) |
-| `TENODERA_TLS_KEY` | *(none)* | TLS private key path (PEM) |
-| `TENODERA_ALLOW_UNENCRYPTED` | `false` | Allow HTTP without TLS |
-| `TENODERA_IDLE_TIMEOUT` | `900` | Session idle timeout (seconds) |
-| `TENODERA_MAX_STARTUPS` | `20` | Max failed login attempts per IP (5-min window) |
-| `RUST_LOG` | *(none)* | Log filter (e.g. `tenodera_gateway=debug`) |
+See [SECURITY.md](SECURITY.md) for security recommendations before deploying to production.
 
 ## Usage
 
