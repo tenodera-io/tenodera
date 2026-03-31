@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { type Message } from '../api/transport.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
-import { useSuperuser } from './Shell.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 
 interface Unit {
   unit: string;

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { Login } from './pages/Login.tsx';
-import { Shell } from './pages/Shell.tsx';
 import { logout as apiLogout } from './api/auth.ts';
+
+const Login = lazy(() => import('./pages/Login.tsx').then(m => ({ default: m.Login })));
+const Shell = lazy(() => import('./pages/Shell.tsx').then(m => ({ default: m.Shell })));
 
 export function App() {
   const [sessionId, setSessionId] = useState<string | null>(
@@ -30,24 +31,26 @@ export function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route
-          path="/login"
-          element={
-            sessionId ? <Navigate to="/" /> : <Login onLogin={handleLogin} />
-          }
-        />
-        <Route
-          path="/*"
-          element={
-            sessionId ? (
-              <Shell sessionId={sessionId} user={user} onLogout={handleLogout} />
-            ) : (
-              <Navigate to="/login" />
-            )
-          }
-        />
-      </Routes>
+      <Suspense fallback={null}>
+        <Routes>
+          <Route
+            path="/login"
+            element={
+              sessionId ? <Navigate to="/" /> : <Login onLogin={handleLogin} />
+            }
+          />
+          <Route
+            path="/*"
+            element={
+              sessionId ? (
+                <Shell sessionId={sessionId} user={user} onLogout={handleLogout} />
+              ) : (
+                <Navigate to="/login" />
+              )
+            }
+          />
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

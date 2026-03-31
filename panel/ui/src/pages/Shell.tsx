@@ -1,31 +1,26 @@
-import { useEffect, useState, useRef, useMemo, createContext, useContext, useCallback } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
 import { connect, disconnect, request, openChannel, type Message } from '../api/transport.ts';
 import { HostTransportProvider } from '../api/HostTransportContext.tsx';
 import { saveSuperuserPassword, loadSuperuserPassword, clearSuperuserPassword } from '../api/secureStorage.ts';
-import { Dashboard } from './Dashboard.tsx';
-import { Services } from './Services.tsx';
-import { Logs } from './Logs.tsx';
-import { Terminal } from './Terminal.tsx';
-import { Files } from './Files.tsx';
-import { Containers } from './Containers.tsx';
-import { Storage } from './Storage.tsx';
-import { Networking } from './Networking.tsx';
-import { Packages } from './Packages.tsx';
+import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { Hosts } from './Hosts.tsx';
-import { Kdump } from './Kdump.tsx';
-import { LogFiles } from './LogFiles.tsx';
-import { Users } from './Users.tsx';
-import { BulkHosts } from './BulkHosts.tsx';
 
-/* ── Superuser context ─────────────────────────────────── */
+/* ── Lazy-loaded pages (code splitting) ────────────────── */
 
-interface SuperuserCtx {
-  active: boolean;
-  password: string;
-}
-const SuperuserContext = createContext<SuperuserCtx>({ active: false, password: '' });
-export function useSuperuser() { return useContext(SuperuserContext); }
+const Dashboard = lazy(() => import('./Dashboard.tsx').then(m => ({ default: m.Dashboard })));
+const Services = lazy(() => import('./Services.tsx').then(m => ({ default: m.Services })));
+const Logs = lazy(() => import('./Logs.tsx').then(m => ({ default: m.Logs })));
+const Terminal = lazy(() => import('./Terminal.tsx').then(m => ({ default: m.Terminal })));
+const Files = lazy(() => import('./Files.tsx').then(m => ({ default: m.Files })));
+const Containers = lazy(() => import('./Containers.tsx').then(m => ({ default: m.Containers })));
+const Storage = lazy(() => import('./Storage.tsx').then(m => ({ default: m.Storage })));
+const Networking = lazy(() => import('./Networking.tsx').then(m => ({ default: m.Networking })));
+const Packages = lazy(() => import('./Packages.tsx').then(m => ({ default: m.Packages })));
+const Kdump = lazy(() => import('./Kdump.tsx').then(m => ({ default: m.Kdump })));
+const LogFiles = lazy(() => import('./LogFiles.tsx').then(m => ({ default: m.LogFiles })));
+const Users = lazy(() => import('./Users.tsx').then(m => ({ default: m.Users })));
+const BulkHosts = lazy(() => import('./BulkHosts.tsx').then(m => ({ default: m.BulkHosts })));
 
 /* ── types ─────────────────────────────────────────────── */
 
@@ -582,21 +577,23 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
           <main style={S.main} className="page-fade-in">
             <HostTransportProvider value={activeHost?.id ?? null}>
               {connected ? (
-                <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/services" element={<Services />} />
-                  <Route path="/containers" element={<Containers />} />
-                  <Route path="/logs" element={<Logs />} />
-                  <Route path="/terminal" element={<Terminal user={user} hostname={activeHost ? activeHost.name : hostname} />} />
-                  <Route path="/storage" element={<Storage />} />
-                  <Route path="/networking" element={<Networking />} />
-                  <Route path="/packages" element={<Packages />} />
-                  <Route path="/users" element={<Users />} />
-                  <Route path="/files" element={<Files user={user} />} />
-                  <Route path="/kdump" element={<Kdump />} />
-                  <Route path="/log-files" element={<LogFiles />} />
-                  <Route path="/manage-hosts" element={<BulkHosts />} />
-                </Routes>
+                <Suspense fallback={<div style={S.lazyFallback}>Loading...</div>}>
+                  <Routes>
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/services" element={<Services />} />
+                    <Route path="/containers" element={<Containers />} />
+                    <Route path="/logs" element={<Logs />} />
+                    <Route path="/terminal" element={<Terminal user={user} hostname={activeHost ? activeHost.name : hostname} />} />
+                    <Route path="/storage" element={<Storage />} />
+                    <Route path="/networking" element={<Networking />} />
+                    <Route path="/packages" element={<Packages />} />
+                    <Route path="/users" element={<Users />} />
+                    <Route path="/files" element={<Files user={user} />} />
+                    <Route path="/kdump" element={<Kdump />} />
+                    <Route path="/log-files" element={<LogFiles />} />
+                    <Route path="/manage-hosts" element={<BulkHosts />} />
+                  </Routes>
+                </Suspense>
               ) : (
                 <p>Connecting to server...</p>
               )}
@@ -798,6 +795,14 @@ const S: Record<string, React.CSSProperties> = {
     flex: 1,
     padding: '1.5rem',
     overflow: 'auto',
+  },
+  lazyFallback: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: '100%',
+    color: 'var(--text-secondary)',
+    fontSize: '0.9rem',
   },
 
   /* ── modal ── */

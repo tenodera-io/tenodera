@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
-import { useSuperuser } from './Shell.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 
 interface LogEntry {
   MESSAGE?: string | number[];

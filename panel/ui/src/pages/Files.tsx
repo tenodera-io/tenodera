@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
-import { useSuperuser } from './Shell.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 
 interface FileEntry {
   name: string;
