@@ -23,8 +23,23 @@ pub struct BridgeProcess {
 
 impl BridgeProcess {
     /// Spawn a local tenodera-bridge process.
-    pub async fn spawn(bridge_bin: &str) -> anyhow::Result<Self> {
-        let cmd = Command::new(bridge_bin);
+    ///
+    /// When `run_as` is Some(user), spawns via `sudo -n -u <user>` so the
+    /// bridge process runs as the authenticated session user rather than as
+    /// the gateway service account (tenodera-gw). This is required for the
+    /// bridge to be able to call `sudo -S` for administrative operations.
+    ///
+    /// Requires a sudoers entry granting the gateway service account
+    /// permission to run the bridge binary as any user without a password
+    /// (installed by `make install` as /etc/sudoers.d/tenodera-gw).
+    pub async fn spawn(bridge_bin: &str, run_as: Option<&str>) -> anyhow::Result<Self> {
+        let cmd = if let Some(session_user) = run_as {
+            let mut c = Command::new("sudo");
+            c.args(["-n", "-u", session_user, bridge_bin]);
+            c
+        } else {
+            Command::new(bridge_bin)
+        };
         Self::spawn_command(cmd, None).await
     }
 

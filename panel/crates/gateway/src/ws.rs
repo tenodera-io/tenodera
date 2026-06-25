@@ -220,9 +220,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
     audit::log(&user, "ws_connect", "websocket", true, "WebSocket connection established");
 
-    // Try to spawn local bridge subprocess
+    // Try to spawn local bridge subprocess as the authenticated session user.
+    // This ensures the bridge can call `sudo -S` for administrative operations.
+    // Requires /etc/sudoers.d/tenodera-gw (installed by `make install`).
     let bridge_bin = &state.config.bridge_bin;
-    let local_bridge = match BridgeProcess::spawn(bridge_bin).await {
+    let local_bridge = match BridgeProcess::spawn(bridge_bin, Some(&user)).await {
         Ok(b) => {
             audit::log(&user, "bridge_spawn", "local", true, "local bridge spawned");
             b

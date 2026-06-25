@@ -124,6 +124,10 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		sudo chmod 640 $(CONFDIR)/gateway.env; \
 		echo "    $(CONFDIR)/gateway.env already exists — skipping (preserving your config)"; \
 	fi
+	@echo "==> Installing sudoers rule for local bridge spawn..."
+	@printf '# Allow tenodera-gw to spawn tenodera-bridge as any local user.\n# Required so the bridge runs as the authenticated session user,\n# enabling sudo -S for administrative operations.\ntenodera-gw ALL=(ALL) NOPASSWD: %s\n' "$(BINDIR)/tenodera-bridge" \
+		| sudo tee /etc/sudoers.d/tenodera-gw > /dev/null
+	sudo chmod 440 /etc/sudoers.d/tenodera-gw
 	@echo "==> Setting up audit log..."
 	sudo touch /var/log/tenodera_audit.log
 	sudo chown tenodera-gw:tenodera-gw /var/log/tenodera_audit.log
@@ -174,6 +178,7 @@ uninstall:
 	-sudo rm -f /etc/logrotate.d/tenodera
 	-sudo rm -f /var/log/tenodera*
 	-sudo userdel tenodera-gw 2>/dev/null || true
+	-sudo rm -f /etc/sudoers.d/tenodera-gw
 	@echo "✓ Tenodera Panel fully removed"
 
 # ── Clean ─────────────────────────────────────────────────
