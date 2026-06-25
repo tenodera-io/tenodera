@@ -34,6 +34,7 @@ The gateway connects via SSH and spawns the bridge process on demand.
 | **Log Files** | Browse `/var/log` with keyword search, context lines, date/time range |
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
 | **Multi-host** | Manage multiple servers from one panel with SSH host key verification |
+| **Access control** | Role-based: Admin (sudo/wheel users) get full access; non-sudo users get read-only access |
 
 ## Install
 
@@ -122,22 +123,29 @@ Edit and restart: `sudo systemctl restart tenodera-gateway`
 
 ### TLS (recommended)
 
-The gateway **requires TLS by default**. Generate or provide a certificate:
+The gateway **requires TLS by default**. The quickest way to generate a
+self-signed certificate (testing only):
 
 ```bash
-# Self-signed (testing):
-sudo mkdir -p /etc/tenodera/tls
-openssl req -x509 -newkey rsa:4096 -nodes -days 365 \
-  -keyout /etc/tenodera/tls/key.pem \
-  -out /etc/tenodera/tls/cert.pem \
-  -subj "/CN=$(hostname)"
+cd panel && sudo make tls-selfsigned
 ```
 
-Then set in `gateway.env`:
+This generates a 10-year self-signed cert in `/etc/tenodera/tls/`, sets the
+correct ownership (`root:tenodera-gw`) and permissions (`640`) for the service
+user, then restarts the gateway automatically.
+
+To use your own certificate, set in `gateway.env`:
 
 ```
 TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
 TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+```
+
+Ensure both files are readable by the `tenodera-gw` group:
+
+```bash
+sudo chown root:tenodera-gw /etc/tenodera/tls/cert.pem /etc/tenodera/tls/key.pem
+sudo chmod 640 /etc/tenodera/tls/cert.pem /etc/tenodera/tls/key.pem
 ```
 
 ### Plaintext HTTP (development only)
@@ -152,13 +160,34 @@ See [SECURITY.md](SECURITY.md) for security recommendations before deploying to 
 
 ## Usage
 
-Log in with any PAM user that has sudo privileges on the gateway host.
-The panel uses system credentials (local accounts or LDAP/SSSD).
+Log in with any PAM system user on the gateway host. The panel uses system
+credentials (local accounts or LDAP/SSSD). Users in the `sudo`, `wheel`, or
+`admin` group get **Admin** access (full read/write). All other users are
+granted **read-only** access -- they can monitor but cannot execute write
+operations.
 
-To add remote hosts, navigate to the **Hosts** page in the UI. The panel
-scans the SSH host key fingerprint and asks for confirmation before adding.
-The logged-in user must be able to SSH into the remote host with password
-authentication, and `tenodera-bridge` must be installed there.
+### Adding remote hosts
+
+Navigate to the **Hosts** page in the UI. The panel scans the SSH host key
+fingerprint and asks for confirmation before adding.
+
+The gateway connects to managed hosts using its Ed25519 SSH key
+(`/etc/tenodera/id_ed25519`), generated automatically during `make install`.
+Before adding a host, copy the gateway public key to the **session user's**
+`authorized_keys` on that managed host:
+
+```bash
+# On the gateway server -- display the public key:
+sudo cat /etc/tenodera/id_ed25519.pub
+# or from source: make show-pubkey -C panel/
+
+# On each managed host (as the session user, e.g. your login account):
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
+echo "<paste pubkey here>" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
+```
+
+`tenodera-bridge` must also be installed on each managed host.
 
 ```bash
 # Service management
@@ -166,6 +195,16 @@ sudo systemctl status tenodera-gateway
 sudo systemctl restart tenodera-gateway
 journalctl -u tenodera-gateway -f
 ```
+
+### Health endpoints
+
+```
+GET /api/health        → { status, sessions, uptime_secs, version }
+GET /api/health/ready  → 200 OK | 503 Service Unavailable (bridge binary check)
+```
+
+Use `/api/health/ready` as a readiness probe in load balancers or container
+orchestration.
 
 ## Architecture
 
@@ -177,7 +216,7 @@ journalctl -u tenodera-gateway -f
 [ Gateway ]   Axum HTTP/WS server, PAM auth, session management
      |
      |--- localhost: spawns tenodera-bridge directly
-     |--- remote:    ssh user@host tenodera-bridge  (via sshpass)
+     |--- remote:    ssh -i /etc/tenodera/id_ed25519 user@host tenodera-bridge
      v
 [ Bridge ]    stdin/stdout newline-delimited JSON, per-user process
      |
@@ -192,6 +231,10 @@ journalctl -u tenodera-gateway -f
   both gateway and bridge.
 
 No agent daemon runs on managed hosts. No ports need to be opened.
+
+The bridge announces its protocol version via a `Hello` handshake on startup.
+The gateway validates compatibility and rejects bridges with an incompatible
+major version. Current protocol version: **1**.
 
 ## Project Structure
 
