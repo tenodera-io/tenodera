@@ -1,0 +1,7 @@
+#%PAM-1.0
+# Tenodera gateway authentication — delegates to system stack.
+# Installed by `make install`; distro-specific include set automatically.
+# Debian/Ubuntu uses common-{auth,account}; RHEL/Fedora/Arch uses system-auth.
+
+auth       include    system-auth
+account    include    system-auth

@@ -124,6 +124,13 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		sudo chmod 640 $(CONFDIR)/gateway.env; \
 		echo "    $(CONFDIR)/gateway.env already exists — skipping (preserving your config)"; \
 	fi
+	@echo "==> Installing PAM service config..."
+	@if [ -f /etc/pam.d/common-auth ]; then \
+		printf '#%%PAM-1.0\n# Tenodera gateway authentication\nauth    include common-auth\naccount include common-account\n' \
+			| sudo tee /etc/pam.d/tenodera > /dev/null; \
+	else \
+		sudo install -m 644 pam.d/tenodera /etc/pam.d/tenodera; \
+	fi
 	@echo "==> Installing sudoers rules..."
 	@printf '# Allow tenodera-gw to spawn tenodera-bridge as any local user.\n# Required so the bridge runs as the authenticated session user,\n# enabling sudo -S for administrative operations.\ntenodera-gw ALL=(ALL) NOPASSWD: %s\n\n# Allow admin users (sudo group) to update hosts config via the bridge.\n# The bridge runs as the session user and needs root to write the\n# gateway-owned config file.\n%%sudo ALL=(root) NOPASSWD: /usr/bin/tee %s\n' \
 		"$(BINDIR)/tenodera-bridge" "$(CONFDIR)/hosts.json" \
@@ -184,6 +191,7 @@ uninstall:
 	-sudo rm -rf $(UIDIR)
 	-sudo rm -rf $(CONFDIR)
 	-sudo rm -f /etc/logrotate.d/tenodera
+	-sudo rm -f /etc/pam.d/tenodera
 	-sudo rm -f /var/log/tenodera*
 	-sudo userdel tenodera-gw 2>/dev/null || true
 	-sudo rm -f /etc/sudoers.d/tenodera-gw

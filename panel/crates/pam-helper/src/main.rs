@@ -100,7 +100,7 @@ fn pam_auth_mode() {
     };
 
     let conv = Conversation::with_credentials(&user, &password);
-    let mut context = match Context::new("login", None, conv) {
+    let mut context = match Context::new("tenodera", None, conv) {
         Ok(ctx) => ctx,
         Err(e) => {
             eprintln!("pam_start failed: {e}");
