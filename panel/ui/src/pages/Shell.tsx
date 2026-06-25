@@ -614,7 +614,21 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                   </Routes>
                 </Suspense>
               ) : (
-                <p>Connecting to server...</p>
+                <div style={S.offlineOverlay}>
+                  <div style={S.offlineBox}>
+                    <div style={{ fontSize: '2rem', marginBottom: '0.75rem' }}>
+                      {connState === 'reconnecting' ? '◌' : '○'}
+                    </div>
+                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>
+                      {connState === 'reconnecting' ? 'Reconnecting…' : 'Connecting to server…'}
+                    </div>
+                    {connState === 'reconnecting' && (
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                        Connection lost. Retrying automatically.
+                      </div>
+                    )}
+                  </div>
+                </div>
               )}
             </HostTransportProvider>
           </main>
@@ -820,6 +834,18 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     justifyContent: 'center',
     height: '100%',
+    color: 'var(--text-secondary)',
+    fontSize: '0.9rem',
+  },
+  offlineOverlay: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    height: '100%',
+  },
+  offlineBox: {
+    textAlign: 'center' as const,
     color: 'var(--text-secondary)',
     fontSize: '0.9rem',
   },

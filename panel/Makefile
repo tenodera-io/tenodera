@@ -20,7 +20,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 GATEWAY_BIN    := target/release/tenodera-gateway
 PAM_HELPER_BIN := target/release/tenodera-pam-helper
 
-.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean
+.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean tls-selfsigned
 
 all: deps build install
 
@@ -114,7 +114,7 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		echo "    $(CONFDIR)/hosts.json already exists — skipping"; \
 	fi
 	@if [ ! -f $(CONFDIR)/gateway.env ]; then \
-		printf '# Tenodera Gateway Configuration\n# See: systemctl cat tenodera-gateway\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to bridge binary\nTENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS certificate and key (uncomment for production)\n#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\n#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# Allow unencrypted HTTP (set to 1 only for development/testing)\nTENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
+		printf '# Tenodera Gateway Configuration\n# See: systemctl cat tenodera-gateway\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to bridge binary\nTENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS certificate and key — required for production.\n# Generate a self-signed cert for testing: make tls-selfsigned\nTENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\nTENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# Allow unencrypted HTTP — for development only, never in production.\n#TENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
 			| sudo tee $(CONFDIR)/gateway.env > /dev/null; \
 		sudo chown root:tenodera-gw $(CONFDIR)/gateway.env; \
 		sudo chmod 640 $(CONFDIR)/gateway.env; \
@@ -140,18 +140,25 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	@echo "==> Installing logrotate config..."
 	sudo install -m 644 logrotate/tenodera /etc/logrotate.d/tenodera
 	@echo ""
-	@echo "✓ Tenodera Panel installed and running"
-	@echo "  Gateway: http://$$(hostname -I | awk '{print $$1}'):9090"
+	@echo "✓ Tenodera Panel installed"
 	@echo "  Service: systemctl status tenodera-gateway"
 	@echo "  Logs:    journalctl -u tenodera-gateway -f"
 	@echo ""
 	@echo "  Bridge must be installed separately on managed hosts."
-	@echo "  See ../bridge/ or use: make install"
-	@echo "  in the bridge/ directory on each host."
+	@echo "  See ../bridge/ or use: make install in the bridge/ directory on each host."
 	@echo ""
 	@echo "  Login with any PAM user (system credentials)."
 	@echo "  Configuration: $(CONFDIR)/gateway.env"
-	@echo "  For TLS, set TENODERA_TLS_CERT / TENODERA_TLS_KEY in gateway.env"
+	@echo ""
+	@if [ ! -f $(CONFDIR)/tls/cert.pem ] || [ ! -f $(CONFDIR)/tls/key.pem ]; then \
+		echo "  ⚠  TLS not configured — gateway will not start without a certificate."; \
+		echo "     Generate a self-signed cert for testing:"; \
+		echo "       sudo make tls-selfsigned"; \
+		echo "     Or set your own cert in $(CONFDIR)/gateway.env and restart:"; \
+		echo "       sudo systemctl restart tenodera-gateway"; \
+	else \
+		echo "  Gateway: https://$$(hostname -I | awk '{print $$1}'):9090"; \
+	fi
 
 $(GATEWAY_BIN):
 	$(MAKE) build-backend
@@ -181,6 +188,27 @@ uninstall:
 	-sudo userdel tenodera-gw 2>/dev/null || true
 	-sudo rm -f /etc/sudoers.d/tenodera-gw
 	@echo "✓ Tenodera Panel fully removed"
+
+# ── TLS ───────────────────────────────────────────────────
+
+tls-selfsigned:
+	@echo "==> Generating self-signed TLS certificate (valid 3650 days)..."
+	sudo mkdir -p $(CONFDIR)/tls
+	sudo openssl req -x509 -newkey rsa:4096 -nodes -days 3650 \
+		-keyout $(CONFDIR)/tls/key.pem \
+		-out $(CONFDIR)/tls/cert.pem \
+		-subj "/CN=$$(hostname)"
+	sudo chown root:tenodera-gw $(CONFDIR)/tls/cert.pem $(CONFDIR)/tls/key.pem
+	sudo chmod 640 $(CONFDIR)/tls/cert.pem $(CONFDIR)/tls/key.pem
+	@echo ""
+	@echo "✓ Self-signed certificate created:"
+	@echo "  Cert: $(CONFDIR)/tls/cert.pem"
+	@echo "  Key:  $(CONFDIR)/tls/key.pem"
+	@echo ""
+	@echo "  Restarting gateway..."
+	sudo systemctl restart tenodera-gateway
+	@echo "  Gateway: https://$$(hostname -I | awk '{print $$1}'):9090"
+	@echo "  (Browser will warn about self-signed cert — this is expected)"
 
 # ── Clean ─────────────────────────────────────────────────
 
