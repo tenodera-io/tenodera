@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = GatewayConfig::default();
+    config.validate()?;
     let bind_addr = config.bind_addr;
 
     // Disable core dumps so FreeIPA passwords from sessions cannot

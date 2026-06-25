@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::os::unix::fs::PermissionsExt;
 
 /// Gateway configuration. Later loaded from file / env.
 #[derive(Debug, Clone)]
@@ -13,6 +14,68 @@ pub struct GatewayConfig {
     pub tls_cert: Option<String>,
     /// TLS private key file path (PEM).
     pub tls_key: Option<String>,
+}
+
+impl GatewayConfig {
+    /// Validate configuration at startup — fail fast with clear error messages
+    /// instead of silently starting and failing on first user action.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        // Check bridge binary exists and is executable
+        match std::fs::metadata(&self.bridge_bin) {
+            Ok(meta) => {
+                if meta.permissions().mode() & 0o111 == 0 {
+                    anyhow::bail!(
+                        "bridge binary '{}' exists but is not executable — run: chmod +x {}",
+                        self.bridge_bin, self.bridge_bin
+                    );
+                }
+            }
+            Err(e) => {
+                anyhow::bail!(
+                    "bridge binary '{}' not found: {} — build and install tenodera-bridge first",
+                    self.bridge_bin, e
+                );
+            }
+        }
+
+        // If TLS is partially configured, require both cert and key
+        match (&self.tls_cert, &self.tls_key) {
+            (Some(cert), Some(key)) => {
+                // Both set — verify both paths are readable
+                std::fs::File::open(cert).map_err(|e| {
+                    anyhow::anyhow!("TLS cert '{}' not readable: {}", cert, e)
+                })?;
+                std::fs::File::open(key).map_err(|e| {
+                    anyhow::anyhow!("TLS key '{}' not readable: {}", key, e)
+                })?;
+            }
+            (Some(_), None) => {
+                anyhow::bail!(
+                    "TENODERA_TLS_CERT is set but TENODERA_TLS_KEY is missing — set both or neither"
+                );
+            }
+            (None, Some(_)) => {
+                anyhow::bail!(
+                    "TENODERA_TLS_KEY is set but TENODERA_TLS_CERT is missing — set both or neither"
+                );
+            }
+            (None, None) => {
+                if !self.allow_unencrypted {
+                    anyhow::bail!(
+                        "TLS is required but not configured.\n\
+                         Set TENODERA_TLS_CERT and TENODERA_TLS_KEY, or set TENODERA_ALLOW_UNENCRYPTED=1 for dev.\n\
+                         Quick self-signed cert:\n\
+                         \topenssl req -x509 -newkey rsa:4096 -nodes -days 365 \\\n\
+                         \t  -keyout /etc/tenodera/tls/key.pem \\\n\
+                         \t  -out /etc/tenodera/tls/cert.pem \\\n\
+                         \t  -subj \"/CN=$(hostname)\""
+                    );
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl Default for GatewayConfig {
