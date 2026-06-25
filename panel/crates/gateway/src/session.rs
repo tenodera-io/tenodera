@@ -1,8 +1,28 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use uuid::Uuid;
+
+/// User role — determines what operations are permitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Role {
+    /// Full access including write/administrative operations.
+    Admin,
+    /// Read-only access — write operations are rejected by bridge handlers.
+    Readonly,
+}
+
+impl Role {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Role::Admin => "admin",
+            Role::Readonly => "readonly",
+        }
+    }
+}
 
 /// A live user session.
 ///
@@ -13,6 +33,7 @@ use uuid::Uuid;
 pub struct Session {
     pub id: String,
     pub user: String,
+    pub role: Role,
     pub created_at: std::time::Instant,
     pub last_activity: std::time::Instant,
 }
@@ -49,11 +70,12 @@ impl SessionStore {
         }
     }
 
-    pub async fn create(&self, user: String) -> Session {
+    pub async fn create(&self, user: String, role: Role) -> Session {
         let now = std::time::Instant::now();
         let session = Session {
             id: Uuid::new_v4().to_string(),
             user,
+            role,
             created_at: now,
             last_activity: now,
         };
@@ -126,7 +148,7 @@ mod tests {
     #[tokio::test]
     async fn create_and_get() {
         let store = SessionStore::new(900);
-        let session = store.create("alice".into()).await;
+        let session = store.create("alice".into(), Role::Admin).await;
         let fetched = store.get(&session.id).await.unwrap();
         assert_eq!(fetched.user, "alice");
     }
@@ -134,7 +156,7 @@ mod tests {
     #[tokio::test]
     async fn remove_session() {
         let store = SessionStore::new(900);
-        let s = store.create("bob".into()).await;
+        let s = store.create("bob".into(), Role::Admin).await;
         store.remove(&s.id).await;
         assert!(store.get(&s.id).await.is_none());
     }
@@ -148,7 +170,7 @@ mod tests {
     #[tokio::test]
     async fn reap_expired_idle() {
         let store = SessionStore::new_with_max_lifetime(0, 86400);
-        store.create("idle_user".into()).await;
+        store.create("idle_user".into(), Role::Readonly).await;
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 1);
@@ -159,7 +181,7 @@ mod tests {
     #[tokio::test]
     async fn active_session_not_reaped() {
         let store = SessionStore::new(900);
-        let s = store.create("active".into()).await;
+        let s = store.create("active".into(), Role::Admin).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 0);
         assert!(store.get(&s.id).await.is_some());
@@ -168,7 +190,7 @@ mod tests {
     #[tokio::test]
     async fn reap_expired_max_lifetime() {
         let store = SessionStore::new_with_max_lifetime(900, 0);
-        store.create("old_user".into()).await;
+        store.create("old_user".into(), Role::Admin).await;
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 1);
@@ -177,7 +199,7 @@ mod tests {
     #[tokio::test]
     async fn touch_extends_idle_timeout() {
         let store = SessionStore::new_with_max_lifetime(1, 3600);
-        let s = store.create("user".into()).await;
+        let s = store.create("user".into(), Role::Admin).await;
         tokio::time::sleep(std::time::Duration::from_millis(900)).await;
         store.touch(&s.id).await;
         tokio::time::sleep(std::time::Duration::from_millis(900)).await;

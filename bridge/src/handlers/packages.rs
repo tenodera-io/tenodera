@@ -32,6 +32,12 @@ impl ChannelHandler for PackagesHandler {
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
+        if !matches!(action, "detect" | "list_installed" | "search" | "package_info" | "list_updates") {
+            if let Some(err) = crate::util::require_admin(data) {
+                return vec![Message::Data { channel: channel.into(), data: err }];
+            }
+        }
+
         let result = match action {
             // ── Detection ──
             "detect" => detect_info().await,

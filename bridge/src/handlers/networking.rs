@@ -135,6 +135,12 @@ impl ChannelHandler for NetworkManageHandler {
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
+        if !matches!(action, "list_interfaces" | "firewall_status" | "firewall_rules") {
+            if let Some(err) = crate::util::require_admin(data) {
+                return vec![Message::Data { channel: channel.into(), data: err }];
+            }
+        }
+
         let result = match action {
             // ── Interface listing ──
             "list_interfaces" => list_interfaces_detailed().await,

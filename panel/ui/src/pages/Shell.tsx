@@ -3,6 +3,7 @@ import { Routes, Route, useNavigate } from 'react-router-dom';
 import { connect, disconnect, onConnectionChange, request, type ConnectionState } from '../api/transport.ts';
 import { HostTransportProvider } from '../api/HostTransportContext.tsx';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
+import { RoleContext } from '../contexts/RoleContext.ts';
 import { useHosts } from '../hooks/useHosts.ts';
 import { useSuperuser } from '../hooks/useSuperuser.ts';
 import { TopBar } from '../components/TopBar.tsx';
@@ -10,6 +11,7 @@ import { Sidebar } from '../components/Sidebar.tsx';
 import { SuperuserModal } from '../components/SuperuserModal.tsx';
 import { ErrorBoundary } from '../components/ErrorBoundary.tsx';
 import { Hosts } from './Hosts.tsx';
+import type { UserRole } from '../api/auth.ts';
 
 const Dashboard   = lazy(() => import('./Dashboard.tsx').then(m => ({ default: m.Dashboard })));
 const Services    = lazy(() => import('./Services.tsx').then(m => ({ default: m.Services })));
@@ -28,10 +30,11 @@ const BulkHosts   = lazy(() => import('./BulkHosts.tsx').then(m => ({ default: m
 interface ShellProps {
   sessionId: string;
   user: string;
+  role: UserRole;
   onLogout: () => void;
 }
 
-export function Shell({ user, onLogout }: ShellProps) {
+export function Shell({ user, role, onLogout }: ShellProps) {
   const [connected, setConnected] = useState(false);
   const [connState, setConnState] = useState<ConnectionState>('disconnected');
   const [hostname, setHostname] = useState('');
@@ -84,6 +87,7 @@ export function Shell({ user, onLogout }: ShellProps) {
   const suCtx = useMemo(() => ({ active: su.suActive, password: su.suPassword }), [su.suActive, su.suPassword]);
 
   return (
+    <RoleContext.Provider value={role}>
     <SuperuserContext.Provider value={suCtx}>
       <div style={S.wrapper}>
         <TopBar
@@ -172,6 +176,7 @@ export function Shell({ user, onLogout }: ShellProps) {
         )}
       </div>
     </SuperuserContext.Provider>
+    </RoleContext.Provider>
   );
 }
 

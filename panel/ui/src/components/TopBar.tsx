@@ -1,5 +1,6 @@
 import type { HostEntry, HostStatus } from '../hooks/useHosts.ts';
 import type { ConnectionState } from '../api/transport.ts';
+import { useRole } from '../contexts/RoleContext.ts';
 
 interface Props {
   hostname: string;
@@ -16,6 +17,7 @@ export function TopBar({
   hostname, activeHost, remoteStatus, connState,
   suActive, user, onSuperuserClick, onLogout,
 }: Props) {
+  const role = useRole();
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [sessionOpen, setSessionOpen] = React.useState(false);
   const helpRef = React.useRef<HTMLDivElement>(null);
@@ -83,6 +85,11 @@ export function TopBar({
           )}
         </div>
 
+        {role === 'readonly' && (
+          <span style={{ fontSize: '0.7rem', padding: '2px 7px', borderRadius: 4, background: '#e0af6822', color: '#e0af68', border: '1px solid #e0af6844' }}>
+            read-only
+          </span>
+        )}
         <div ref={sessionRef} style={S.dropdownWrap}>
           <button onClick={() => { setSessionOpen(!sessionOpen); setHelpOpen(false); }} style={S.topBtn}>
             👤 {user}
@@ -92,6 +99,8 @@ export function TopBar({
               <div style={S.dropdownTitle}>Session</div>
               <Row label="User" value={user} />
               <Row label="Host" value={hostname} />
+              <Row label="Role" value={role === 'admin' ? 'Admin' : 'Read-only'}
+                valueStyle={{ color: role === 'admin' ? '#9ece6a' : '#e0af68' }} />
               <Row label="Privileges" value={suActive ? 'Administrative' : 'Limited'}
                 valueStyle={{ color: suActive ? '#9ece6a' : 'var(--text-secondary)' }} />
               <hr style={S.hr} />

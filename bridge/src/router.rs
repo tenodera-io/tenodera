@@ -121,11 +121,14 @@ impl Router {
                 if let Some(handler) = handler {
                     // Inject session context (_user) from stored channel options
                     let enriched = if let Some(opts) = self.channel_options.get(&channel) {
-                        if let (Some(user_val), Some(obj)) =
-                            (opts.extra.get("_user"), data.as_object())
-                        {
+                        if let Some(obj) = data.as_object() {
                             let mut obj = obj.clone();
-                            obj.insert("_user".into(), user_val.clone());
+                            if let Some(user_val) = opts.extra.get("_user") {
+                                obj.insert("_user".into(), user_val.clone());
+                            }
+                            if let Some(role_val) = opts.extra.get("_role") {
+                                obj.insert("_role".into(), role_val.clone());
+                            }
                             serde_json::Value::Object(obj)
                         } else {
                             data

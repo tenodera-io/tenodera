@@ -31,6 +31,12 @@ impl ChannelHandler for UsersManageHandler {
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
+        if !matches!(action, "list" | "list_groups" | "list_shells") {
+            if let Some(err) = crate::util::require_admin(data) {
+                return vec![Message::Data { channel: channel.into(), data: err }];
+            }
+        }
+
         let result = match action {
             // ── Read-only ──
             "list" => list_users().await,

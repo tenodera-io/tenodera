@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { login } from '../api/auth.ts';
 
+import { UserRole } from '../api/auth.ts';
+
 interface LoginProps {
-  onLogin: (sessionId: string, user: string) => void;
+  onLogin: (sessionId: string, user: string, role: UserRole) => void;
 }
 
 export function Login({ onLogin }: LoginProps) {
@@ -22,7 +24,7 @@ export function Login({ onLogin }: LoginProps) {
     try {
       const result = await login(user, password);
       setPassword('');
-      onLogin(result.session_id, result.user);
+      onLogin(result.session_id, result.user, result.role ?? 'readonly');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed');
     } finally {

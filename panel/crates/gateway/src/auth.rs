@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::pam;
+use crate::session::Role;
 
 /// Extract client `SocketAddr` regardless of how it was injected.
 ///
@@ -50,6 +51,7 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub session_id: String,
     pub user: String,
+    pub role: Role,
 }
 
 #[derive(Serialize)]
@@ -150,25 +152,22 @@ pub async fn login(
         ));
     }
 
-    // Verify the user has sudo privileges — privileged operations
-    // (package management, firewall, systemd) all require sudo.
-    // Reject login early rather than failing cryptically later.
-    if let Err(e) = pam::verify_sudo(&req.user).await {
-        tracing::warn!(user = %req.user, ip = %client_ip, error = %e, "sudo verification failed");
-        crate::audit::log(&req.user, "login", "", false, "no sudo privileges");
-        return Err((
-            StatusCode::FORBIDDEN,
-            Json(LoginError {
-                error: e,
-            }),
-        ));
-    }
+    // Determine role: admin if user is in sudo/wheel/admin group, readonly otherwise.
+    // Non-admin users can still log in but write operations will be rejected by the bridge.
+    let role = match pam::verify_sudo(&req.user).await {
+        Ok(()) => Role::Admin,
+        Err(e) => {
+            tracing::info!(user = %req.user, reason = %e, "user logged in as readonly (no sudo)");
+            Role::Readonly
+        }
+    };
 
-    let session = state.sessions.create(req.user.clone()).await;
-    crate::audit::log(&session.user, "login", "", true, "");
+    let session = state.sessions.create(req.user.clone(), role).await;
+    crate::audit::log(&session.user, "login", "", true, &format!("role={}", role.as_str()));
 
     Ok(Json(LoginResponse {
         session_id: session.id.clone(),
         user: session.user.clone(),
+        role: session.role,
     }))
 }

@@ -104,6 +104,11 @@ impl ChannelHandler for HostsManageHandler {
         let action = data.get("action").and_then(|a| a.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
+        if !matches!(action, "list" | "keyscan") {
+            if let Some(err) = crate::util::require_admin(data) {
+                return vec![Message::Data { channel: channel.into(), data: err }];
+            }
+        }
         let result = match action {
             "list" => action_list().await,
             "keyscan" => {

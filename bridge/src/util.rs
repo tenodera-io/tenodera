@@ -197,6 +197,19 @@ pub async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> V
     }
 }
 
+/// Return a "permission denied" error JSON if the caller's role is `readonly`.
+///
+/// Usage in write handlers:
+/// ```ignore
+/// if let Some(err) = require_admin(data) { return vec![...err...] }
+/// ```
+pub fn require_admin(data: &Value) -> Option<Value> {
+    match data.get("_role").and_then(|v| v.as_str()) {
+        Some("admin") | None => None,
+        Some(_) => Some(serde_json::json!({ "error": "permission denied: readonly session" })),
+    }
+}
+
 /// Extract a JSON array of strings from a `Value` by key.
 pub fn extract_string_array(data: &Value, key: &str) -> Vec<String> {
     data.get(key)

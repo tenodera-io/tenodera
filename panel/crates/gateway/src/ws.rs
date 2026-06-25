@@ -106,7 +106,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     let sink = Arc::new(Mutex::new(sink));
 
     // ── Auth phase: wait for the first message to be Auth { token } ──
-    let (session_id, user) = {
+    let (session_id, user, role) = {
         let auth_timeout = tokio::time::sleep(std::time::Duration::from_secs(AUTH_TIMEOUT_SECS));
         tokio::pin!(auth_timeout);
 
@@ -199,6 +199,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
         state.sessions.touch(&token).await;
         let user = session.user.clone();
+        let role = session.role;
 
         // Send success
         let ok = message::Message::AuthResult {
@@ -211,8 +212,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             let _ = s.send(Message::Text(serde_json::to_string(&ok).unwrap().into())).await;
         }
 
-        tracing::info!(user = %user, "WS authenticated via token");
-        (token, user)
+        tracing::info!(user = %user, role = %role.as_str(), "WS authenticated via token");
+        (token, user, role)
     };
 
     tracing::debug!(user = %user, "new WebSocket connection");
@@ -367,13 +368,17 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                 let channel_key = channel.clone();
                                 channel_routes.insert(channel_key.clone(), target_sender.clone());
 
-                                // Inject authenticated user and strip host field before forwarding
+                                // Inject authenticated user+role and strip host field before forwarding
                                 let open_msg = {
                                     let mut clean = options.clone();
                                     clean.extra.remove("host");
                                     clean.extra.insert(
                                         "_user".into(),
                                         serde_json::Value::String(user.clone()),
+                                    );
+                                    clean.extra.insert(
+                                        "_role".into(),
+                                        serde_json::Value::String(role.as_str().into()),
                                     );
                                     message::Message::Open { channel, options: clean }
                                 };

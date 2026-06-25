@@ -1,8 +1,11 @@
 const API_BASE = '/api';
 
+export type UserRole = 'admin' | 'readonly';
+
 export interface LoginResponse {
   session_id: string;
   user: string;
+  role: UserRole;
 }
 
 export async function login(user: string, password: string): Promise<LoginResponse> {

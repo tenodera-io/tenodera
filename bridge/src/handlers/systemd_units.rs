@@ -53,6 +53,12 @@ impl ChannelHandler for SystemdManageHandler {
 
         let result = match action {
             "start" | "stop" | "restart" | "enable" | "disable" | "reload" => {
+                if let Some(err) = crate::util::require_admin(data) {
+                    return vec![Message::Data {
+                        channel: channel.into(),
+                        data: serde_json::json!({ "type": "response", "action": action, "unit": unit, "data": err }),
+                    }];
+                }
                 if unit.is_empty() {
                     serde_json::json!({ "ok": false, "error": "no unit specified" })
                 } else if !is_valid_unit_name(unit) {
