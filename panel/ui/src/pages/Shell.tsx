@@ -5,6 +5,7 @@ import { HostTransportProvider } from '../api/HostTransportContext.tsx';
 import { saveSuperuserPassword, loadSuperuserPassword, clearSuperuserPassword } from '../api/secureStorage.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { Hosts } from './Hosts.tsx';
+import { ErrorBoundary } from '../components/ErrorBoundary.tsx';
 
 /* ── Lazy-loaded pages (code splitting) ────────────────── */
 
@@ -596,6 +597,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
           <main style={S.main} className="page-fade-in">
             <HostTransportProvider value={activeHost?.id ?? null}>
               {connected ? (
+                <ErrorBoundary>
                 <Suspense fallback={<div style={S.lazyFallback}>Loading...</div>}>
                   <Routes>
                     <Route path="/" element={<Dashboard />} />
@@ -613,6 +615,7 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                     <Route path="/manage-hosts" element={<BulkHosts />} />
                   </Routes>
                 </Suspense>
+                </ErrorBoundary>
               ) : (
                 <div style={S.offlineOverlay}>
                   <div style={S.offlineBox}>
