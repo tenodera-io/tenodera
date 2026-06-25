@@ -76,6 +76,10 @@ impl SessionStore {
         self.inner.write().await.remove(id);
     }
 
+    pub async fn count(&self) -> usize {
+        self.inner.read().await.len()
+    }
+
     /// Remove sessions that have been idle too long **or** exceeded the
     /// absolute lifetime cap.  Dropped sessions have their passwords
     /// zeroized via `Drop`.

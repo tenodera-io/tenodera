@@ -14,9 +14,12 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::{
-    Router,
+    Json, Router,
+    extract::State,
+    http::StatusCode,
     routing::get,
 };
+use serde::Serialize;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -29,6 +32,7 @@ pub struct AppState {
     pub config: GatewayConfig,
     pub sessions: SessionStore,
     pub login_limiter: LoginRateLimiter,
+    pub started_at: std::time::Instant,
 }
 
 #[tokio::main]
@@ -70,6 +74,7 @@ async fn main() -> anyhow::Result<()> {
         config,
         sessions,
         login_limiter,
+        started_at: std::time::Instant::now(),
     });
 
     // Build TLS acceptor before moving state into router
@@ -81,6 +86,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/logout", axum::routing::post(auth::logout))
         .route("/api/ws", get(ws::ws_upgrade))
         .route("/api/health", get(health))
+        .route("/api/health/ready", get(health_ready))
         // Serve built frontend from ui/dist (production)
         .fallback_service(
             tower_http::services::ServeDir::new(
@@ -171,6 +177,45 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn health() -> &'static str {
-    "ok"
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    sessions: usize,
+    uptime_secs: u64,
+    version: &'static str,
+}
+
+async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
+    let sessions = state.sessions.count().await;
+    let uptime_secs = state.started_at.elapsed().as_secs();
+    Json(HealthResponse {
+        status: "ok",
+        sessions,
+        uptime_secs,
+        version: env!("CARGO_PKG_VERSION"),
+    })
+}
+
+#[derive(Serialize)]
+struct ReadyResponse {
+    ready: bool,
+    bridge_bin: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+async fn health_ready(
+    State(state): State<Arc<AppState>>,
+) -> (StatusCode, Json<ReadyResponse>) {
+    let bin = state.config.bridge_bin.clone();
+    let (ready, error) = match tokio::fs::metadata(&bin).await {
+        Ok(m) if {
+            use std::os::unix::fs::PermissionsExt;
+            m.permissions().mode() & 0o111 != 0
+        } => (true, None),
+        Ok(_) => (false, Some(format!("{bin} is not executable"))),
+        Err(e) => (false, Some(format!("{bin}: {e}"))),
+    };
+    let code = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
+    (code, Json(ReadyResponse { ready, bridge_bin: bin, error }))
 }
