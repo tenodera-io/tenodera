@@ -50,8 +50,8 @@ $(BRIDGE_BIN):
 # ── Install ───────────────────────────────────────────────
 
 install: $(BRIDGE_BIN)
-	@echo "==> Installing tenodera-bridge to $(BINDIR)..."
-	sudo install -m 755 $(BRIDGE_BIN) $(BINDIR)/tenodera-bridge
+	@echo "==> Installing tenodera-bridge to $(BINDIR) (setuid root)..."
+	sudo install -m 4755 -o root -g root $(BRIDGE_BIN) $(BINDIR)/tenodera-bridge
 	@echo ""
 	@echo "Done. tenodera-bridge installed at $(BINDIR)/tenodera-bridge"
 	@echo "No daemon or service needed — gateway spawns bridge via SSH."

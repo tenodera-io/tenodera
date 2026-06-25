@@ -6,28 +6,38 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+User=tenodera-gw
+Group=tenodera-gw
 ExecStart=/usr/local/bin/tenodera-gateway
 EnvironmentFile=-/etc/tenodera/gateway.env
 
 # Security hardening
-# NOTE: ProtectSystem=strict is NOT used here because tenodera-bridge
-# (spawned as a child process) must write to /usr (package installs),
-# /var (dpkg/apt/dnf state, docker, systemd), /run (systemd, docker
-# sockets), and arbitrary paths via PTY sessions. Enumerating all
-# required ReadWritePaths would effectively whitelist the entire
-# filesystem, defeating the purpose of ProtectSystem.
-# NOTE: MemoryDenyWriteExecute is NOT used because child processes
-# (tenodera-pam-helper, tenodera-bridge) load PAM modules like
-# pam_sss.so (SSSD/FreeIPA) that may require W+X memory mappings.
+#
+# The gateway runs as the unprivileged tenodera-gw user.
+# tenodera-pam-helper and tenodera-bridge are setuid root (4750, root:tenodera-gw)
+# so they can escalate for PAM auth and PTY user switching respectively.
+#
+# NoNewPrivileges is intentionally NOT set: it would prevent the setuid
+# pam-helper and bridge from gaining root, breaking authentication and PTY.
+#
+# ProtectSystem=strict is NOT used: child processes (bridge) write to /usr,
+# /var, /run for package management, systemd, docker etc.
+#
+# MemoryDenyWriteExecute is NOT used: PAM modules (pam_sss.so) may require
+# W+X mappings.
 PrivateTmp=yes
-NoNewPrivileges=yes
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes
 RestrictNamespaces=yes
 LockPersonality=yes
-# useradd/groupadd create lock files with specific permissions
+# pam-helper and bridge are intentionally setuid root
 RestrictSUIDSGID=no
+# Gateway itself needs no special capabilities — privileged ops go through
+# the setuid helper binaries. Bounding set prevents the gateway process from
+# acquiring any capabilities even if exploited.
+CapabilityBoundingSet=
+AmbientCapabilities=
 
 Restart=on-failure
 RestartSec=5

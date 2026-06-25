@@ -154,23 +154,24 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
     }
 }
 
-/// Verify that the user has sudo privileges by running `sudo -l -U <user>`.
+/// Verify that the user has sudo privileges via tenodera-pam-helper --check-sudo.
 ///
-/// The gateway runs as root, so `sudo -l -U <user>` queries the sudoers
-/// policy for the given user without requiring their password.
+/// Delegates to the setuid pam-helper so this works whether the gateway
+/// runs as root or as the unprivileged tenodera-gw service user.
 ///
-/// Primary check: exit code (0 = has privileges, non-zero = denied).
-/// Secondary (fallback): scan output for "is not allowed" in case the
-/// exit code is unreliable on exotic sudo builds.
+/// Exit codes from helper: 0 = has sudo, 1 = no sudo, 3 = bad input, 4 = error.
 ///
 /// Returns `Ok(())` on success or `Err(message)` on failure.
 pub async fn verify_sudo(user: &str) -> Result<(), String> {
+    let helper_bin = std::env::var("TENODERA_PAM_HELPER")
+        .unwrap_or_else(|_| "tenodera-pam-helper".to_string());
+
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(30),
-        Command::new("sudo")
-            .args(["-l", "-U", user])
+        Command::new(&helper_bin)
+            .args(["--check-sudo", user])
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::piped())
             .output(),
     )
@@ -180,33 +181,23 @@ pub async fn verify_sudo(user: &str) -> Result<(), String> {
         "sudo verification timed out".to_string()
     })?
     .map_err(|e| {
-        tracing::error!(error = %e, "sudo check process failed");
+        tracing::error!(error = %e, bin = %helper_bin, "sudo check process failed");
         "unable to verify user privileges".to_string()
     })?;
 
-    // Primary check: exit code. sudo -l -U exits 0 when the user has
-    // at least one allowed command, non-zero otherwise.
-    if !output.status.success() {
-        tracing::warn!(
-            user = %user,
-            code = ?output.status.code(),
-            "user has no sudo privileges (exit code)"
-        );
-        return Err("user does not have sudo privileges".to_string());
+    match output.status.code() {
+        Some(0) => {
+            tracing::info!(user = %user, "sudo access verified");
+            Ok(())
+        }
+        Some(1) => {
+            tracing::warn!(user = %user, "user has no sudo privileges");
+            Err("user does not have sudo privileges".to_string())
+        }
+        code => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            tracing::error!(user = %user, ?code, stderr = %stderr, "sudo check error");
+            Err("unable to verify user privileges".to_string())
+        }
     }
-
-    // Secondary check: even with exit 0, verify the output doesn't
-    // contain denial text (belt-and-suspenders for unusual sudo configs).
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-
-    if stdout.contains("is not allowed")
-        || stderr.contains("is not allowed")
-    {
-        tracing::warn!(user = %user, "user has no sudo privileges (output text)");
-        return Err("user does not have sudo privileges".to_string());
-    }
-
-    tracing::info!(user = %user, "sudo access verified");
-    Ok(())
 }

@@ -83,30 +83,51 @@ build-frontend:
 # ── Install ───────────────────────────────────────────────
 
 install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
+	@echo "==> Creating tenodera-gw service account..."
+	@if ! id -u tenodera-gw >/dev/null 2>&1; then \
+		sudo useradd -r -s /sbin/nologin -M -d /nonexistent -c "Tenodera Gateway" tenodera-gw; \
+		echo "    Created user tenodera-gw"; \
+	else \
+		echo "    User tenodera-gw already exists — skipping"; \
+	fi
 	@echo "==> Installing gateway binary..."
-	sudo install -m 755 $(GATEWAY_BIN) $(BINDIR)/tenodera-gateway
-	@echo "==> Installing PAM helper..."
-	sudo install -m 755 $(PAM_HELPER_BIN) $(BINDIR)/tenodera-pam-helper
+	sudo install -m 755 -o root -g tenodera-gw $(GATEWAY_BIN) $(BINDIR)/tenodera-gateway
+	@echo "==> Installing PAM helper (setuid root, group tenodera-gw)..."
+	sudo install -m 4750 -o root -g tenodera-gw $(PAM_HELPER_BIN) $(BINDIR)/tenodera-pam-helper
 	@echo "==> Installing UI..."
 	sudo mkdir -p $(UIDIR)
 	sudo cp -r ui/dist/* $(UIDIR)/
 	@echo "==> Setting up directories..."
 	sudo mkdir -p $(CONFDIR)/tls
+	sudo chown root:tenodera-gw $(CONFDIR)
+	sudo chmod 750 $(CONFDIR)
+	sudo chown root:tenodera-gw $(CONFDIR)/tls
+	sudo chmod 750 $(CONFDIR)/tls
 	@if [ ! -f $(CONFDIR)/hosts.json ]; then \
 		echo '{"hosts":[]}' | sudo tee $(CONFDIR)/hosts.json > /dev/null; \
-		sudo chmod 644 $(CONFDIR)/hosts.json; \
+		sudo chown root:tenodera-gw $(CONFDIR)/hosts.json; \
+		sudo chmod 640 $(CONFDIR)/hosts.json; \
 		echo "    Created $(CONFDIR)/hosts.json"; \
 	else \
+		sudo chown root:tenodera-gw $(CONFDIR)/hosts.json; \
+		sudo chmod 640 $(CONFDIR)/hosts.json; \
 		echo "    $(CONFDIR)/hosts.json already exists — skipping"; \
 	fi
 	@if [ ! -f $(CONFDIR)/gateway.env ]; then \
 		printf '# Tenodera Gateway Configuration\n# See: systemctl cat tenodera-gateway\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to bridge binary\nTENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS certificate and key (uncomment for production)\n#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\n#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# Allow unencrypted HTTP (set to 1 only for development/testing)\nTENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
 			| sudo tee $(CONFDIR)/gateway.env > /dev/null; \
+		sudo chown root:tenodera-gw $(CONFDIR)/gateway.env; \
 		sudo chmod 640 $(CONFDIR)/gateway.env; \
 		echo "    Created $(CONFDIR)/gateway.env (HTTP mode — configure TLS for production)"; \
 	else \
+		sudo chown root:tenodera-gw $(CONFDIR)/gateway.env; \
+		sudo chmod 640 $(CONFDIR)/gateway.env; \
 		echo "    $(CONFDIR)/gateway.env already exists — skipping (preserving your config)"; \
 	fi
+	@echo "==> Setting up audit log..."
+	sudo touch /var/log/tenodera_audit.log
+	sudo chown tenodera-gw:tenodera-gw /var/log/tenodera_audit.log
+	sudo chmod 600 /var/log/tenodera_audit.log
 	@echo "==> Installing systemd services..."
 	sudo cp systemd/tenodera-gateway.service $(SYSTEMDDIR)/
 	sudo systemctl daemon-reload
@@ -152,6 +173,7 @@ uninstall:
 	-sudo rm -rf $(CONFDIR)
 	-sudo rm -f /etc/logrotate.d/tenodera
 	-sudo rm -f /var/log/tenodera*
+	-sudo userdel tenodera-gw 2>/dev/null || true
 	@echo "✓ Tenodera Panel fully removed"
 
 # ── Clean ─────────────────────────────────────────────────
