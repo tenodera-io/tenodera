@@ -20,7 +20,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 GATEWAY_BIN    := target/release/tenodera-gateway
 PAM_HELPER_BIN := target/release/tenodera-pam-helper
 
-.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean tls-selfsigned
+.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean tls-selfsigned show-pubkey
 
 all: deps build install
 
@@ -31,11 +31,11 @@ deps: deps-system deps-rust deps-node
 deps-system:
 	@echo "==> Installing system build dependencies..."
 	@if command -v apt-get >/dev/null 2>&1; then \
-		sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev libpam0g-dev libclang-dev curl jq sshpass; \
+		sudo apt-get update && sudo apt-get install -y build-essential pkg-config libssl-dev libpam0g-dev libclang-dev curl jq; \
 	elif command -v dnf >/dev/null 2>&1; then \
-		sudo dnf install -y gcc make pkg-config openssl-devel pam-devel clang-devel curl jq sshpass; \
+		sudo dnf install -y gcc make pkg-config openssl-devel pam-devel clang-devel curl jq; \
 	elif command -v pacman >/dev/null 2>&1; then \
-		sudo pacman -Sy --needed --noconfirm base-devel openssl pam clang pkg-config curl jq sshpass; \
+		sudo pacman -Sy --needed --noconfirm base-devel openssl pam clang pkg-config curl jq; \
 	else \
 		echo "ERROR: Unsupported package manager. Install manually: gcc, make, pkg-config, openssl-dev, pam-dev, curl"; \
 		exit 1; \
@@ -136,6 +136,19 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		"$(BINDIR)/tenodera-bridge" "$(CONFDIR)/hosts.json" \
 		| sudo tee /etc/sudoers.d/tenodera-gw > /dev/null
 	sudo chmod 440 /etc/sudoers.d/tenodera-gw
+	@echo "==> Setting up SSH identity key..."
+	@if [ ! -f $(CONFDIR)/id_ed25519 ]; then \
+		sudo ssh-keygen -t ed25519 -f $(CONFDIR)/id_ed25519 -N "" -C "tenodera-gateway@$$(hostname)" > /dev/null; \
+		sudo chown root:tenodera-gw $(CONFDIR)/id_ed25519 $(CONFDIR)/id_ed25519.pub; \
+		sudo chmod 640 $(CONFDIR)/id_ed25519; \
+		sudo chmod 644 $(CONFDIR)/id_ed25519.pub; \
+		echo "    Generated: $(CONFDIR)/id_ed25519"; \
+		echo "    Public key:"; \
+		sudo cat $(CONFDIR)/id_ed25519.pub; \
+	else \
+		echo "    SSH key already exists — skipping (public key below):"; \
+		sudo cat $(CONFDIR)/id_ed25519.pub; \
+	fi
 	@echo "==> Setting up audit log..."
 	sudo touch /var/log/tenodera_audit.log
 	sudo chown root:root /var/log/tenodera_audit.log
@@ -189,6 +202,7 @@ uninstall:
 	-sudo pkill -f tenodera-bridge 2>/dev/null || true
 	-sudo rm -f $(BINDIR)/tenodera-gateway $(BINDIR)/tenodera-pam-helper $(BINDIR)/tenodera-bridge
 	-sudo rm -rf $(UIDIR)
+	-sudo rm -f $(CONFDIR)/id_ed25519 $(CONFDIR)/id_ed25519.pub
 	-sudo rm -rf $(CONFDIR)
 	-sudo rm -f /etc/logrotate.d/tenodera
 	-sudo rm -f /etc/pam.d/tenodera
@@ -217,6 +231,13 @@ tls-selfsigned:
 	sudo systemctl restart tenodera-gateway
 	@echo "  Gateway: https://$$(hostname -I | awk '{print $$1}'):9090"
 	@echo "  (Browser will warn about self-signed cert — this is expected)"
+
+show-pubkey:
+	@echo "==> Tenodera gateway SSH public key:"
+	@sudo cat $(CONFDIR)/id_ed25519.pub
+	@echo ""
+	@echo "Add this key to authorized_keys on each managed host:"
+	@echo "  echo \"\$$(sudo cat $(CONFDIR)/id_ed25519.pub)\" >> ~/.ssh/authorized_keys"
 
 # ── Clean ─────────────────────────────────────────────────
 

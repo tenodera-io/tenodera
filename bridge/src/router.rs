@@ -7,7 +7,7 @@ use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::handlers::{containers, disk_usage, file_list, hardware_info, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats, networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify, system_info, systemd_units, terminal_pty, top_processes, users};
+use crate::handlers::{containers, disk_usage, file_list, hardware_info, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats, networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify, system_info, system_pubkey, systemd_units, terminal_pty, top_processes, users};
 
 /// Active streaming channel state.
 struct ActiveChannel {
@@ -45,6 +45,7 @@ impl Router {
     /// Register built-in handlers for MVP payloads.
     pub fn register_defaults(&mut self) {
         self.register(Arc::new(system_info::SystemInfoHandler));
+        self.register(Arc::new(system_pubkey::SystemPubkeyHandler));
         self.register(Arc::new(systemd_units::SystemdUnitsHandler));
         self.register(Arc::new(systemd_units::SystemdManageHandler));
         self.register(Arc::new(file_list::FileListHandler));

@@ -106,7 +106,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     let sink = Arc::new(Mutex::new(sink));
 
     // ── Auth phase: wait for the first message to be Auth { token } ──
-    let (session_id, user, password) = {
+    let (session_id, user) = {
         let auth_timeout = tokio::time::sleep(std::time::Duration::from_secs(AUTH_TIMEOUT_SECS));
         tokio::pin!(auth_timeout);
 
@@ -199,7 +199,6 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
         state.sessions.touch(&token).await;
         let user = session.user.clone();
-        let password = session.password.clone();
 
         // Send success
         let ok = message::Message::AuthResult {
@@ -213,7 +212,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         }
 
         tracing::info!(user = %user, "WS authenticated via token");
-        (token, user, password)
+        (token, user)
     };
 
     tracing::debug!(user = %user, "new WebSocket connection");
@@ -328,7 +327,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                         }
 
                                         // Spawn bridge on remote host via SSH
-                                        match connect_remote(hid, &user, &password, bridge_bin).await {
+                                        match connect_remote(hid, &user, bridge_bin).await {
                                             Ok(bridge) => {
                                                 audit::log(&user, "bridge_spawn", hid, true, "remote bridge spawned via SSH");
                                                 let BridgeProcess { child, to_bridge: sender, from_bridge, _temp_known_hosts } = bridge;
@@ -460,7 +459,6 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 async fn connect_remote(
     host_id: &str,
     session_user: &str,
-    session_password: &str,
     bridge_bin: &str,
 ) -> anyhow::Result<BridgeProcess> {
     let host = hosts_config::find_host(host_id).await
@@ -477,7 +475,6 @@ async fn connect_remote(
 
     BridgeProcess::spawn_remote(
         ssh_user,
-        session_password,
         &host.address,
         host.ssh_port,
         bridge_bin,

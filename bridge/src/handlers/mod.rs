@@ -1,4 +1,5 @@
 pub mod system_info;
+pub mod system_pubkey;
 pub mod systemd_units;
 pub mod file_list;
 pub mod journal_query;

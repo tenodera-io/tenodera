@@ -3,21 +3,16 @@ use std::sync::Arc;
 
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use zeroize::Zeroizing;
 
 /// A live user session.
 ///
-/// Stores the user's password for the lifetime of the session so that the
-/// gateway can open SSH tunnels to remote hosts on behalf of the user.
-///
-/// Password is wrapped in `Zeroizing<String>` which automatically overwrites
-/// memory with zeros on drop — every clone of the session (WS handler,
-/// SSH connect, etc.) is also zeroized when it goes out of scope.
+/// SSH connections to managed hosts use the gateway's Ed25519 key
+/// (/etc/tenodera/id_ed25519), so the user password is no longer stored
+/// in the session. Sudo password is provided per-operation by the UI.
 #[derive(Clone)]
 pub struct Session {
     pub id: String,
     pub user: String,
-    pub password: Zeroizing<String>,
     pub created_at: std::time::Instant,
     pub last_activity: std::time::Instant,
 }
@@ -27,7 +22,6 @@ impl std::fmt::Debug for Session {
         f.debug_struct("Session")
             .field("id", &self.id)
             .field("user", &self.user)
-            .field("password", &"***")
             .field("created_at", &self.created_at)
             .field("last_activity", &self.last_activity)
             .finish()
@@ -55,12 +49,11 @@ impl SessionStore {
         }
     }
 
-    pub async fn create(&self, user: String, password: String) -> Session {
+    pub async fn create(&self, user: String) -> Session {
         let now = std::time::Instant::now();
         let session = Session {
             id: Uuid::new_v4().to_string(),
             user,
-            password: Zeroizing::new(password),
             created_at: now,
             last_activity: now,
         };
@@ -129,16 +122,15 @@ mod tests {
     #[tokio::test]
     async fn create_and_get() {
         let store = SessionStore::new(900);
-        let session = store.create("alice".into(), "pw".into()).await;
+        let session = store.create("alice".into()).await;
         let fetched = store.get(&session.id).await.unwrap();
         assert_eq!(fetched.user, "alice");
-        assert_eq!(*fetched.password, "pw");
     }
 
     #[tokio::test]
     async fn remove_session() {
         let store = SessionStore::new(900);
-        let s = store.create("bob".into(), "pw".into()).await;
+        let s = store.create("bob".into()).await;
         store.remove(&s.id).await;
         assert!(store.get(&s.id).await.is_none());
     }
@@ -151,9 +143,8 @@ mod tests {
 
     #[tokio::test]
     async fn reap_expired_idle() {
-        // idle_timeout=0s: session expires when elapsed().as_secs() >= 1 (after ~1s)
         let store = SessionStore::new_with_max_lifetime(0, 86400);
-        store.create("idle_user".into(), "pw".into()).await;
+        store.create("idle_user".into()).await;
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 1);
@@ -164,7 +155,7 @@ mod tests {
     #[tokio::test]
     async fn active_session_not_reaped() {
         let store = SessionStore::new(900);
-        let s = store.create("active".into(), "pw".into()).await;
+        let s = store.create("active".into()).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 0);
         assert!(store.get(&s.id).await.is_some());
@@ -172,9 +163,8 @@ mod tests {
 
     #[tokio::test]
     async fn reap_expired_max_lifetime() {
-        // max_lifetime=0s: session expires when elapsed().as_secs() >= 1 (after ~1s)
         let store = SessionStore::new_with_max_lifetime(900, 0);
-        store.create("old_user".into(), "pw".into()).await;
+        store.create("old_user".into()).await;
         tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 1);
@@ -182,22 +172,12 @@ mod tests {
 
     #[tokio::test]
     async fn touch_extends_idle_timeout() {
-        let store = SessionStore::new_with_max_lifetime(1, 3600); // idle=1s
-        let s = store.create("user".into(), "pw".into()).await;
+        let store = SessionStore::new_with_max_lifetime(1, 3600);
+        let s = store.create("user".into()).await;
         tokio::time::sleep(std::time::Duration::from_millis(900)).await;
         store.touch(&s.id).await;
         tokio::time::sleep(std::time::Duration::from_millis(900)).await;
-        // Would have expired without touch; should survive after touch
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 0);
-    }
-
-    #[tokio::test]
-    async fn password_not_exposed_in_debug() {
-        let store = SessionStore::new(900);
-        let s = store.create("user".into(), "secret123".into()).await;
-        let debug_str = format!("{s:?}");
-        assert!(!debug_str.contains("secret123"), "password leaked in Debug output");
-        assert!(debug_str.contains("***"));
     }
 }

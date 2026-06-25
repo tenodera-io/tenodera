@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { openChannel } from '../api/transport.ts';
+import { openChannel, request } from '../api/transport.ts';
 
 /* ── Types ─────────────────────────────────────────────── */
 
@@ -184,18 +184,42 @@ export function Hosts({ onClose, onChange }: HostsProps) {
   };
 
   /* ── render ── */
+  const [pubkey, setPubkey] = useState<string | null>(null);
+  const [pubkeyLoading, setPubkeyLoading] = useState(false);
+
+  const handleShowPubkey = () => {
+    if (pubkey) { setPubkey(null); return; }
+    setPubkeyLoading(true);
+    request('system.pubkey').then((results) => {
+      const r = results[0] as { pubkey?: string } | undefined;
+      setPubkey(r?.pubkey ?? null);
+    }).catch(() => setPubkey(null)).finally(() => setPubkeyLoading(false));
+  };
+
   return (
     <div>
       {/* Header */}
       <div style={S.header}>
         <h2 style={S.title}>Manage Remote Hosts</h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button style={S.pubkeyBtn} onClick={handleShowPubkey} title="Show SSH public key to add to managed hosts">
+            {pubkeyLoading ? '…' : '🔑 Gateway key'}
+          </button>
           <button style={S.addBtn} onClick={() => { resetForm(); setFormMode('add'); }}>
             + Add Host
           </button>
           <button style={S.closeBtn} onClick={onClose}>&#x2715;</button>
         </div>
       </div>
+      {pubkey && (
+        <div style={S.pubkeyBox}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.35rem' }}>
+            Add this key to <code>~/.ssh/authorized_keys</code> on each managed host:
+          </div>
+          <code style={S.pubkeyText}>{pubkey}</code>
+          <button style={S.copyBtn} onClick={() => navigator.clipboard?.writeText(pubkey)}>Copy</button>
+        </div>
+      )}
 
       {hosts.length === 0 && formMode === 'closed' && (
         <div style={S.empty}>
@@ -292,6 +316,41 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '1.1rem',
     fontWeight: 700,
     margin: 0,
+  },
+  pubkeyBtn: {
+    padding: '0.4rem 0.8rem',
+    borderRadius: 6,
+    border: '1px solid #7aa2f744',
+    background: '#7aa2f711',
+    color: '#7aa2f7',
+    fontWeight: 600,
+    fontSize: '0.82rem',
+    cursor: 'pointer',
+  },
+  pubkeyBox: {
+    margin: '0.75rem 0',
+    padding: '0.75rem',
+    background: '#0d1117',
+    border: '1px solid #292e42',
+    borderRadius: 6,
+    fontSize: '0.78rem',
+  },
+  pubkeyText: {
+    display: 'block',
+    wordBreak: 'break-all' as const,
+    color: '#9ece6a',
+    fontFamily: 'monospace',
+    fontSize: '0.75rem',
+    marginBottom: '0.5rem',
+  },
+  copyBtn: {
+    padding: '0.2rem 0.6rem',
+    borderRadius: 4,
+    border: '1px solid #9ece6a44',
+    background: '#9ece6a11',
+    color: '#9ece6a',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
   },
   addBtn: {
     padding: '0.4rem 0.8rem',

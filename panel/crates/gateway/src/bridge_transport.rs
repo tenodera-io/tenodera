@@ -43,17 +43,18 @@ impl BridgeProcess {
         Self::spawn_command(cmd, None).await
     }
 
-    /// Spawn tenodera-bridge on a remote host via SSH.
-    /// Uses sshpass to pass the session password securely via the SSHPASS
-    /// environment variable. The bridge communicates over SSH stdin/stdout
-    /// using the same newline-delimited JSON protocol as a local bridge.
+    /// Spawn tenodera-bridge on a remote host via SSH using the gateway's
+    /// Ed25519 identity key (/etc/tenodera/id_ed25519).
+    ///
+    /// Password-based authentication (sshpass) is no longer used — the managed
+    /// host must have the gateway's public key in the SSH user's authorized_keys.
+    /// Run `make show-pubkey` on the gateway host to get the key to deploy.
     ///
     /// If `host_key` is provided, SSH will use StrictHostKeyChecking=yes
     /// with a temporary known_hosts file containing the verified key.
     /// If empty, falls back to accept-new (TOFU).
     pub async fn spawn_remote(
         ssh_user: &str,
-        password: &str,
         address: &str,
         ssh_port: u16,
         bridge_bin: &str,
@@ -65,47 +66,33 @@ impl BridgeProcess {
             "spawning remote bridge via SSH"
         );
 
-        let mut cmd = Command::new("sshpass");
-        cmd.env("SSHPASS", password);
+        let key_path = std::env::var("TENODERA_SSH_KEY")
+            .unwrap_or_else(|_| "/etc/tenodera/id_ed25519".to_string());
 
-        // Build a temporary known_hosts file if we have a verified host key.
-        // This enables StrictHostKeyChecking=yes instead of TOFU accept-new.
+        let mut cmd = Command::new("ssh");
+        cmd.args(["-i", &key_path, "-o", "PasswordAuthentication=no", "-o", "BatchMode=yes"]);
+
         let temp_known_hosts = if !host_key.is_empty() {
             let tmp = tempfile::NamedTempFile::new()
                 .map_err(|e| anyhow::anyhow!("failed to create temp known_hosts: {e}"))?;
             std::fs::write(tmp.path(), format!("{host_key}\n"))
                 .map_err(|e| anyhow::anyhow!("failed to write temp known_hosts: {e}"))?;
             cmd.args([
-                "-e",
-                "ssh",
                 "-o", "StrictHostKeyChecking=yes",
                 "-o", &format!("UserKnownHostsFile={}", tmp.path().display()),
-                "-o", "PubkeyAuthentication=no",
-                "-o", "BatchMode=no",
-                "-p", &ssh_port.to_string(),
-                &format!("{ssh_user}@{address}"),
-                bridge_bin,
             ]);
             Some(tmp)
         } else {
-            // No host key stored — fall back to TOFU (accept-new)
             tracing::warn!(
                 %address,
                 "no host key on record — using accept-new (TOFU). \
                  Re-scan the host key in the Hosts page to enable strict verification."
             );
-            cmd.args([
-                "-e",
-                "ssh",
-                "-o", "StrictHostKeyChecking=accept-new",
-                "-o", "PubkeyAuthentication=no",
-                "-o", "BatchMode=no",
-                "-p", &ssh_port.to_string(),
-                &format!("{ssh_user}@{address}"),
-                bridge_bin,
-            ]);
+            cmd.args(["-o", "StrictHostKeyChecking=accept-new"]);
             None
         };
+
+        cmd.args(["-p", &ssh_port.to_string(), &format!("{ssh_user}@{address}"), bridge_bin]);
 
         Self::spawn_command(cmd, temp_known_hosts).await.map_err(|e| {
             anyhow::anyhow!("failed to spawn remote bridge on {address}: {e}")

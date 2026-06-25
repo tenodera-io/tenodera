@@ -164,7 +164,7 @@ pub async fn login(
         ));
     }
 
-    let session = state.sessions.create(req.user.clone(), req.password).await;
+    let session = state.sessions.create(req.user.clone()).await;
     crate::audit::log(&session.user, "login", "", true, "");
 
     Ok(Json(LoginResponse {
