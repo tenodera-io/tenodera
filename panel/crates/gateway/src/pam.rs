@@ -154,50 +154,42 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
     }
 }
 
-/// Verify that the user has sudo privileges via tenodera-pam-helper --check-sudo.
+/// Verify that the user belongs to an administrative group.
 ///
-/// Delegates to the setuid pam-helper so this works whether the gateway
-/// runs as root or as the unprivileged tenodera-gw service user.
+/// Checks membership in the `sudo` (Debian/Ubuntu), `wheel` (RHEL/Fedora/Arch),
+/// or `admin` (older Debian/Ubuntu) groups by reading /etc/group directly.
+/// This requires no privilege escalation and works regardless of whether
+/// setuid binaries are functional in the current process environment.
 ///
-/// Exit codes from helper: 0 = has sudo, 1 = no sudo, 3 = bad input, 4 = error.
-///
-/// Returns `Ok(())` on success or `Err(message)` on failure.
+/// Returns `Ok(())` if the user is in an admin group, `Err(message)` otherwise.
 pub async fn verify_sudo(user: &str) -> Result<(), String> {
-    let helper_bin = std::env::var("TENODERA_PAM_HELPER")
-        .unwrap_or_else(|_| "tenodera-pam-helper".to_string());
+    const ADMIN_GROUPS: &[&str] = &["sudo", "wheel", "admin"];
 
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        Command::new(&helper_bin)
-            .args(["--check-sudo", user])
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .output(),
-    )
-    .await
-    .map_err(|_| {
-        tracing::error!(user = %user, "sudo check timed out (30s)");
-        "sudo verification timed out".to_string()
-    })?
-    .map_err(|e| {
-        tracing::error!(error = %e, bin = %helper_bin, "sudo check process failed");
-        "unable to verify user privileges".to_string()
-    })?;
+    let group_contents = tokio::fs::read_to_string("/etc/group")
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "failed to read /etc/group");
+            "unable to verify user privileges".to_string()
+        })?;
 
-    match output.status.code() {
-        Some(0) => {
-            tracing::info!(user = %user, "sudo access verified");
-            Ok(())
+    for line in group_contents.lines() {
+        // /etc/group format: groupname:password:gid:member1,member2,...
+        let mut fields = line.splitn(4, ':');
+        let group_name = match fields.next() { Some(n) => n, None => continue };
+        let _ = fields.next(); // password
+        let _ = fields.next(); // gid
+        let members_field = fields.next().unwrap_or("");
+
+        if !ADMIN_GROUPS.contains(&group_name) {
+            continue;
         }
-        Some(1) => {
-            tracing::warn!(user = %user, "user has no sudo privileges");
-            Err("user does not have sudo privileges".to_string())
-        }
-        code => {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::error!(user = %user, ?code, stderr = %stderr, "sudo check error");
-            Err("unable to verify user privileges".to_string())
+
+        if members_field.split(',').any(|m| m.trim() == user) {
+            tracing::info!(user = %user, group = %group_name, "admin group membership verified");
+            return Ok(());
         }
     }
+
+    tracing::warn!(user = %user, "user is not in any admin group (sudo/wheel/admin)");
+    Err("user does not have sudo privileges".to_string())
 }

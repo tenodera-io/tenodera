@@ -14,30 +14,33 @@ EnvironmentFile=-/etc/tenodera/gateway.env
 # Security hardening
 #
 # The gateway runs as the unprivileged tenodera-gw user.
-# tenodera-pam-helper and tenodera-bridge are setuid root (4750, root:tenodera-gw)
-# so they can escalate for PAM auth and PTY user switching respectively.
+# tenodera-pam-helper and tenodera-bridge are setuid root (4750/4755) so they
+# can escalate for PAM auth and PTY user switching respectively.
 #
 # NoNewPrivileges is intentionally NOT set: it would prevent the setuid
 # pam-helper and bridge from gaining root, breaking authentication and PTY.
 #
-# ProtectSystem=strict is NOT used: child processes (bridge) write to /usr,
-# /var, /run for package management, systemd, docker etc.
+# The following systemd security directives are intentionally NOT used
+# because they break setuid child processes (pam-helper, bridge):
 #
-# MemoryDenyWriteExecute is NOT used: PAM modules (pam_sss.so) may require
-# W+X mappings.
-PrivateTmp=yes
-ProtectKernelTunables=yes
-ProtectControlGroups=yes
-ProtectKernelModules=yes
-RestrictNamespaces=yes
-LockPersonality=yes
+#   PrivateTmp=yes            — creates a user namespace for mount isolation;
+#                               inside user namespaces the kernel drops setuid
+#   RestrictNamespaces=yes    — implies NoNewPrivileges
+#   LockPersonality=yes       — implies NoNewPrivileges
+#   ProtectKernelTunables=yes — implies NoNewPrivileges on this systemd version
+#   ProtectKernelModules=yes  — implies NoNewPrivileges on this systemd version
+#   CapabilityBoundingSet=    — empty bounding set is inherited by child processes;
+#                               setuid children (pam-helper, sudo, bridge) get
+#                               euid=0 but no capabilities, breaking setgid/setuid
+#   MemoryDenyWriteExecute    — PAM modules (pam_sss.so) may need W+X
+#   ProtectSystem=strict      — bridge child processes write to /usr, /var, /run
+#
+# Security is provided by running as the unprivileged tenodera-gw user.
+# As a non-root user with no file capabilities, the gateway process already
+# has an empty permitted/effective capability set — no further restriction needed.
 # pam-helper and bridge are intentionally setuid root
 RestrictSUIDSGID=no
-# Gateway itself needs no special capabilities — privileged ops go through
-# the setuid helper binaries. Bounding set prevents the gateway process from
-# acquiring any capabilities even if exploited.
-CapabilityBoundingSet=
-AmbientCapabilities=
+ProtectControlGroups=yes
 
 Restart=on-failure
 RestartSec=5
