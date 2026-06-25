@@ -70,3 +70,73 @@ impl LoginRateLimiter {
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::IpAddr;
+
+    fn ip(s: &str) -> IpAddr { s.parse().unwrap() }
+
+    #[tokio::test]
+    async fn not_limited_below_threshold() {
+        let rl = LoginRateLimiter::new(3, 60);
+        let addr = ip("1.2.3.4");
+        assert!(!rl.check_and_record(addr).await);
+        assert!(!rl.check_and_record(addr).await);
+        assert!(!rl.is_limited(addr).await);
+    }
+
+    #[tokio::test]
+    async fn limited_at_threshold() {
+        let rl = LoginRateLimiter::new(3, 60);
+        let addr = ip("1.2.3.5");
+        rl.check_and_record(addr).await;
+        rl.check_and_record(addr).await;
+        rl.check_and_record(addr).await;
+        assert!(rl.is_limited(addr).await);
+    }
+
+    #[tokio::test]
+    async fn check_and_record_returns_true_when_limited() {
+        let rl = LoginRateLimiter::new(2, 60);
+        let addr = ip("1.2.3.6");
+        assert!(!rl.check_and_record(addr).await);
+        assert!(!rl.check_and_record(addr).await);
+        // third call: already at limit, should return true without adding
+        assert!(rl.check_and_record(addr).await);
+    }
+
+    #[tokio::test]
+    async fn different_ips_independent() {
+        let rl = LoginRateLimiter::new(2, 60);
+        let a = ip("10.0.0.1");
+        let b = ip("10.0.0.2");
+        rl.check_and_record(a).await;
+        rl.check_and_record(a).await;
+        assert!(rl.is_limited(a).await);
+        assert!(!rl.is_limited(b).await);
+    }
+
+    #[tokio::test]
+    async fn entries_expire_after_window() {
+        let rl = LoginRateLimiter::new(2, 1); // 1-second window
+        let addr = ip("1.2.3.7");
+        rl.check_and_record(addr).await;
+        rl.check_and_record(addr).await;
+        assert!(rl.is_limited(addr).await);
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        assert!(!rl.is_limited(addr).await);
+    }
+
+    #[tokio::test]
+    async fn cleanup_removes_stale_ips() {
+        let rl = LoginRateLimiter::new(2, 1);
+        let addr = ip("1.2.3.8");
+        rl.check_and_record(addr).await;
+        tokio::time::sleep(Duration::from_millis(1100)).await;
+        rl.cleanup().await;
+        let map = rl.attempts.lock().await;
+        assert!(!map.contains_key(&addr), "stale entry not cleaned up");
+    }
+}

@@ -85,3 +85,138 @@ impl std::fmt::Debug for AuthCredentials {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::channel::ChannelOpenOptions;
+
+    fn roundtrip(msg: &Message) -> Message {
+        let json = serde_json::to_string(msg).expect("serialize");
+        serde_json::from_str(&json).expect("deserialize")
+    }
+
+    #[test]
+    fn open_roundtrip() {
+        let msg = Message::Open {
+            channel: "42".into(),
+            options: ChannelOpenOptions {
+                payload: "system.info".into(),
+                superuser: None,
+                extra: Default::default(),
+            },
+        };
+        let rt = roundtrip(&msg);
+        let Message::Open { channel, options } = rt else { panic!("wrong variant") };
+        assert_eq!(channel.as_str(), "42");
+        assert_eq!(options.payload, "system.info");
+    }
+
+    #[test]
+    fn ready_roundtrip() {
+        let msg = Message::Ready { channel: "1".into() };
+        let Message::Ready { channel } = roundtrip(&msg) else { panic!() };
+        assert_eq!(channel.as_str(), "1");
+    }
+
+    #[test]
+    fn data_roundtrip() {
+        let msg = Message::Data {
+            channel: "5".into(),
+            data: serde_json::json!({ "key": "value", "n": 42 }),
+        };
+        let Message::Data { channel, data } = roundtrip(&msg) else { panic!() };
+        assert_eq!(channel.as_str(), "5");
+        assert_eq!(data["key"], "value");
+        assert_eq!(data["n"], 42);
+    }
+
+    #[test]
+    fn control_roundtrip() {
+        let mut extra = serde_json::Map::new();
+        extra.insert("rows".into(), serde_json::json!(24));
+        let msg = Message::Control {
+            channel: "3".into(),
+            command: "resize".into(),
+            extra,
+        };
+        let Message::Control { channel, command, extra } = roundtrip(&msg) else { panic!() };
+        assert_eq!(channel.as_str(), "3");
+        assert_eq!(command, "resize");
+        assert_eq!(extra["rows"], 24);
+    }
+
+    #[test]
+    fn close_clean_roundtrip() {
+        let msg = Message::Close { channel: "7".into(), problem: None };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(!json.contains("problem"), "skip_serializing_if failed");
+        let Message::Close { problem, .. } = roundtrip(&msg) else { panic!() };
+        assert!(problem.is_none());
+    }
+
+    #[test]
+    fn close_with_problem_roundtrip() {
+        let msg = Message::Close { channel: "7".into(), problem: Some("oops".into()) };
+        let Message::Close { problem, .. } = roundtrip(&msg) else { panic!() };
+        assert_eq!(problem.as_deref(), Some("oops"));
+    }
+
+    #[test]
+    fn auth_token_roundtrip() {
+        let msg = Message::Auth {
+            credentials: AuthCredentials::Token { token: "abc123".into() },
+        };
+        let Message::Auth { credentials: AuthCredentials::Token { token } } = roundtrip(&msg) else { panic!() };
+        assert_eq!(token, "abc123");
+    }
+
+    #[test]
+    fn auth_basic_roundtrip() {
+        let msg = Message::Auth {
+            credentials: AuthCredentials::Basic { user: "alice".into(), password: "s3cr3t".into() },
+        };
+        let Message::Auth { credentials: AuthCredentials::Basic { user, password } } = roundtrip(&msg) else { panic!() };
+        assert_eq!(user, "alice");
+        assert_eq!(password, "s3cr3t");
+    }
+
+    #[test]
+    fn authresult_ok_roundtrip() {
+        let msg = Message::AuthResult { success: true, problem: None, user: Some("alice".into()) };
+        let Message::AuthResult { success, problem, user } = roundtrip(&msg) else { panic!() };
+        assert!(success);
+        assert!(problem.is_none());
+        assert_eq!(user.as_deref(), Some("alice"));
+    }
+
+    #[test]
+    fn authresult_fail_roundtrip() {
+        let msg = Message::AuthResult { success: false, problem: Some("bad password".into()), user: None };
+        let Message::AuthResult { success, problem, .. } = roundtrip(&msg) else { panic!() };
+        assert!(!success);
+        assert_eq!(problem.as_deref(), Some("bad password"));
+    }
+
+    #[test]
+    fn ping_pong_roundtrip() {
+        let json_ping = serde_json::to_string(&Message::Ping).unwrap();
+        assert!(json_ping.contains("\"ping\""));
+        let rt: Message = serde_json::from_str(&json_ping).unwrap();
+        assert!(matches!(rt, Message::Ping));
+
+        let json_pong = serde_json::to_string(&Message::Pong).unwrap();
+        let rt: Message = serde_json::from_str(&json_pong).unwrap();
+        assert!(matches!(rt, Message::Pong));
+    }
+
+    #[test]
+    fn channel_id_validation() {
+        use crate::channel::ChannelId;
+        assert!(ChannelId::new("valid-id_123").is_ok());
+        assert!(ChannelId::new("").is_err());
+        assert!(ChannelId::new("a".repeat(65)).is_err());
+        assert!(ChannelId::new("has space").is_err());
+        assert!(ChannelId::new("has/slash").is_err());
+    }
+}

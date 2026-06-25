@@ -141,3 +141,48 @@ pub fn origin_matches_host(origin: &str, host: &str) -> bool {
 
     origin_host.eq_ignore_ascii_case(host)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::origin_matches_host;
+
+    #[test]
+    fn matching_https_origin() {
+        assert!(origin_matches_host("https://example.com:9090", "example.com:9090"));
+    }
+
+    #[test]
+    fn matching_http_origin() {
+        assert!(origin_matches_host("http://localhost:3000", "localhost:3000"));
+    }
+
+    #[test]
+    fn case_insensitive() {
+        assert!(origin_matches_host("https://EXAMPLE.COM:9090", "example.com:9090"));
+    }
+
+    #[test]
+    fn different_host_rejected() {
+        assert!(!origin_matches_host("https://evil.com", "example.com:9090"));
+    }
+
+    #[test]
+    fn different_port_rejected() {
+        assert!(!origin_matches_host("https://example.com:8080", "example.com:9090"));
+    }
+
+    #[test]
+    fn origin_with_path_stripped() {
+        assert!(origin_matches_host("http://localhost:3000/some/path", "localhost:3000"));
+    }
+
+    #[test]
+    fn no_scheme_prefix() {
+        assert!(origin_matches_host("localhost:3000", "localhost:3000"));
+    }
+
+    #[test]
+    fn subdomain_rejected() {
+        assert!(!origin_matches_host("https://sub.example.com:9090", "example.com:9090"));
+    }
+}
