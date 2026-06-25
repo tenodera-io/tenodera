@@ -1,6 +1,6 @@
 use std::process::Stdio;
 
-use tenodera_protocol::message::Message;
+use tenodera_protocol::message::{Message, PROTOCOL_VERSION};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::sync::mpsc;
@@ -110,15 +110,54 @@ impl BridgeProcess {
             .kill_on_drop(true)
             .spawn()?;
 
-        let stdin = child.stdin.take().expect("bridge stdin");
+        let mut stdin = child.stdin.take().expect("bridge stdin");
         let stdout = child.stdout.take().expect("bridge stdout");
+
+        let mut reader = BufReader::new(stdout);
+
+        // Protocol handshake: bridge sends Hello, gateway replies HelloAck.
+        // We give the bridge 5 seconds to send its Hello before giving up.
+        let hello_timeout = tokio::time::Duration::from_secs(5);
+        let mut hello_line = String::new();
+        tokio::time::timeout(hello_timeout, reader.read_line(&mut hello_line))
+            .await
+            .map_err(|_| anyhow::anyhow!("bridge did not send Hello within 5 seconds"))?
+            .map_err(|e| anyhow::anyhow!("bridge stdout read error: {e}"))?;
+
+        let bridge_version = match serde_json::from_str::<Message>(hello_line.trim()) {
+            Ok(Message::Hello { version }) => version,
+            Ok(other) => anyhow::bail!("expected Hello, got {:?}", other),
+            Err(e) => anyhow::bail!("could not parse Hello: {e} (raw: {hello_line:?})"),
+        };
+
+        let warning = if bridge_version != PROTOCOL_VERSION {
+            let w = format!(
+                "protocol version mismatch: gateway={PROTOCOL_VERSION}, bridge={bridge_version}"
+            );
+            if bridge_version > PROTOCOL_VERSION {
+                // Bridge is newer — we might be missing message types; still try
+                tracing::warn!("{w}");
+                Some(w)
+            } else {
+                // Bridge is older — hard fail to avoid silent data corruption
+                anyhow::bail!("{w}");
+            }
+        } else {
+            None
+        };
+
+        let ack = Message::HelloAck { version: PROTOCOL_VERSION, warning };
+        let ack_json = serde_json::to_string(&ack).expect("ack serialize");
+        stdin.write_all(format!("{ack_json}\n").as_bytes()).await?;
+        stdin.flush().await?;
+
+        tracing::debug!(bridge_version, "bridge Hello/HelloAck handshake complete");
 
         let (to_bridge_tx, mut to_bridge_rx) = mpsc::channel::<Message>(256);
         let (from_bridge_tx, from_bridge_rx) = mpsc::channel::<Message>(256);
 
         // Task: write messages to bridge stdin
         tokio::spawn(async move {
-            let mut stdin = stdin;
             while let Some(msg) = to_bridge_rx.recv().await {
                 match serde_json::to_string(&msg) {
                     Ok(json) => {
@@ -135,9 +174,8 @@ impl BridgeProcess {
             }
         });
 
-        // Task: read messages from bridge stdout
+        // Task: read messages from bridge stdout (after Hello)
         tokio::spawn(async move {
-            let reader = BufReader::new(stdout);
             let mut lines = reader.lines();
 
             while let Ok(Some(line)) = lines.next_line().await {

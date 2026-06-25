@@ -6,7 +6,7 @@ pub mod util;
 
 use std::io;
 
-use tenodera_protocol::message::Message;
+use tenodera_protocol::message::{Message, PROTOCOL_VERSION};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 use tracing_subscriber::EnvFilter;
@@ -30,6 +30,15 @@ async fn main() -> anyhow::Result<()> {
 
     // Channel for outgoing messages (handlers → stdout writer)
     let (out_tx, mut out_rx) = mpsc::channel::<Message>(256);
+
+    // Send Hello before processing any input — gateway will respond with HelloAck
+    {
+        let hello = Message::Hello { version: PROTOCOL_VERSION };
+        let json = serde_json::to_string(&hello).expect("hello serialize");
+        let mut stdout = tokio::io::stdout();
+        stdout.write_all(format!("{json}\n").as_bytes()).await?;
+        stdout.flush().await?;
+    }
 
     let mut router = Router::new(out_tx.clone());
     router.register_defaults();
@@ -56,6 +65,37 @@ async fn main() -> anyhow::Result<()> {
     // Read stdin line by line
     let stdin = BufReader::new(tokio::io::stdin());
     let mut lines = stdin.lines();
+
+    // Wait for HelloAck before processing normal messages
+    loop {
+        match lines.next_line().await {
+            Ok(Some(line)) if !line.is_empty() => {
+                match serde_json::from_str::<Message>(&line) {
+                    Ok(Message::HelloAck { version, warning }) => {
+                        if let Some(w) = warning {
+                            tracing::warn!("gateway HelloAck warning: {w}");
+                        }
+                        tracing::info!(gateway_version = version, "HelloAck received — starting");
+                        break;
+                    }
+                    Ok(other) => {
+                        tracing::error!(?other, "expected HelloAck as first gateway message");
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, raw = %line, "failed to parse HelloAck");
+                        return Ok(());
+                    }
+                }
+            }
+            Ok(None) => return Ok(()), // stdin closed before HelloAck
+            Err(e) => {
+                tracing::error!(error = %e, "stdin read error waiting for HelloAck");
+                return Ok(());
+            }
+            Ok(Some(_)) => continue, // empty line
+        }
+    }
 
     while let Ok(Some(line)) = lines.next_line().await {
         if line.is_empty() {

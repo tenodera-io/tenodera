@@ -6,10 +6,29 @@ use crate::channel::{ChannelId, ChannelOpenOptions};
 // Wire protocol: every WebSocket frame is one JSON Message
 // ---------------------------------------------------------------------------
 
+/// Current protocol version sent in Hello/HelloAck.
+///
+/// Increment when backwards-incompatible wire changes are made.
+/// The gateway rejects bridges whose major version differs from its own.
+pub const PROTOCOL_VERSION: u32 = 1;
+
 /// Top-level envelope for all messages on the WebSocket transport.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Message {
+    /// Bridge → Gateway (first message after stdio open): announce version.
+    Hello {
+        version: u32,
+    },
+
+    /// Gateway → Bridge: acknowledge and report own version.
+    HelloAck {
+        version: u32,
+        /// Set when the gateway accepted the bridge despite a minor-version
+        /// difference. The bridge may log this and continue.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        warning: Option<String>,
+    },
     /// Client → Bridge: open a new channel.
     Open {
         channel: ChannelId,
@@ -208,6 +227,31 @@ mod tests {
         let json_pong = serde_json::to_string(&Message::Pong).unwrap();
         let rt: Message = serde_json::from_str(&json_pong).unwrap();
         assert!(matches!(rt, Message::Pong));
+    }
+
+    #[test]
+    fn hello_roundtrip() {
+        let msg = Message::Hello { version: 1 };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"hello\""), "tag missing: {json}");
+        let rt: Message = serde_json::from_str(&json).unwrap();
+        let Message::Hello { version } = rt else { panic!() };
+        assert_eq!(version, 1);
+    }
+
+    #[test]
+    fn helloack_roundtrip() {
+        let msg = Message::HelloAck { version: 1, warning: Some("version mismatch".into()) };
+        let Message::HelloAck { version, warning } = roundtrip(&msg) else { panic!() };
+        assert_eq!(version, 1);
+        assert_eq!(warning.as_deref(), Some("version mismatch"));
+    }
+
+    #[test]
+    fn helloack_no_warning_omits_field() {
+        let msg = Message::HelloAck { version: 1, warning: None };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(!json.contains("warning"), "warning should be absent: {json}");
     }
 
     #[test]
