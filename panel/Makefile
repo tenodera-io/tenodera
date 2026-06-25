@@ -20,7 +20,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 GATEWAY_BIN    := target/release/tenodera-gateway
 PAM_HELPER_BIN := target/release/tenodera-pam-helper
 
-.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean tls-selfsigned show-pubkey
+.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean tls-selfsigned show-pubkey package-deb package-rpm
 
 all: deps build install
 
@@ -238,6 +238,46 @@ show-pubkey:
 	@echo ""
 	@echo "Add this key to authorized_keys on each managed host:"
 	@echo "  echo \"\$$(sudo cat $(CONFDIR)/id_ed25519.pub)\" >> ~/.ssh/authorized_keys"
+
+# ── Packages ──────────────────────────────────────────────
+
+VERSION ?= $(shell . "$$HOME/.cargo/env" 2>/dev/null || true; cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])" 2>/dev/null || echo "0.1.0")
+
+package-deb: build
+	@echo "==> Building Debian package (tenodera-gateway v$(VERSION))..."
+	@command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb not found — install dpkg"; exit 1; }
+	$(eval PKGDIR := /tmp/tenodera-gateway-deb-$(VERSION))
+	@rm -rf $(PKGDIR) && mkdir -p \
+		$(PKGDIR)/DEBIAN \
+		$(PKGDIR)/usr/bin \
+		$(PKGDIR)/usr/share/tenodera/ui \
+		$(PKGDIR)/lib/systemd/system \
+		$(PKGDIR)/etc/logrotate.d \
+		$(PKGDIR)/etc/pam.d
+	@install -m 755 target/release/tenodera-gateway $(PKGDIR)/usr/bin/
+	@install -m 4750 target/release/tenodera-pam-helper $(PKGDIR)/usr/bin/
+	@cp -r ui/dist/. $(PKGDIR)/usr/share/tenodera/ui/
+	@install -m 644 systemd/tenodera-gateway.service $(PKGDIR)/lib/systemd/system/
+	@install -m 644 logrotate/tenodera $(PKGDIR)/etc/logrotate.d/tenodera
+	@install -m 644 pam.d/tenodera $(PKGDIR)/etc/pam.d/tenodera
+	@printf 'Package: tenodera-gateway\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDepends: openssh-client\nDescription: Tenodera web administration panel gateway\n The gateway serves the Tenodera web UI and routes requests to bridge\n agents on managed hosts via SSH.\n' > $(PKGDIR)/DEBIAN/control
+	@printf '#!/bin/sh\ngetent group tenodera-gw >/dev/null || groupadd -r tenodera-gw\ngetent passwd tenodera-gw >/dev/null || \\\n    useradd -r -s /sbin/nologin -M -d /nonexistent -g tenodera-gw \\\n    -c "Tenodera Gateway" tenodera-gw\nexit 0\n' > $(PKGDIR)/DEBIAN/preinst
+	@chmod 755 $(PKGDIR)/DEBIAN/preinst
+	@dpkg-deb --build $(PKGDIR) tenodera-gateway_$(VERSION)_amd64.deb
+	@rm -rf $(PKGDIR)
+	@echo "✓ Package: tenodera-gateway_$(VERSION)_amd64.deb"
+
+package-rpm: build
+	@echo "==> Building RPM package (tenodera-gateway v$(VERSION))..."
+	@command -v rpmbuild >/dev/null 2>&1 || { echo "ERROR: rpmbuild not found — install rpm-build"; exit 1; }
+	@mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+	@cp ../packaging/tenodera-gateway.spec ~/rpmbuild/SPECS/
+	@cp target/release/tenodera-gateway target/release/tenodera-pam-helper ~/rpmbuild/BUILD/
+	@cp -r . ~/rpmbuild/BUILD/panel
+	@cp -r ui/dist ~/rpmbuild/BUILD/panel/ui/
+	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-gateway.spec
+	@find ~/rpmbuild/RPMS -name "tenodera-gateway-*.rpm" -exec cp {} . \;
+	@echo "✓ RPM package built"
 
 # ── Clean ─────────────────────────────────────────────────
 

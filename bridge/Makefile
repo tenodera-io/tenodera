@@ -13,7 +13,7 @@ BINDIR  ?= $(PREFIX)/bin
 
 BRIDGE_BIN := target/release/tenodera-bridge
 
-.PHONY: all deps build install uninstall clean
+.PHONY: all deps build install uninstall clean package-deb package-rpm
 
 all: deps build install
 
@@ -66,6 +66,32 @@ uninstall:
 	@echo "==> Removing tenodera-bridge..."
 	-sudo rm -f $(BINDIR)/tenodera-bridge
 	@echo "Done."
+
+# ── Packages ──────────────────────────────────────────────
+
+VERSION ?= $(shell . "$$HOME/.cargo/env" 2>/dev/null || true; cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])" 2>/dev/null || echo "0.1.0")
+
+package-deb: build
+	@echo "==> Building Debian package (tenodera-bridge v$(VERSION))..."
+	@command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb not found — install dpkg"; exit 1; }
+	$(eval PKGDIR := /tmp/tenodera-bridge-deb-$(VERSION))
+	@rm -rf $(PKGDIR) && mkdir -p $(PKGDIR)/DEBIAN $(PKGDIR)/usr/bin
+	@install -m 4755 -o root -g root target/release/tenodera-bridge $(PKGDIR)/usr/bin/
+	@printf 'Package: tenodera-bridge\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera bridge agent for managed hosts\n Installed on managed Linux servers. The Tenodera gateway connects\n to it via SSH to perform system administration tasks.\n' > $(PKGDIR)/DEBIAN/control
+	@dpkg-deb --build $(PKGDIR) tenodera-bridge_$(VERSION)_amd64.deb
+	@rm -rf $(PKGDIR)
+	@echo "✓ Package: tenodera-bridge_$(VERSION)_amd64.deb"
+
+package-rpm: build
+	@echo "==> Building RPM package (tenodera-bridge v$(VERSION))..."
+	@command -v rpmbuild >/dev/null 2>&1 || { echo "ERROR: rpmbuild not found — install rpm-build"; exit 1; }
+	@mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+	@cp ../packaging/tenodera-bridge.spec ~/rpmbuild/SPECS/
+	@cp target/release/tenodera-bridge ~/rpmbuild/BUILD/
+	@cp -r . ~/rpmbuild/BUILD/bridge
+	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-bridge.spec
+	@find ~/rpmbuild/RPMS -name "tenodera-bridge-*.rpm" -exec cp {} . \;
+	@echo "✓ RPM package built"
 
 # ── Clean ─────────────────────────────────────────────────
 

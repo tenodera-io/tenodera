@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-packages:
+    name: Build packages
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            panel -> target
+            bridge -> target
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: panel/ui/package-lock.json
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential pkg-config \
+            libssl-dev libpam0g-dev libclang-dev \
+            dpkg-dev
+
+      - name: Get version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build bridge
+        working-directory: bridge
+        run: cargo build --release
+
+      - name: Build gateway + UI
+        working-directory: panel
+        run: |
+          cargo build --release
+          cd ui && npm ci && npm run build
+
+      - name: Package bridge (deb)
+        working-directory: bridge
+        run: make package-deb VERSION=${{ steps.version.outputs.version }}
+
+      - name: Package gateway (deb)
+        working-directory: panel
+        run: make package-deb VERSION=${{ steps.version.outputs.version }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Tenodera ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            bridge/tenodera-bridge_${{ steps.version.outputs.version }}_amd64.deb
+            panel/tenodera-gateway_${{ steps.version.outputs.version }}_amd64.deb
+          body: |
+            ## Installation
+
+            ### Managed hosts (bridge)
+            ```bash
+            sudo dpkg -i tenodera-bridge_${{ steps.version.outputs.version }}_amd64.deb
+            ```
+
+            ### Gateway server
+            ```bash
+            sudo dpkg -i tenodera-gateway_${{ steps.version.outputs.version }}_amd64.deb
+            sudo make tls-selfsigned   # or configure your own TLS cert
+            sudo systemctl start tenodera-gateway
+            ```
+
+            See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full setup instructions.
