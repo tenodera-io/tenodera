@@ -14,14 +14,57 @@ export type Message =
   | { type: 'ping' }
   | { type: 'pong' };
 
+export type ConnectionState = 'connected' | 'disconnected' | 'reconnecting';
+
 type ChannelCallback = (msg: Message) => void;
+type ConnectionCallback = (state: ConnectionState) => void;
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const MAX_RECONNECT_DELAY_MS = 30_000;
 
 let ws: WebSocket | null = null;
 let channelListeners: Map<string, ChannelCallback[]> = new Map();
 let nextChannelId = 1;
 let connectPromise: Promise<void> | null = null;
+
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let reconnectAttempt = 0;
+let intentionalClose = false;
+let connectionCallbacks: ConnectionCallback[] = [];
+
+function notifyConnectionState(state: ConnectionState) {
+  for (const cb of connectionCallbacks) {
+    try { cb(state); } catch { /* ignore */ }
+  }
+}
+
+export function onConnectionChange(cb: ConnectionCallback): () => void {
+  connectionCallbacks.push(cb);
+  return () => {
+    const idx = connectionCallbacks.indexOf(cb);
+    if (idx >= 0) connectionCallbacks.splice(idx, 1);
+  };
+}
+
+function scheduleReconnect() {
+  if (reconnectTimer !== null) return;
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY_MS);
+  reconnectAttempt++;
+  notifyConnectionState('reconnecting');
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    if (intentionalClose || !sessionStorage.getItem('session_id')) {
+      notifyConnectionState('disconnected');
+      return;
+    }
+    connect()
+      .then(() => {
+        reconnectAttempt = 0;
+        notifyConnectionState('connected');
+      })
+      .catch(() => scheduleReconnect());
+  }, delay);
+}
 
 export function connect(): Promise<void> {
   if (connectPromise) return connectPromise;
@@ -85,6 +128,12 @@ export function connect(): Promise<void> {
       ws = null;
       connectPromise = null;
       channelListeners.clear();
+
+      if (!intentionalClose) {
+        scheduleReconnect();
+      } else {
+        notifyConnectionState('disconnected');
+      }
     };
   });
 
@@ -92,10 +141,18 @@ export function connect(): Promise<void> {
 }
 
 export function disconnect() {
+  intentionalClose = true;
+  if (reconnectTimer !== null) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  reconnectAttempt = 0;
   ws?.close();
   ws = null;
   connectPromise = null;
   channelListeners.clear();
+  // Reset so a future connect() (e.g. after re-login) works normally
+  intentionalClose = false;
 }
 
 /**

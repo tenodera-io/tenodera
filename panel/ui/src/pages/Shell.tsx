@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useMemo, useCallback, lazy, Suspense } from 'react';
 import { Routes, Route, NavLink, useNavigate } from 'react-router-dom';
-import { connect, disconnect, request, openChannel, type Message } from '../api/transport.ts';
+import { connect, disconnect, onConnectionChange, request, openChannel, type Message, type ConnectionState } from '../api/transport.ts';
 import { HostTransportProvider } from '../api/HostTransportContext.tsx';
 import { saveSuperuserPassword, loadSuperuserPassword, clearSuperuserPassword } from '../api/secureStorage.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
@@ -71,6 +71,7 @@ const TOP_BAR_H = 40;
 
 export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
   const [connected, setConnected] = useState(false);
+  const [connState, setConnState] = useState<ConnectionState>('disconnected');
   const [hostname, setHostname] = useState('');
   const navigate = useNavigate();
 
@@ -146,22 +147,40 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
   }, []);
 
   useEffect(() => {
+    const fetchLocalInfo = () => {
+      request('system.info').then((results) => {
+        const info = results[0] as { hostname?: string } | undefined;
+        if (info?.hostname) setHostname(info.hostname);
+      }).catch(() => { /* best-effort */ });
+      loadHosts();
+    };
+
+    const unsub = onConnectionChange((state) => {
+      setConnState(state);
+      if (state === 'connected') {
+        setConnected(true);
+        fetchLocalInfo();
+      } else {
+        setConnected(false);
+      }
+    });
+
     connect()
       .then(() => {
+        setConnState('connected');
         setConnected(true);
-        /* fire hostname lookup and host list load in parallel */
-        request('system.info').then((results) => {
-          const info = results[0] as { hostname?: string } | undefined;
-          if (info?.hostname) setHostname(info.hostname);
-        }).catch(() => { /* best-effort */ });
-        loadHosts();
+        fetchLocalInfo();
       })
       .catch((err) => {
         console.error('WebSocket connection failed:', err);
+        setConnState('disconnected');
         setConnected(false);
       });
 
-    return () => disconnect();
+    return () => {
+      unsub();
+      disconnect();
+    };
   }, [loadHosts]);
 
   /* ── poll hosts list every 30s ── */
@@ -351,8 +370,8 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
                   <hr style={S.dropdownHr} />
                   <div style={S.dropdownItem}>
                     <span style={S.dropdownLabel}>Status</span>
-                    <span style={{ color: connected ? '#9ece6a' : '#f7768e' }}>
-                      {connected ? '● Connected' : '○ Disconnected'}
+                    <span style={{ color: connState === 'connected' ? '#9ece6a' : connState === 'reconnecting' ? '#e0af68' : '#f7768e' }}>
+                      {connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected'}
                     </span>
                   </div>
                   <div style={S.dropdownItem}>
@@ -443,8 +462,8 @@ export function Shell({ sessionId: _sessionId, user, onLogout }: ShellProps) {
               <img src="/tenodera_icon.webp" alt="Tenodera" style={S.sidebarLogo} />
               Tenodera
             </div>
-            <div style={{ ...S.status, color: connected ? '#9ece6a' : '#f7768e' }}>
-              {connected ? '● Connected' : '○ Disconnected'}
+            <div style={{ ...S.status, color: connState === 'connected' ? '#9ece6a' : connState === 'reconnecting' ? '#e0af68' : '#f7768e' }}>
+              {connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected'}
             </div>
 
             {/* ── Host Selector ── */}
