@@ -151,9 +151,10 @@ mod tests {
 
     #[tokio::test]
     async fn reap_expired_idle() {
-        let store = SessionStore::new_with_max_lifetime(0, 86400); // idle=0s → expires immediately
+        // idle_timeout=0s: session expires when elapsed().as_secs() >= 1 (after ~1s)
+        let store = SessionStore::new_with_max_lifetime(0, 86400);
         store.create("idle_user".into(), "pw".into()).await;
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 1);
         let map = store.inner.read().await;
@@ -171,9 +172,10 @@ mod tests {
 
     #[tokio::test]
     async fn reap_expired_max_lifetime() {
-        let store = SessionStore::new_with_max_lifetime(900, 0); // max_lifetime=0 → instantly expired
+        // max_lifetime=0s: session expires when elapsed().as_secs() >= 1 (after ~1s)
+        let store = SessionStore::new_with_max_lifetime(900, 0);
         store.create("old_user".into(), "pw".into()).await;
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
         let reaped = store.reap_expired().await;
         assert_eq!(reaped, 1);
     }
