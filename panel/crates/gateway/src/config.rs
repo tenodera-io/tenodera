@@ -20,13 +20,26 @@ impl GatewayConfig {
     /// Validate configuration at startup — fail fast with clear error messages
     /// instead of silently starting and failing on first user action.
     pub fn validate(&self) -> anyhow::Result<()> {
-        // Check bridge binary exists and is executable
-        match std::fs::metadata(&self.bridge_bin) {
+        // Check bridge binary exists and is executable.
+        // If the path contains no '/', search PATH like the shell would.
+        let bridge_path = if self.bridge_bin.contains('/') {
+            std::path::PathBuf::from(&self.bridge_bin)
+        } else {
+            std::env::var_os("PATH")
+                .unwrap_or_default()
+                .to_string_lossy()
+                .split(':')
+                .map(|dir| std::path::Path::new(dir).join(&self.bridge_bin))
+                .find(|p| p.exists())
+                .unwrap_or_else(|| std::path::PathBuf::from(&self.bridge_bin))
+        };
+
+        match std::fs::metadata(&bridge_path) {
             Ok(meta) => {
                 if meta.permissions().mode() & 0o111 == 0 {
                     anyhow::bail!(
                         "bridge binary '{}' exists but is not executable — run: chmod +x {}",
-                        self.bridge_bin, self.bridge_bin
+                        bridge_path.display(), bridge_path.display()
                     );
                 }
             }
