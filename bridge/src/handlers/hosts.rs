@@ -49,17 +49,36 @@ async fn load_config() -> HostsConfig {
 }
 
 async fn save_config(config: &HostsConfig) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+
     let path = config_path();
     let json = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
-    tokio::fs::write(&path, json).await.map_err(|e| e.to_string())?;
 
-    // Enforce restrictive permissions — hosts.json may contain sensitive
-    // host information and should only be readable by root.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        tokio::fs::set_permissions(&path, perms).await.map_err(|e| e.to_string())?;
+    let am_root = unsafe { libc::geteuid() } == 0;
+
+    if am_root {
+        tokio::fs::write(&path, json.as_bytes()).await.map_err(|e| e.to_string())?;
+    } else {
+        // Running as session user — write via `sudo -n tee` so the gateway-owned
+        // config directory stays accessible. Requires the sudoers rule installed
+        // by `make install`: %sudo ALL=(root) NOPASSWD: /usr/bin/tee <path>
+        let path_str = path.to_string_lossy();
+        let mut child = tokio::process::Command::new("sudo")
+            .args(["-n", "tee", path_str.as_ref()])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("sudo tee: {e}"))?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(json.as_bytes()).await.map_err(|e| e.to_string())?;
+        }
+        let out = child.wait_with_output().await.map_err(|e| e.to_string())?;
+        if !out.status.success() {
+            let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            return Err(if err.is_empty() { "permission denied writing hosts.json".into() } else { err });
+        }
     }
 
     Ok(())

@@ -124,14 +124,15 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		sudo chmod 640 $(CONFDIR)/gateway.env; \
 		echo "    $(CONFDIR)/gateway.env already exists — skipping (preserving your config)"; \
 	fi
-	@echo "==> Installing sudoers rule for local bridge spawn..."
-	@printf '# Allow tenodera-gw to spawn tenodera-bridge as any local user.\n# Required so the bridge runs as the authenticated session user,\n# enabling sudo -S for administrative operations.\ntenodera-gw ALL=(ALL) NOPASSWD: %s\n' "$(BINDIR)/tenodera-bridge" \
+	@echo "==> Installing sudoers rules..."
+	@printf '# Allow tenodera-gw to spawn tenodera-bridge as any local user.\n# Required so the bridge runs as the authenticated session user,\n# enabling sudo -S for administrative operations.\ntenodera-gw ALL=(ALL) NOPASSWD: %s\n\n# Allow admin users (sudo group) to update hosts config via the bridge.\n# The bridge runs as the session user and needs root to write the\n# gateway-owned config file.\n%%sudo ALL=(root) NOPASSWD: /usr/bin/tee %s\n' \
+		"$(BINDIR)/tenodera-bridge" "$(CONFDIR)/hosts.json" \
 		| sudo tee /etc/sudoers.d/tenodera-gw > /dev/null
 	sudo chmod 440 /etc/sudoers.d/tenodera-gw
 	@echo "==> Setting up audit log..."
 	sudo touch /var/log/tenodera_audit.log
-	sudo chown tenodera-gw:tenodera-gw /var/log/tenodera_audit.log
-	sudo chmod 600 /var/log/tenodera_audit.log
+	sudo chown root:root /var/log/tenodera_audit.log
+	sudo chmod 622 /var/log/tenodera_audit.log
 	@echo "==> Installing systemd services..."
 	sudo cp systemd/tenodera-gateway.service $(SYSTEMDDIR)/
 	sudo systemctl daemon-reload
