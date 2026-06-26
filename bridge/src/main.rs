@@ -57,15 +57,7 @@ async fn main() -> anyhow::Result<()> {
 async fn run_session(config: &BridgeConfig, hostname: &str) -> anyhow::Result<()> {
     let url = config.bridge_ws_url();
     let connector = build_tls_connector(config);
-    let mut request = url.clone().into_client_request()?;
-    request.headers_mut().insert(
-        "Authorization",
-        format!("Bearer {}", config.token).parse()?,
-    );
-    request.headers_mut().insert(
-        "X-Bridge-Hostname",
-        hostname.parse()?,
-    );
+    let request = url.clone().into_client_request()?;
 
     tracing::info!(%url, "connecting to gateway");
     let (ws_stream, _) = tokio_tungstenite::connect_async_tls_with_config(
@@ -77,7 +69,11 @@ async fn run_session(config: &BridgeConfig, hostname: &str) -> anyhow::Result<()
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
     // Send Hello as first message
-    let hello = serde_json::to_string(&Message::Hello { version: PROTOCOL_VERSION })?;
+    let hello = serde_json::to_string(&Message::Hello {
+        version: PROTOCOL_VERSION,
+        hostname: hostname.to_string(),
+        is_local: config.is_local(),
+    })?;
     ws_sink.send(tokio_tungstenite::tungstenite::Message::Text(hello.into())).await?;
 
     // Wait for HelloAck

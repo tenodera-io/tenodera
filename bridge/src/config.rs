@@ -1,7 +1,6 @@
 
 pub struct BridgeConfig {
     pub gateway_url: String,
-    pub token: String,
     /// Skip TLS certificate verification. Use only for dev/self-signed certs.
     pub accept_insecure: bool,
 }
@@ -12,14 +11,12 @@ impl BridgeConfig {
 
         let gateway_url = std::env::var("TENODERA_GATEWAY_URL")
             .map_err(|_| anyhow::anyhow!("TENODERA_GATEWAY_URL not set in environment or /etc/tenodera/bridge.env"))?;
-        let token = std::env::var("TENODERA_BRIDGE_TOKEN")
-            .map_err(|_| anyhow::anyhow!("TENODERA_BRIDGE_TOKEN not set in environment or /etc/tenodera/bridge.env"))?;
 
         let accept_insecure = std::env::var("TENODERA_BRIDGE_ACCEPT_INSECURE")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
-        Ok(Self { gateway_url, token, accept_insecure })
+        Ok(Self { gateway_url, accept_insecure })
     }
 
     /// WebSocket URL for the bridge endpoint on the gateway.
@@ -29,6 +26,12 @@ impl BridgeConfig {
             .replacen("https://", "wss://", 1)
             .replacen("http://", "ws://", 1);
         format!("{base}/api/bridge")
+    }
+
+    /// True when the gateway URL points to localhost — used to mark the panel host.
+    pub fn is_local(&self) -> bool {
+        let u = &self.gateway_url;
+        u.contains("127.0.0.1") || u.contains("localhost") || u.contains("::1")
     }
 }
 

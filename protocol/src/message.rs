@@ -16,9 +16,16 @@ pub const PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Message {
-    /// Bridge → Gateway (first message after stdio open): announce version.
+    /// Bridge → Gateway (first message after stdio open): announce version and identity.
     Hello {
         version: u32,
+        /// System hostname of the bridge host.
+        #[serde(default)]
+        hostname: String,
+        /// True when the bridge is connecting from the same host as the gateway
+        /// (loopback URL). Used to mark the panel host in the UI.
+        #[serde(default)]
+        is_local: bool,
     },
 
     /// Gateway → Bridge: acknowledge and report own version.
@@ -231,12 +238,25 @@ mod tests {
 
     #[test]
     fn hello_roundtrip() {
-        let msg = Message::Hello { version: 1 };
+        let msg = Message::Hello { version: 1, hostname: "srv01".into(), is_local: false };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"hello\""), "tag missing: {json}");
         let rt: Message = serde_json::from_str(&json).unwrap();
-        let Message::Hello { version } = rt else { panic!() };
+        let Message::Hello { version, hostname, is_local } = rt else { panic!() };
         assert_eq!(version, 1);
+        assert_eq!(hostname, "srv01");
+        assert!(!is_local);
+    }
+
+    #[test]
+    fn hello_defaults_roundtrip() {
+        // Old bridges that only send {type, version} should still deserialize
+        let json = r#"{"type":"hello","version":1}"#;
+        let rt: Message = serde_json::from_str(json).unwrap();
+        let Message::Hello { version, hostname, is_local } = rt else { panic!() };
+        assert_eq!(version, 1);
+        assert!(hostname.is_empty());
+        assert!(!is_local);
     }
 
     #[test]

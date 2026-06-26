@@ -46,7 +46,7 @@ impl BridgeProcess {
             .map_err(|e| anyhow::anyhow!("bridge stdout read error: {e}"))?;
 
         let bridge_version = match serde_json::from_str::<Message>(hello_line.trim()) {
-            Ok(Message::Hello { version }) => version,
+            Ok(Message::Hello { version, .. }) => version,
             Ok(other) => anyhow::bail!("expected Hello, got {:?}", other),
             Err(e) => anyhow::bail!("could not parse Hello: {e} (raw: {hello_line:?})"),
         };

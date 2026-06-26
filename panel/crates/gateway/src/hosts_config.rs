@@ -2,22 +2,22 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// A managed host entry.
-/// The gateway no longer uses SSH to connect — the bridge connects to the gateway.
-/// Each host has a unique token that its bridge presents on connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostEntry {
     pub id: String,
     pub name: String,
-    /// Secret token — the bridge must present this to authenticate.
-    pub token: String,
-    /// ISO-8601 timestamp when the host was added.
+    /// System hostname reported by the bridge in Hello.
+    #[serde(default)]
+    pub hostname: String,
+    /// ISO-8601 timestamp when the host was first registered.
     #[serde(default)]
     pub added_at: String,
     /// True for the host where the panel itself is installed.
-    /// Set by install-panel.sh; the bridge on that host connects via loopback.
     #[serde(default)]
     pub is_local: bool,
+    /// Legacy field — kept so existing hosts.json files deserialize cleanly.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub token: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -47,6 +47,36 @@ pub async fn find_host(host_id: &str) -> Option<HostEntry> {
     load().await.hosts.into_iter().find(|h| h.id == host_id)
 }
 
-pub async fn find_host_by_token(token: &str) -> Option<HostEntry> {
-    load().await.hosts.into_iter().find(|h| h.token == token)
+/// Look up a host by its system hostname. If not found, auto-register it.
+/// Existing entries without a hostname field are matched by name as a migration path.
+pub async fn find_or_register_by_hostname(hostname: &str, is_local: bool) -> HostEntry {
+    let mut config = load().await;
+
+    // Find by hostname field, or fall back to name for legacy entries
+    let pos = config.hosts.iter().position(|h| {
+        h.hostname == hostname || (h.hostname.is_empty() && h.name == hostname)
+    });
+
+    if let Some(i) = pos {
+        // Backfill hostname if missing (migration from token-based entries)
+        if config.hosts[i].hostname.is_empty() {
+            config.hosts[i].hostname = hostname.to_string();
+            let _ = save(&config).await;
+        }
+        return config.hosts[i].clone();
+    }
+
+    // Auto-register new host
+    let entry = HostEntry {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: hostname.to_string(),
+        hostname: hostname.to_string(),
+        added_at: chrono::Utc::now().to_rfc3339(),
+        is_local,
+        token: String::new(),
+    };
+    tracing::info!(hostname, is_local, "auto-registered new host");
+    config.hosts.push(entry.clone());
+    let _ = save(&config).await;
+    entry
 }

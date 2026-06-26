@@ -151,53 +151,19 @@ rm -rf "$WORK_DIR"
 
 ok "Tenodera installed successfully!"
 
-# ── Register local host automatically ────────────────────────────────────────
-# So the panel host is immediately visible in the UI without manual steps.
+# ── Configure and start local bridge ─────────────────────────────────────────
+# The bridge connects to the local gateway and auto-registers this host.
 
 CONF_DIR="/etc/tenodera"
-HOSTS_JSON="${CONF_DIR}/hosts.json"
 
-if python3 -c "import json,sys; d=json.load(open('${HOSTS_JSON}')); sys.exit(0 if any(h.get('is_local') for h in d.get('hosts',[])) else 1)" 2>/dev/null; then
-  info "Local host already registered in ${HOSTS_JSON}"
-else
-  info "Registering this host as local panel host..."
-
-  LOCAL_ID=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
-  LOCAL_TOKEN=$(python3 -c "import uuid; print(uuid.uuid4())" 2>/dev/null || uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid)
-  LOCAL_NAME=$(hostname -s 2>/dev/null || echo "panel-host")
-  LOCAL_TS=$(date -u +"%Y-%m-%dT%H:%M:%S+00:00")
-
-  # Add entry to hosts.json (create if missing)
-  if [ ! -f "$HOSTS_JSON" ]; then
-    echo '{"hosts":[]}' > "$HOSTS_JSON"
-  fi
-
-  python3 - <<PYEOF
-import json, datetime
-with open('${HOSTS_JSON}') as f:
-    d = json.load(f)
-d['hosts'].insert(0, {
-    'id': '${LOCAL_ID}',
-    'name': '${LOCAL_NAME}',
-    'token': '${LOCAL_TOKEN}',
-    'added_at': '${LOCAL_TS}',
-    'is_local': True
-})
-with open('${HOSTS_JSON}', 'w') as f:
-    json.dump(d, f, indent=2)
-PYEOF
-
-  # Configure bridge to connect to local gateway
+if [ ! -f "${CONF_DIR}/bridge.env" ]; then
+  info "Writing bridge config..."
   cat > "${CONF_DIR}/bridge.env" <<EOF
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
-TENODERA_BRIDGE_TOKEN=${LOCAL_TOKEN}
 EOF
   chmod 640 "${CONF_DIR}/bridge.env"
-
-  ok "Local host registered (id=${LOCAL_ID})"
 fi
 
-# Start bridge on this host if not already running
 if systemctl is-active --quiet tenodera-bridge 2>/dev/null; then
   info "tenodera-bridge already running — restarting to pick up new config"
   systemctl restart tenodera-bridge
@@ -213,8 +179,8 @@ echo "  Logs:      journalctl -u tenodera-gateway -f"
 echo "  Config:    /etc/tenodera/gateway.env"
 echo ""
 echo "  Log in with any PAM user that has sudo privileges."
-echo "  This host is pre-registered — you'll see it immediately in the UI."
+echo "  This host will appear in the UI as soon as the bridge connects (a few seconds)."
 echo ""
 echo "  Install bridge on remote managed hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash -s -- --gateway https://HOST:9090 --token TOKEN"
+echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash -s -- --gateway https://HOST:9090"
 echo ""

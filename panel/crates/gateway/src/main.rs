@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/logout", axum::routing::post(auth::logout))
         .route("/api/ws", get(ws::ws_upgrade))
         .route("/api/bridge", get(bridge_ws::bridge_ws_upgrade))
-        .route("/api/hosts", axum::routing::post(hosts_add).get(hosts_list))
+        .route("/api/hosts", axum::routing::get(hosts_list))
         .route("/api/hosts/{id}", axum::routing::delete(hosts_remove))
         .route("/api/health", get(health))
         .route("/api/health/ready", get(health_ready))
@@ -238,19 +238,6 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
 
 // ── Hosts REST API ──────────────────────────────────────────────────────────
 
-#[derive(serde::Deserialize)]
-struct AddHostRequest {
-    name: String,
-}
-
-#[derive(Serialize)]
-struct AddHostResponse {
-    id: String,
-    name: String,
-    token: String,
-    install_command: String,
-}
-
 #[derive(Serialize)]
 struct HostListEntry {
     id: String,
@@ -273,55 +260,6 @@ async fn hosts_list(
         is_local: h.is_local,
     }).collect();
     Json(serde_json::json!({ "hosts": hosts }))
-}
-
-async fn hosts_add(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
-    Json(req): Json<AddHostRequest>,
-) -> Result<Json<AddHostResponse>, StatusCode> {
-    let token = extract_bearer_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
-    let _session = state.sessions.get(&token).await
-        .ok_or(StatusCode::UNAUTHORIZED)?;
-
-    if req.name.trim().is_empty() {
-        return Err(StatusCode::BAD_REQUEST);
-    }
-
-    let id = uuid::Uuid::new_v4().to_string();
-    let token = uuid::Uuid::new_v4().to_string();
-    let added_at = chrono::Utc::now().to_rfc3339();
-
-    let mut config = hosts_config::load().await;
-    config.hosts.push(hosts_config::HostEntry {
-        id: id.clone(),
-        name: req.name.clone(),
-        token: token.clone(),
-        added_at,
-        is_local: false,
-    });
-    hosts_config::save(&config).await.map_err(|e| {
-        tracing::error!(error = %e, "failed to save hosts.json");
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
-
-    // Derive gateway URL: explicit config > Host header > bind address fallback
-    let proto = if state.config.allow_unencrypted { "http" } else { "https" };
-    let gateway_url = state.config.external_url.clone().unwrap_or_else(|| {
-        headers.get("host")
-            .and_then(|h| h.to_str().ok())
-            .map(|h| format!("{proto}://{h}"))
-            .unwrap_or_else(|| format!("{proto}://{}:{}", state.config.bind_addr.ip(), state.config.bind_addr.port()))
-    });
-
-    let insecure_flag = if state.config.allow_unencrypted { " --accept-insecure" } else { "" };
-    let install_command = format!(
-        "curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
-        | sudo bash -s -- --gateway {gateway_url} --token {token}{insecure_flag}"
-    );
-
-    tracing::info!(host_id = %id, name = %req.name, "host added");
-    Ok(Json(AddHostResponse { id, name: req.name, token, install_command }))
 }
 
 async fn hosts_remove(
