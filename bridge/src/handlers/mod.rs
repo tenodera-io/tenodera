@@ -21,3 +21,4 @@ pub mod users;
 pub mod metrics_snapshot;
 pub mod networking_snapshot;
 pub mod storage_snapshot;
+pub mod cron;

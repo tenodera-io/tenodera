@@ -7,7 +7,7 @@ use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::handlers::{containers, disk_usage, file_list, hardware_info, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats, networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify, system_info, system_pubkey, systemd_units, terminal_pty, top_processes, users};
+use crate::handlers::{containers, cron, disk_usage, file_list, hardware_info, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats, networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify, system_info, system_pubkey, systemd_units, terminal_pty, top_processes, users};
 
 /// Active streaming channel state.
 struct ActiveChannel {
@@ -69,6 +69,8 @@ impl Router {
         self.register(Arc::new(metrics_snapshot::MetricsSnapshotHandler));
         self.register(Arc::new(networking_snapshot::NetworkingSnapshotHandler));
         self.register(Arc::new(storage_snapshot::StorageSnapshotHandler));
+        self.register(Arc::new(cron::CronListHandler));
+        self.register(Arc::new(cron::CronManageHandler));
     }
 
     /// Route a single message. Returns immediate responses and may spawn
