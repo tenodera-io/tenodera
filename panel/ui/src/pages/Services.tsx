@@ -1,7 +1,8 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useContext } from 'react';
 import { type Message } from '../api/transport.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
+import { RoleContext } from '../contexts/RoleContext.ts';
 
 interface Unit {
   unit: string;
@@ -178,6 +179,8 @@ export function Services() {
     <div>
       <h2>Services</h2>
 
+      <SystemTimeCard />
+
       {error && (
         <div style={styles.error}>
           {error}
@@ -226,6 +229,154 @@ export function Services() {
       </table>
       {units.length === 0 && <p style={{ marginTop: '1rem' }}>Loading services...</p>}
     </div>
+  );
+}
+
+// ── System Time Card ──────────────────────────────────────────────────────────
+
+interface TimeInfo {
+  timezone: string;
+  ntp: boolean;
+  ntp_synchronized: boolean;
+  local_time: string;
+  zones: string[];
+}
+
+function SystemTimeCard() {
+  const { request } = useTransport();
+  const su = useSuperuser();
+  const role = useContext(RoleContext);
+  const isAdmin = role === 'admin';
+
+  const [info, setInfo] = useState<TimeInfo | null>(null);
+  const [displayTime, setDisplayTime] = useState('');
+  const [displayDate, setDisplayDate] = useState('');
+  const [offsetMs, setOffsetMs] = useState(0);
+  const [tzModal, setTzModal] = useState(false);
+  const [tzSearch, setTzSearch] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [actionMsg, setActionMsg] = useState('');
+
+  const loadInfo = useCallback(() => {
+    request('time.info', {}).then(results => {
+      const d = results[0] as TimeInfo | undefined;
+      if (!d) return;
+      setInfo(d);
+      if (d.local_time) {
+        const serverMs = new Date(d.local_time).getTime();
+        setOffsetMs(serverMs - Date.now());
+      }
+    }).catch(() => {});
+  }, [request]);
+
+  useEffect(() => { loadInfo(); }, [loadInfo]);
+
+  useEffect(() => {
+    if (!info) return;
+    const tick = () => {
+      const serverNow = new Date(Date.now() + offsetMs);
+      setDisplayTime(serverNow.toLocaleTimeString('en-GB', { timeZone: info.timezone, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      setDisplayDate(serverNow.toLocaleDateString('en-GB', { timeZone: info.timezone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [info, offsetMs]);
+
+  const syncNtp = async () => {
+    setSyncing(true);
+    setActionMsg('');
+    try {
+      const results = await request('time.manage', { action: 'sync_now', password: su.password });
+      const r = results[0] as { ok?: boolean; error?: string } | undefined;
+      setActionMsg(r?.ok ? '✓ Synchronized' : r?.error ?? 'Failed');
+      if (r?.ok) loadInfo();
+    } catch (e) {
+      setActionMsg(String(e));
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setActionMsg(''), 4000);
+    }
+  };
+
+  const setTimezone = async (tz: string) => {
+    try {
+      const results = await request('time.manage', { action: 'set_timezone', timezone: tz, password: su.password });
+      const r = results[0] as { ok?: boolean; error?: string } | undefined;
+      if (r?.ok) {
+        setTzModal(false);
+        setTzSearch('');
+        loadInfo();
+      } else {
+        setActionMsg(r?.error ?? 'Failed');
+        setTimeout(() => setActionMsg(''), 4000);
+      }
+    } catch (e) {
+      setActionMsg(String(e));
+    }
+  };
+
+  if (!info) return null;
+
+  const filteredZones = info.zones.filter(z =>
+    !tzSearch || z.toLowerCase().includes(tzSearch.toLowerCase())
+  );
+
+  return (
+    <>
+      <div style={styles.timeCard}>
+        <div style={styles.timeLeft}>
+          <span style={styles.timeClock}>{displayTime || '--:--:--'}</span>
+          <div style={styles.timeDate}>{displayDate}</div>
+        </div>
+        <div style={styles.timeRight}>
+          <span style={{ ...styles.ntpBadge, color: info.ntp_synchronized ? '#9ece6a' : '#f7768e' }}>
+            {info.ntp_synchronized ? '● NTP synced' : '○ NTP not synced'}
+          </span>
+          <span style={styles.tzBadge}>{info.timezone}</span>
+          {isAdmin && su.active && (
+            <>
+              <button style={styles.timeBtn} onClick={syncNtp} disabled={syncing}>
+                {syncing ? '…' : 'Sync NTP'}
+              </button>
+              <button style={styles.timeBtn} onClick={() => { setTzModal(true); setTzSearch(''); }}>
+                Timezone…
+              </button>
+            </>
+          )}
+          {actionMsg && <span style={{ fontSize: '0.75rem', color: actionMsg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{actionMsg}</span>}
+        </div>
+      </div>
+
+      {tzModal && (
+        <div style={styles.overlay} onClick={() => setTzModal(false)}>
+          <div style={styles.tzModal} onClick={e => e.stopPropagation()}>
+            <div style={styles.tzModalHeader}>
+              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Change Timezone</span>
+              <button style={styles.closeBtn} onClick={() => setTzModal(false)}>✕</button>
+            </div>
+            <input
+              style={styles.tzSearch}
+              placeholder="Search timezones…"
+              value={tzSearch}
+              onChange={e => setTzSearch(e.target.value)}
+              autoFocus
+            />
+            <div style={styles.tzList}>
+              {filteredZones.map(tz => (
+                <div
+                  key={tz}
+                  style={{ ...styles.tzItem, background: tz === info.timezone ? 'rgba(122,162,247,0.12)' : 'transparent', color: tz === info.timezone ? '#7aa2f7' : 'var(--text-primary)' }}
+                  onClick={() => setTimezone(tz)}
+                >
+                  {tz === info.timezone && '✓ '}{tz}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -438,6 +589,21 @@ function EnabledBadge({ status }: { status: string }) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
+  timeCard:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem' },
+  timeLeft:       { display: 'flex', alignItems: 'baseline', gap: '0.75rem' },
+  timeClock:      { fontSize: '1.6rem', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.05em' },
+  timeDate:       { fontSize: '0.8rem', color: 'var(--text-secondary)' },
+  timeRight:      { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' },
+  ntpBadge:       { fontSize: '0.8rem', fontWeight: 600 },
+  tzBadge:        { fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.15rem 0.5rem', fontFamily: 'monospace' },
+  timeBtn:        { padding: '0.25rem 0.7rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: '#7aa2f7', cursor: 'pointer', fontSize: '0.8rem' },
+  overlay:        { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  tzModal:        { background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, width: 420, maxWidth: '95vw', display: 'flex', flexDirection: 'column', maxHeight: '70vh' },
+  tzModalHeader:  { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)' },
+  closeBtn:       { background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1rem' },
+  tzSearch:       { margin: '0.5rem', padding: '0.4rem 0.6rem', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-primary)', fontSize: '0.85rem', outline: 'none' },
+  tzList:         { overflowY: 'auto', flex: 1, padding: '0.25rem 0' },
+  tzItem:         { padding: '0.4rem 1rem', cursor: 'pointer', fontSize: '0.85rem', fontFamily: 'monospace' },
   filter: {
     margin: '1rem 0',
     padding: '0.5rem',
