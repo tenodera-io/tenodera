@@ -234,30 +234,32 @@ orchestration.
 ## Architecture
 
 ```
-[ Browser ]
-     |
-     | WebSocket (channel-multiplexed JSON)
-     v
-[ Gateway ]   Axum HTTP/WS server, PAM auth, session management
-     ^
-     |--- reverse WS (outbound from bridge, identified by hostname)
-     |
-[ Bridge ]    lightweight agent, runs as a systemd service on each managed host
-     |
-     |--- 24 handler modules (system, services, packages, users, terminal, ...)
+                  [ Browser ]
+                       |
+                       | HTTPS / WSS  (channel-multiplexed JSON)
+                       |
+                  [ Gateway ]   Axum HTTP/WS · PAM auth · session management
+                 /      |      \
+   outbound WS  /       |       \  outbound WS
+               /        |        \
+        [ Bridge ]  [ Bridge ]  [ Bridge ]   ...
+          host-1      host-2     localhost
+          (srv01)     (srv02)   (panel host)
 ```
 
-- **Gateway** authenticates users via PAM, manages sessions, serves the
-  React UI, and multiplexes user sessions over persistent bridge WebSockets.
-- **Bridge** is a long-running agent that connects outbound to the gateway,
-  sends its hostname in the `Hello` handshake, and handles system operations via
-  channel-multiplexed JSON. The gateway auto-registers unknown hosts on first connect.
+Bridges work like **Zabbix active agents**: each one connects outbound to the
+gateway over a persistent WebSocket, announces its hostname in a `Hello`
+handshake, and is auto-registered on first connect — no tokens, no pre-registration,
+no inbound ports required on managed hosts.
+
+- **Gateway** authenticates users via PAM, serves the React UI, and routes
+  channel-multiplexed JSON between browser sessions and the appropriate bridge.
+- **Bridge** is a lightweight systemd service deployed on each managed host.
+  It connects outbound to the gateway, handles 24 operation types (system info,
+  services, packages, terminal, cron, …), and reconnects automatically with
+  exponential backoff on disconnect.
 - **Protocol** is a shared Rust crate defining the message types used by
   both gateway and bridge.
-
-No inbound ports need to be opened on managed hosts.
-Each bridge maintains a persistent outbound WebSocket to the gateway and
-reconnects automatically on disconnect.
 
 The bridge announces its protocol version via a `Hello/HelloAck` handshake on connect.
 The gateway checks compatibility and includes a warning in `HelloAck` if versions differ,
