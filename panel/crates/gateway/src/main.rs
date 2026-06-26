@@ -279,6 +279,7 @@ async fn hosts_list(
             remote_ip,
         });
     }
+    hosts.sort_by_key(|h| !h.is_local);
     Json(serde_json::json!({ "hosts": hosts }))
 }
 
