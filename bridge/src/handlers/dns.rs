@@ -163,17 +163,28 @@ async fn flush_dns_cache(password: &str) -> Value {
 
 async fn do_lookup(name: &str, qtype: &str) -> Value {
     let safe_type = sanitise_qtype(qtype);
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        do_lookup_inner(name, &safe_type),
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => json!({ "ok": false, "output": "Lookup timed out (8s). The host may not have external DNS access." }),
+    }
+}
 
+async fn do_lookup_inner(name: &str, qtype: &str) -> Value {
     // Try dig first
     if which("dig").await {
-        let out = run_cmd(&["dig", "+short", "+time=3", "+tries=1", name, &safe_type]).await;
+        let out = run_cmd(&["dig", "+short", "+time=3", "+tries=1", name, qtype]).await;
         let trimmed = out.trim().to_string();
         return json!({ "ok": true, "output": if trimmed.is_empty() { "(no records)".into() } else { trimmed } });
     }
 
     // Fallback: host
     if which("host").await {
-        let out = run_cmd(&["host", "-t", &safe_type, name]).await;
+        let out = run_cmd(&["host", "-t", qtype, name]).await;
         return json!({ "ok": true, "output": out.trim().to_string() });
     }
 
