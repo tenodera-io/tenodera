@@ -60,7 +60,7 @@ export function Sidebar({
   const connColor = connState === 'connected' ? '#9ece6a' : connState === 'reconnecting' ? '#e0af68' : '#f7768e';
   const connLabel = connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected';
 
-  const visibleHosts = hosts.filter((h) => hostStatuses[h.id] === 'ok' || activeHost?.id === h.id);
+  const visibleHosts = hosts.filter((h) => h.online || activeHost?.id === h.id);
 
   return (
     <nav style={S.sidebar}>
@@ -101,7 +101,7 @@ export function Sidebar({
                   activeColor="#7aa2f7"
                   onClick={() => { onSwitchHost(h); setHostSelectorOpen(false); }}
                   name={h.name}
-                  addr={`${h.user || user}@${h.address}:${h.ssh_port}`}
+                  addr={h.online ? 'online' : 'offline'}
                 />
               );
             })}

@@ -1,12 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { openChannel, request, type Message } from '../api/transport.ts';
 
 export interface HostEntry {
   id: string;
   name: string;
-  address: string;
-  user: string;
-  ssh_port: number;
+  added_at: string;
+  online: boolean;
 }
 
 export type HostStatus = 'unknown' | 'ok' | 'error';
@@ -20,79 +18,58 @@ export interface UseHostsResult {
   switchHost: (host: HostEntry | null) => void;
 }
 
-export function useHosts(connected: boolean): UseHostsResult {
+export function useHosts(_connected: boolean): UseHostsResult {
   const [hosts, setHosts] = useState<HostEntry[]>([]);
   const [activeHost, setActiveHost] = useState<HostEntry | null>(null);
-  const [hostStatuses, setHostStatuses] = useState<Record<string, HostStatus>>({});
-  const [remoteStatus, setRemoteStatus] = useState<HostStatus>('unknown');
   const pendingHostId = useRef<string | null>(sessionStorage.getItem('active_host_id'));
-  const hostsRef = useRef(hosts);
-  hostsRef.current = hosts;
 
-  const loadHosts = useCallback(() => {
-    const ch = openChannel('hosts.manage');
-    let closed = false;
-    const closeOnce = () => { if (!closed) { closed = true; ch.close(); } };
-    ch.onMessage((msg: Message) => {
-      if (msg.type === 'data' && 'data' in msg) {
-        const d = msg.data as { action?: string; hosts?: HostEntry[] };
-        if (d.action === 'list' && d.hosts) {
-          setHosts(d.hosts);
-          const savedId = pendingHostId.current;
-          if (savedId) {
-            const match = d.hosts.find((h) => h.id === savedId);
-            if (match) setActiveHost(match);
-            pendingHostId.current = null;
-          }
-          closeOnce();
-        }
+  const loadHosts = useCallback(async () => {
+    const sessionId = sessionStorage.getItem('session_id') ?? '';
+    try {
+      const res = await fetch('/api/hosts', {
+        headers: { 'Authorization': `Bearer ${sessionId}` },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const list: HostEntry[] = data.hosts ?? [];
+      setHosts(list);
+
+      if (pendingHostId.current) {
+        const match = list.find((h) => h.id === pendingHostId.current);
+        if (match) setActiveHost(match);
+        pendingHostId.current = null;
       }
-      if (msg.type === 'close') closeOnce();
-    });
-    ch.send({ action: 'list' });
-    setTimeout(closeOnce, 5000);
+
+      // Refresh activeHost in case its online status changed
+      setActiveHost((prev) => {
+        if (!prev) return prev;
+        return list.find((h) => h.id === prev.id) ?? prev;
+      });
+    } catch { /* best-effort */ }
   }, []);
 
   const switchHost = useCallback((host: HostEntry | null) => {
     setActiveHost(host);
     if (host) sessionStorage.setItem('active_host_id', host.id);
     else sessionStorage.removeItem('active_host_id');
-    setRemoteStatus('unknown');
   }, []);
 
-  /* poll hosts list every 30s */
+  // Refresh hosts list every 15s
   useEffect(() => {
-    if (!connected) return;
-    const interval = setInterval(loadHosts, 30000);
+    loadHosts();
+    const interval = setInterval(loadHosts, 15_000);
     return () => clearInterval(interval);
-  }, [connected, loadHosts]);
+  }, [loadHosts]);
 
-  /* probe active host connectivity */
-  useEffect(() => {
-    if (!activeHost || !connected) { setRemoteStatus('unknown'); return; }
-    let cancelled = false;
-    setRemoteStatus('unknown');
-    request('system.info', { host: activeHost.id })
-      .then(() => { if (!cancelled) setRemoteStatus('ok'); })
-      .catch(() => { if (!cancelled) setRemoteStatus('error'); });
-    return () => { cancelled = true; };
-  }, [activeHost, connected]);
+  // Derive statuses from online field
+  const hostStatuses: Record<string, HostStatus> = {};
+  for (const h of hosts) {
+    hostStatuses[h.id] = h.online ? 'ok' : 'error';
+  }
 
-  /* probe all hosts every 60s */
-  useEffect(() => {
-    if (!connected || hosts.length === 0) return;
-    let cancelled = false;
-    const probe = () => {
-      for (const h of hostsRef.current) {
-        request('system.info', { host: h.id })
-          .then(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'ok' })); })
-          .catch(() => { if (!cancelled) setHostStatuses((prev) => ({ ...prev, [h.id]: 'error' })); });
-      }
-    };
-    probe();
-    const interval = setInterval(probe, 60000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [connected, hosts.length]);
+  const remoteStatus: HostStatus = activeHost
+    ? (activeHost.online ? 'ok' : 'error')
+    : 'unknown';
 
   return { hosts, activeHost, hostStatuses, remoteStatus, loadHosts, switchHost };
 }

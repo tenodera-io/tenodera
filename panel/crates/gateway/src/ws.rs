@@ -15,7 +15,6 @@ use tenodera_protocol::message;
 use crate::AppState;
 use crate::audit;
 use crate::bridge_registry::session_prefix;
-use crate::bridge_transport::BridgeProcess;
 use crate::security_headers::origin_matches_host;
 
 const MAX_CHANNELS_PER_SESSION: usize = 512;
@@ -170,26 +169,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
     audit::log(&user, "ws_connect", "websocket", true, "WebSocket connection established");
 
-    // ── Spawn local bridge ────────────────────────────────────────────────
-    let bridge_bin = &state.config.bridge_bin;
-    let local_bridge = match BridgeProcess::spawn(bridge_bin, Some(&user)).await {
-        Ok(b) => { audit::log(&user, "bridge_spawn", "local", true, "local bridge spawned"); b }
-        Err(e) => {
-            audit::log(&user, "bridge_spawn", "local", false, &format!("failed: {e}"));
-            tracing::error!(error = %e, "failed to spawn local bridge");
-            let mut s = sink.lock().await;
-            let _ = s.send(Message::Close(Some(axum::extract::ws::CloseFrame {
-                code: 1011, reason: format!("bridge-spawn-failed: {e}").into(),
-            }))).await;
-            return;
-        }
-    };
-
-    let BridgeProcess { child: local_child, to_bridge: local_sender, from_bridge: local_receiver } = local_bridge;
-    let mut _children = vec![local_child];
-
     let (close_tx, mut close_rx) = mpsc::unbounded_channel::<ChannelId>();
-    spawn_bridge_forwarder("local".into(), local_receiver, sink.clone(), close_tx.clone());
 
     // channel_id → sender for that bridge
     let mut channel_routes: HashMap<ChannelId, mpsc::Sender<message::Message>> = HashMap::new();
@@ -272,7 +252,14 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                         }
                                     }
                                 } else {
-                                    local_sender.clone()
+                                    // No host specified — local bridge no longer supported
+                                    let close = message::Message::Close {
+                                        channel: channel.clone(),
+                                        problem: Some("host-required".into()),
+                                    };
+                                    let mut s = sink.lock().await;
+                                    let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
+                                    continue;
                                 };
 
                                 let channel_key = channel.clone();
@@ -333,7 +320,6 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         }
     }
 
-    drop(local_sender);
     drop(remote_senders);
     drop(channel_routes);
     audit::log(&user, "ws_disconnect", "websocket", true, "WebSocket connection ended");
