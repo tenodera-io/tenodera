@@ -298,6 +298,7 @@ async fn hosts_add(
         name: req.name.clone(),
         token: token.clone(),
         added_at,
+        is_local: false,
     });
     hosts_config::save(&config).await.map_err(|e| {
         tracing::error!(error = %e, "failed to save hosts.json");
