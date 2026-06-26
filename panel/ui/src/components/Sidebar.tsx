@@ -42,7 +42,7 @@ const NAV_SECTIONS = [
 
 export function Sidebar({
   hostname, hosts, activeHost, hostStatuses, connState, connected,
-  suActive, user, onSwitchHost, onOpenManageHosts,
+  suActive, onSwitchHost, onOpenManageHosts,
 }: Props) {
   const navigate = useNavigate();
   const [hostSelectorOpen, setHostSelectorOpen] = React.useState(false);

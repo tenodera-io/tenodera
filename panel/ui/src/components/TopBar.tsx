@@ -41,7 +41,7 @@ export function TopBar({
       <div style={S.topLeft}>
         <span style={S.hostIcon}>{activeHost ? '🌐' : '🖥️'}</span>
         <span style={S.hostName}>
-          {activeHost ? `${activeHost.name} (${activeHost.address})` : hostname || '…'}
+          {activeHost ? activeHost.name : hostname || '…'}
         </span>
         {activeHost && (
           <>
