@@ -314,19 +314,10 @@ async fn hosts_add(
             .unwrap_or_else(|| format!("{proto}://{}:{}", state.config.bind_addr.ip(), state.config.bind_addr.port()))
     });
 
-    // Self-contained install command: writes bridge.env, creates service if missing, starts it.
-    let svc_unit = r"[Unit]\nDescription=Tenodera Bridge Agent\nAfter=network.target\n\n\
-[Service]\nType=simple\nExecStart=/usr/local/bin/tenodera-bridge\nRestart=on-failure\n\
-RestartSec=5\nEnvironmentFile=/etc/tenodera/bridge.env\n\n[Install]\nWantedBy=multi-user.target\n";
+    let insecure_flag = if state.config.allow_unencrypted { " --accept-insecure" } else { "" };
     let install_command = format!(
-        "sudo bash -c $'mkdir -p /etc/tenodera \
-        && printf \"TENODERA_GATEWAY_URL={gateway_url}\\nTENODERA_BRIDGE_TOKEN={token}\\n\" \
-        > /etc/tenodera/bridge.env \
-        && chmod 640 /etc/tenodera/bridge.env \
-        && (systemctl cat tenodera-bridge &>/dev/null \
-            || printf \"{svc_unit}\" > /etc/systemd/system/tenodera-bridge.service) \
-        && systemctl daemon-reload \
-        && systemctl enable --now tenodera-bridge'"
+        "curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
+        | sudo bash -s -- --gateway {gateway_url} --token {token}{insecure_flag}"
     );
 
     tracing::info!(host_id = %id, name = %req.name, "host added");

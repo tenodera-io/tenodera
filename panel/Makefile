@@ -105,11 +105,11 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	sudo chmod 750 $(CONFDIR)/tls
 	@if [ ! -f $(CONFDIR)/hosts.json ]; then \
 		echo '{"hosts":[]}' | sudo tee $(CONFDIR)/hosts.json > /dev/null; \
-		sudo chown root:tenodera-gw $(CONFDIR)/hosts.json; \
+		sudo chown tenodera-gw:tenodera-gw $(CONFDIR)/hosts.json; \
 		sudo chmod 640 $(CONFDIR)/hosts.json; \
 		echo "    Created $(CONFDIR)/hosts.json"; \
 	else \
-		sudo chown root:tenodera-gw $(CONFDIR)/hosts.json; \
+		sudo chown tenodera-gw:tenodera-gw $(CONFDIR)/hosts.json; \
 		sudo chmod 640 $(CONFDIR)/hosts.json; \
 		echo "    $(CONFDIR)/hosts.json already exists — skipping"; \
 	fi
