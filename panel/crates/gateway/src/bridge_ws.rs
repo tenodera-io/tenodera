@@ -1,7 +1,8 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::{
-    extract::{State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{ConnectInfo, State, WebSocketUpgrade, ws::{Message, WebSocket}},
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
@@ -20,13 +21,15 @@ use crate::hosts_config;
 /// automatically (Zabbix-style auto-registration).
 pub async fn bridge_ws_upgrade(
     State(state): State<Arc<AppState>>,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let registry = state.bridge_registry.clone();
-    ws.on_upgrade(move |socket| handle_bridge_socket(registry, socket))
+    let remote_ip = addr.ip().to_string();
+    ws.on_upgrade(move |socket| handle_bridge_socket(registry, socket, remote_ip))
 }
 
-async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket) {
+async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket, remote_ip: String) {
     let (mut sink, mut stream) = socket.split();
 
     // ── Hello/HelloAck handshake ──────────────────────────────────────────
@@ -98,7 +101,7 @@ async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket) {
 
     // ── Register in bridge registry ───────────────────────────────────────
     let (to_bridge_tx, mut to_bridge_rx) = mpsc::channel::<message::Message>(512);
-    let subscribers = registry.register(host.id.clone(), to_bridge_tx).await;
+    let subscribers = registry.register(host.id.clone(), to_bridge_tx, Some(remote_ip)).await;
 
     // ── WS writer task: gateway → bridge ─────────────────────────────────
     let writer_handle = tokio::spawn(async move {

@@ -13,6 +13,8 @@ struct BridgeConn {
     to_bridge: mpsc::Sender<Message>,
     /// session_prefix → channel back to that WS session.
     subscribers: Arc<RwLock<HashMap<String, mpsc::Sender<Message>>>>,
+    /// Remote IP address of the bridge connection.
+    remote_ip: Option<String>,
 }
 
 /// Registry of currently-connected bridge WebSocket connections.
@@ -33,11 +35,16 @@ impl BridgeRegistry {
         &self,
         host_id: String,
         to_bridge: mpsc::Sender<Message>,
+        remote_ip: Option<String>,
     ) -> Arc<RwLock<HashMap<String, mpsc::Sender<Message>>>> {
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
-        let conn = Arc::new(BridgeConn { to_bridge, subscribers: subscribers.clone() });
+        let conn = Arc::new(BridgeConn { to_bridge, subscribers: subscribers.clone(), remote_ip });
         self.inner.write().await.insert(host_id, conn);
         subscribers
+    }
+
+    pub async fn get_remote_ip(&self, host_id: &str) -> Option<String> {
+        self.inner.read().await.get(host_id)?.remote_ip.clone()
     }
 
     pub async fn unregister(&self, host_id: &str) {

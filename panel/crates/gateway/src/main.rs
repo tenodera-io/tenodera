@@ -250,6 +250,8 @@ struct HostListEntry {
     last_seen: Option<String>,
     online: bool,
     is_local: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    remote_ip: Option<String>,
 }
 
 async fn hosts_list(
@@ -257,16 +259,26 @@ async fn hosts_list(
 ) -> Json<serde_json::Value> {
     let config = hosts_config::load().await;
     let online = state.bridge_registry.online_host_ids().await;
-    let hosts: Vec<HostListEntry> = config.hosts.iter().map(|h| HostListEntry {
-        id: h.id.clone(),
-        name: h.name.clone(),
-        hostname: h.hostname.clone(),
-        display_name: h.display_name.clone(),
-        added_at: h.added_at.clone(),
-        last_seen: h.last_seen.clone(),
-        online: online.contains(&h.id),
-        is_local: h.is_local,
-    }).collect();
+    let mut hosts = Vec::with_capacity(config.hosts.len());
+    for h in &config.hosts {
+        let is_online = online.contains(&h.id);
+        let remote_ip = if is_online {
+            state.bridge_registry.get_remote_ip(&h.id).await
+        } else {
+            None
+        };
+        hosts.push(HostListEntry {
+            id: h.id.clone(),
+            name: h.name.clone(),
+            hostname: h.hostname.clone(),
+            display_name: h.display_name.clone(),
+            added_at: h.added_at.clone(),
+            last_seen: h.last_seen.clone(),
+            online: is_online,
+            is_local: h.is_local,
+            remote_ip,
+        });
+    }
     Json(serde_json::json!({ "hosts": hosts }))
 }
 

@@ -9,6 +9,7 @@ interface HostEntry {
   last_seen: string | null;
   online: boolean;
   is_local: boolean;
+  remote_ip: string | null;
 }
 
 interface HostsProps {
@@ -142,6 +143,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
                   <div style={S.meta}>
                     {showHostname && <span style={S.metaChip}>{h.hostname}</span>}
                     {h.is_local && <span style={{ ...S.metaChip, color: '#7aa2f7' }}>local</span>}
+                    {h.remote_ip && <span style={{ ...S.metaChip, fontFamily: 'monospace' }}>{h.remote_ip}</span>}
                     {h.online
                       ? <span style={{ color: '#9ece6a' }}>online</span>
                       : <span>last seen: {h.last_seen ? timeAgo(h.last_seen) : 'never'}</span>
