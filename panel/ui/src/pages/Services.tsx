@@ -1,8 +1,9 @@
-import { useEffect, useState, useCallback, useRef, useContext } from 'react';
+import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import { type Message } from '../api/transport.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
-import { RoleContext } from '../contexts/RoleContext.ts';
+
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Unit {
   unit: string;
@@ -17,7 +18,21 @@ interface UnitDetail {
   enabled: string;
 }
 
-/* ── column sorting ───────────────────────────────────── */
+interface TimerEntry {
+  unit: string;
+  active: string;
+  sub: string;
+  description: string;
+  next: string;
+  last: string;
+  enabled: string;
+  triggers: string;
+}
+
+type Tab = 'services' | 'timers';
+
+// ── Column sorting ─────────────────────────────────────────────────────────────
+
 type SortDir = 'asc' | 'desc' | null;
 type SortCol = 'active' | 'state' | null;
 
@@ -31,8 +46,8 @@ function nextDir(current: SortDir): SortDir {
 }
 
 function sortArrow(dir: SortDir): string {
-  if (dir === 'desc') return ' \u25BC';
-  if (dir === 'asc') return ' \u25B2';
+  if (dir === 'desc') return ' ▼';
+  if (dir === 'asc') return ' ▲';
   return '';
 }
 
@@ -48,9 +63,12 @@ function applySorting(list: Unit[], col: SortCol, dir: SortDir): Unit[] {
   return sorted;
 }
 
+// ── Main component ─────────────────────────────────────────────────────────────
+
 export function Services() {
   const { request, openChannel } = useTransport();
   const su = useSuperuser();
+  const [activeTab, setActiveTab] = useState<Tab>('services');
   const [units, setUnits] = useState<Unit[]>([]);
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -79,7 +97,6 @@ export function Services() {
 
     fetchUnits();
 
-    // Open persistent management channel
     const ch = openChannel('systemd.manage');
     channelRef.current = ch;
 
@@ -101,7 +118,6 @@ export function Services() {
             if (data && !data.ok) {
               setError(`${action}: ${data.error || 'failed'}`);
             }
-            // Refresh status of expanded unit + list
             const unit = d.unit as string;
             if (unit) {
               ch.send({ action: 'status', unit });
@@ -129,7 +145,6 @@ export function Services() {
 
   const requestAction = (action: string, unit: string) => {
     if (su.active) {
-      /* superuser mode — execute immediately with stored password */
       setLoading(action);
       setError(null);
       channelRef.current?.send({ action, unit, password: su.password });
@@ -179,7 +194,157 @@ export function Services() {
     <div>
       <h2>Services</h2>
 
-      <SystemTimeCard />
+      {/* Tab bar */}
+      <div style={styles.tabBar}>
+        <button
+          style={activeTab === 'services' ? styles.tabActive : styles.tab}
+          onClick={() => setActiveTab('services')}
+        >
+          Services
+        </button>
+        <button
+          style={activeTab === 'timers' ? styles.tabActive : styles.tab}
+          onClick={() => setActiveTab('timers')}
+        >
+          Timers
+        </button>
+      </div>
+
+      {activeTab === 'timers' ? (
+        <TimersTab su={su} />
+      ) : (
+        <>
+          {error && (
+            <div style={styles.error}>
+              {error}
+              <button onClick={() => setError(null)} style={styles.errorClose}>✕</button>
+            </div>
+          )}
+
+          <input
+            type="text"
+            placeholder="Filter services..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            style={{ ...styles.filter, borderColor: filter ? '#7aa2f7' : '#9ece6a' }}
+          />
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Unit</th>
+                <th style={styles.thSort} onClick={() => handleSort('active')}>
+                  Active{sortCol === 'active' ? sortArrow(sortDir) : ''}
+                </th>
+                <th style={styles.thSort} onClick={() => handleSort('state')}>
+                  State{sortCol === 'state' ? sortArrow(sortDir) : ''}
+                </th>
+                <th style={styles.th}>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((u) => (
+                <ServiceRow
+                  key={u.unit}
+                  unit={u}
+                  isExpanded={expanded === u.unit}
+                  detail={expanded === u.unit ? detail : null}
+                  loading={expanded === u.unit ? loading : null}
+                  pendingAction={expanded === u.unit ? pendingAction : null}
+                  password={expanded === u.unit ? password : ''}
+                  onToggle={() => handleExpand(u.unit)}
+                  onAction={(action) => requestAction(action, u.unit)}
+                  onPasswordChange={setPassword}
+                  onConfirm={confirmAction}
+                  onCancel={cancelAction}
+                />
+              ))}
+            </tbody>
+          </table>
+          {units.length === 0 && <p style={{ marginTop: '1rem' }}>Loading services...</p>}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Timers tab ─────────────────────────────────────────────────────────────────
+
+function TimersTab({ su }: { su: ReturnType<typeof useSuperuser> }) {
+  const { request, openChannel } = useTransport();
+  const [timers, setTimers] = useState<TimerEntry[]>([]);
+  const [fetching, setFetching] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ action: string; unit: string } | null>(null);
+  const [password, setPassword] = useState('');
+  const channelRef = useRef<ReturnType<typeof openChannel> | null>(null);
+
+  const fetchTimers = useCallback(() => {
+    setFetching(true);
+    request('systemd.timers', {}).then((results) => {
+      if (Array.isArray(results[0])) {
+        setTimers(results[0] as TimerEntry[]);
+      }
+      setFetching(false);
+    }).catch(() => setFetching(false));
+  }, [request]);
+
+  useEffect(() => {
+    fetchTimers();
+
+    const ch = openChannel('systemd.manage');
+    channelRef.current = ch;
+
+    ch.onMessage((msg: Message) => {
+      if (msg.type === 'data' && 'data' in msg) {
+        const d = msg.data as Record<string, unknown>;
+        if (d.type === 'response') {
+          const action = d.action as string;
+          const data = d.data as Record<string, unknown>;
+          setActionLoading(null);
+
+          if (['start', 'stop', 'enable', 'disable'].includes(action)) {
+            if (data && !data.ok) {
+              setError(`${action}: ${data.error || 'failed'}`);
+            }
+            fetchTimers();
+          }
+        }
+      }
+    });
+
+    return () => ch.close();
+  }, [fetchTimers, openChannel]);
+
+  const requestAction = (action: string, unit: string) => {
+    if (su.active) {
+      setActionLoading(`${action}:${unit}`);
+      setError(null);
+      channelRef.current?.send({ action, unit, password: su.password });
+      return;
+    }
+    setPendingAction({ action, unit });
+    setPassword('');
+    setError(null);
+  };
+
+  const confirmAction = () => {
+    if (!pendingAction || !password) return;
+    setActionLoading(`${pendingAction.action}:${pendingAction.unit}`);
+    setError(null);
+    channelRef.current?.send({ action: pendingAction.action, unit: pendingAction.unit, password });
+    setPendingAction(null);
+    setPassword('');
+  };
+
+  return (
+    <>
+      <div style={styles.timerToolbar}>
+        <button style={styles.refreshBtn} onClick={fetchTimers} disabled={fetching}>
+          {fetching ? '…' : '↻ Refresh'}
+        </button>
+        {fetching && <span style={styles.muted}>Loading…</span>}
+      </div>
 
       {error && (
         <div style={styles.error}>
@@ -188,197 +353,134 @@ export function Services() {
         </div>
       )}
 
-      <input
-        type="text"
-        placeholder="Filter services..."
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        style={{ ...styles.filter, borderColor: filter ? '#7aa2f7' : '#9ece6a' }}
-      />
       <table style={styles.table}>
         <thead>
           <tr>
             <th style={styles.th}>Unit</th>
-            <th style={styles.thSort} onClick={() => handleSort('active')}>
-              Active{sortCol === 'active' ? sortArrow(sortDir) : ''}
-            </th>
-            <th style={styles.thSort} onClick={() => handleSort('state')}>
-              State{sortCol === 'state' ? sortArrow(sortDir) : ''}
-            </th>
-            <th style={styles.th}>Description</th>
+            <th style={styles.th}>Triggers</th>
+            <th style={styles.th}>Active</th>
+            <th style={styles.th}>Enabled</th>
+            <th style={styles.th}>Next</th>
+            <th style={styles.th}>Last</th>
+            <th style={styles.th}>Actions</th>
           </tr>
         </thead>
         <tbody>
-          {filtered.map((u) => (
-            <ServiceRow
-              key={u.unit}
-              unit={u}
-              isExpanded={expanded === u.unit}
-              detail={expanded === u.unit ? detail : null}
-              loading={expanded === u.unit ? loading : null}
-              pendingAction={expanded === u.unit ? pendingAction : null}
-              password={expanded === u.unit ? password : ''}
-              onToggle={() => handleExpand(u.unit)}
-              onAction={(action) => requestAction(action, u.unit)}
-              onPasswordChange={setPassword}
-              onConfirm={confirmAction}
-              onCancel={cancelAction}
-            />
-          ))}
+          {timers.map((t) => {
+            const key = t.unit;
+            const isActive = t.active === 'active';
+            const isEnabled = t.enabled === 'enabled';
+            const isStatic = t.enabled === 'static';
+            const isPending = pendingAction?.unit === key;
+
+            return (
+              <Fragment key={key}>
+                <tr style={isPending ? { background: 'var(--bg-secondary)' } : undefined}>
+                  <td style={styles.td}>
+                    <span style={styles.timerUnit}>{t.unit}</span>
+                    {t.description && <div style={styles.timerDesc}>{t.description}</div>}
+                  </td>
+                  <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                    {t.triggers || '—'}
+                  </td>
+                  <td style={styles.td}>
+                    <StatusBadge status={t.active} />
+                    {t.sub && t.sub !== t.active && (
+                      <span style={styles.subState}>{t.sub}</span>
+                    )}
+                  </td>
+                  <td style={styles.td}>
+                    <EnabledBadge status={t.enabled} />
+                  </td>
+                  <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.8rem', color: t.next === 'n/a' ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                    {t.next}
+                  </td>
+                  <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.8rem', color: t.last === 'n/a' ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                    {t.last}
+                  </td>
+                  <td style={styles.td}>
+                    <div style={styles.actionButtons}>
+                      <ActionBtn
+                        label="Start"
+                        disabled={isActive}
+                        loading={actionLoading === `start:${key}`}
+                        onClick={() => requestAction('start', key)}
+                        color="#9ece6a"
+                      />
+                      <ActionBtn
+                        label="Stop"
+                        disabled={!isActive}
+                        loading={actionLoading === `stop:${key}`}
+                        onClick={() => requestAction('stop', key)}
+                        color="#f7768e"
+                      />
+                      <span style={styles.separator} />
+                      <ActionBtn
+                        label="Enable"
+                        disabled={isEnabled || isStatic}
+                        loading={actionLoading === `enable:${key}`}
+                        onClick={() => requestAction('enable', key)}
+                        color="#9ece6a"
+                      />
+                      <ActionBtn
+                        label="Disable"
+                        disabled={!isEnabled || isStatic}
+                        loading={actionLoading === `disable:${key}`}
+                        onClick={() => requestAction('disable', key)}
+                        color="#f7768e"
+                      />
+                    </div>
+                  </td>
+                </tr>
+                {isPending && (
+                  <tr>
+                    <td colSpan={7} style={{ ...styles.actionCell }}>
+                      <div style={styles.passwordBar}>
+                        <span style={styles.passwordLabel}>
+                          Password required for <b>{pendingAction!.action}</b>:
+                        </span>
+                        <input
+                          type="password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') confirmAction();
+                            if (e.key === 'Escape') { setPendingAction(null); setPassword(''); }
+                          }}
+                          placeholder="Enter password…"
+                          autoFocus
+                          style={{ ...styles.passwordInput, borderColor: password ? '#7aa2f7' : '#9ece6a' }}
+                        />
+                        <button
+                          onClick={confirmAction}
+                          disabled={!password}
+                          style={{ ...styles.confirmBtn, opacity: password ? 1 : 0.4, cursor: password ? 'pointer' : 'default' }}
+                        >
+                          Confirm
+                        </button>
+                        <button
+                          onClick={() => { setPendingAction(null); setPassword(''); }}
+                          style={styles.cancelBtn}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
         </tbody>
       </table>
-      {units.length === 0 && <p style={{ marginTop: '1rem' }}>Loading services...</p>}
-    </div>
-  );
-}
-
-// ── System Time Card ──────────────────────────────────────────────────────────
-
-interface TimeInfo {
-  timezone: string;
-  ntp: boolean;
-  ntp_synchronized: boolean;
-  local_time: string;
-  zones: string[];
-}
-
-function SystemTimeCard() {
-  const { request } = useTransport();
-  const su = useSuperuser();
-  const role = useContext(RoleContext);
-  const isAdmin = role === 'admin';
-
-  const [info, setInfo] = useState<TimeInfo | null>(null);
-  const [displayTime, setDisplayTime] = useState('');
-  const [displayDate, setDisplayDate] = useState('');
-  const [offsetMs, setOffsetMs] = useState(0);
-  const [tzModal, setTzModal] = useState(false);
-  const [tzSearch, setTzSearch] = useState('');
-  const [syncing, setSyncing] = useState(false);
-  const [actionMsg, setActionMsg] = useState('');
-
-  const loadInfo = useCallback(() => {
-    request('time.info', {}).then(results => {
-      const d = results[0] as TimeInfo | undefined;
-      if (!d) return;
-      setInfo(d);
-      if (d.local_time) {
-        const serverMs = new Date(d.local_time).getTime();
-        setOffsetMs(serverMs - Date.now());
-      }
-    }).catch(() => {});
-  }, [request]);
-
-  useEffect(() => { loadInfo(); }, [loadInfo]);
-
-  useEffect(() => {
-    if (!info) return;
-    const tick = () => {
-      const serverNow = new Date(Date.now() + offsetMs);
-      setDisplayTime(serverNow.toLocaleTimeString('en-GB', { timeZone: info.timezone, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      setDisplayDate(serverNow.toLocaleDateString('en-GB', { timeZone: info.timezone, weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }));
-    };
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, [info, offsetMs]);
-
-  const syncNtp = async () => {
-    setSyncing(true);
-    setActionMsg('');
-    try {
-      const results = await request('time.manage', { action: 'sync_now', password: su.password });
-      const r = results[0] as { ok?: boolean; error?: string } | undefined;
-      setActionMsg(r?.ok ? '✓ Synchronized' : r?.error ?? 'Failed');
-      if (r?.ok) loadInfo();
-    } catch (e) {
-      setActionMsg(String(e));
-    } finally {
-      setSyncing(false);
-      setTimeout(() => setActionMsg(''), 4000);
-    }
-  };
-
-  const setTimezone = async (tz: string) => {
-    try {
-      const results = await request('time.manage', { action: 'set_timezone', timezone: tz, password: su.password });
-      const r = results[0] as { ok?: boolean; error?: string } | undefined;
-      if (r?.ok) {
-        setTzModal(false);
-        setTzSearch('');
-        loadInfo();
-      } else {
-        setActionMsg(r?.error ?? 'Failed');
-        setTimeout(() => setActionMsg(''), 4000);
-      }
-    } catch (e) {
-      setActionMsg(String(e));
-    }
-  };
-
-  if (!info) return null;
-
-  const filteredZones = info.zones.filter(z =>
-    !tzSearch || z.toLowerCase().includes(tzSearch.toLowerCase())
-  );
-
-  return (
-    <>
-      <div style={styles.timeCard}>
-        <div style={styles.timeLeft}>
-          <span style={styles.timeClock}>{displayTime || '--:--:--'}</span>
-          <div style={styles.timeDate}>{displayDate}</div>
-        </div>
-        <div style={styles.timeRight}>
-          <span style={{ ...styles.ntpBadge, color: info.ntp_synchronized ? '#9ece6a' : '#f7768e' }}>
-            {info.ntp_synchronized ? '● NTP synced' : '○ NTP not synced'}
-          </span>
-          <span style={styles.tzBadge}>{info.timezone}</span>
-          {isAdmin && su.active && (
-            <>
-              <button style={styles.timeBtn} onClick={syncNtp} disabled={syncing}>
-                {syncing ? '…' : 'Sync NTP'}
-              </button>
-              <button style={styles.timeBtn} onClick={() => { setTzModal(true); setTzSearch(''); }}>
-                Timezone…
-              </button>
-            </>
-          )}
-          {actionMsg && <span style={{ fontSize: '0.75rem', color: actionMsg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{actionMsg}</span>}
-        </div>
-      </div>
-
-      {tzModal && (
-        <div style={styles.overlay} onClick={() => setTzModal(false)}>
-          <div style={styles.tzModal} onClick={e => e.stopPropagation()}>
-            <div style={styles.tzModalHeader}>
-              <span style={{ fontWeight: 700, fontSize: '0.95rem' }}>Change Timezone</span>
-              <button style={styles.closeBtn} onClick={() => setTzModal(false)}>✕</button>
-            </div>
-            <input
-              style={styles.tzSearch}
-              placeholder="Search timezones…"
-              value={tzSearch}
-              onChange={e => setTzSearch(e.target.value)}
-              autoFocus
-            />
-            <div style={styles.tzList}>
-              {filteredZones.map(tz => (
-                <div
-                  key={tz}
-                  style={{ ...styles.tzItem, background: tz === info.timezone ? 'rgba(122,162,247,0.12)' : 'transparent', color: tz === info.timezone ? '#7aa2f7' : 'var(--text-primary)' }}
-                  onClick={() => setTimezone(tz)}
-                >
-                  {tz === info.timezone && '✓ '}{tz}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+      {!fetching && timers.length === 0 && (
+        <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>No timers found.</p>
       )}
     </>
   );
 }
+
+// ── Service row ────────────────────────────────────────────────────────────────
 
 function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password, onToggle, onAction, onPasswordChange, onConfirm, onCancel }: {
   unit: Unit;
@@ -415,7 +517,6 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
         <tr>
           <td colSpan={4} style={styles.actionCell}>
             <div style={styles.actionBar}>
-              {/* Status info */}
               {detail ? (
                 <div style={styles.statusInfo}>
                   <span style={styles.statusLabel}>Active:</span>
@@ -428,53 +529,16 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
               ) : null}
 
               <div style={styles.actionButtons}>
-                <ActionBtn
-                  label="Start"
-                  disabled={isRunning}
-                  loading={loading === 'start'}
-                  onClick={() => onAction('start')}
-                  color="#9ece6a"
-                />
-                <ActionBtn
-                  label="Stop"
-                  disabled={!isActive}
-                  loading={loading === 'stop'}
-                  onClick={() => onAction('stop')}
-                  color="#f7768e"
-                />
-                <ActionBtn
-                  label="Restart"
-                  disabled={!isActive}
-                  loading={loading === 'restart'}
-                  onClick={() => onAction('restart')}
-                  color="#e0af68"
-                />
-                <ActionBtn
-                  label="Reload"
-                  disabled={!isActive}
-                  loading={loading === 'reload'}
-                  onClick={() => onAction('reload')}
-                  color="#7aa2f7"
-                />
+                <ActionBtn label="Start"   disabled={isRunning}  loading={loading === 'start'}   onClick={() => onAction('start')}   color="#9ece6a" />
+                <ActionBtn label="Stop"    disabled={!isActive}  loading={loading === 'stop'}    onClick={() => onAction('stop')}    color="#f7768e" />
+                <ActionBtn label="Restart" disabled={!isActive}  loading={loading === 'restart'} onClick={() => onAction('restart')} color="#e0af68" />
+                <ActionBtn label="Reload"  disabled={!isActive}  loading={loading === 'reload'}  onClick={() => onAction('reload')}  color="#7aa2f7" />
                 <span style={styles.separator} />
-                <ActionBtn
-                  label="Enable"
-                  disabled={isEnabled || isStatic}
-                  loading={loading === 'enable'}
-                  onClick={() => onAction('enable')}
-                  color="#9ece6a"
-                />
-                <ActionBtn
-                  label="Disable"
-                  disabled={!isEnabled || isStatic}
-                  loading={loading === 'disable'}
-                  onClick={() => onAction('disable')}
-                  color="#f7768e"
-                />
+                <ActionBtn label="Enable"  disabled={isEnabled || isStatic}  loading={loading === 'enable'}  onClick={() => onAction('enable')}  color="#9ece6a" />
+                <ActionBtn label="Disable" disabled={!isEnabled || isStatic} loading={loading === 'disable'} onClick={() => onAction('disable')} color="#f7768e" />
               </div>
             </div>
 
-            {/* Password prompt */}
             {pendingAction && pendingAction.unit === unit.unit && (
               <div style={styles.passwordBar}>
                 <span style={styles.passwordLabel}>
@@ -493,18 +557,11 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
                 <button
                   onClick={(e) => { e.stopPropagation(); onConfirm(); }}
                   disabled={!password}
-                  style={{
-                    ...styles.confirmBtn,
-                    opacity: password ? 1 : 0.4,
-                    cursor: password ? 'pointer' : 'default',
-                  }}
+                  style={{ ...styles.confirmBtn, opacity: password ? 1 : 0.4, cursor: password ? 'pointer' : 'default' }}
                 >
                   Confirm
                 </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); onCancel(); }}
-                  style={styles.cancelBtn}
-                >
+                <button onClick={(e) => { e.stopPropagation(); onCancel(); }} style={styles.cancelBtn}>
                   Cancel
                 </button>
               </div>
@@ -515,6 +572,8 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
     </>
   );
 }
+
+// ── Shared sub-components ──────────────────────────────────────────────────────
 
 function ActionBtn({ label, disabled, loading, onClick, color }: {
   label: string;
@@ -542,23 +601,12 @@ function ActionBtn({ label, disabled, loading, onClick, color }: {
 
 function StatusBadge({ status }: { status: string }) {
   const color =
-    status === 'active'
-      ? '#9ece6a'
-      : status === 'failed'
-        ? '#f7768e'
-        : status === 'inactive'
-          ? '#565f89'
-          : '#e0af68';
+    status === 'active'   ? '#9ece6a' :
+    status === 'failed'   ? '#f7768e' :
+    status === 'inactive' ? '#565f89' : '#e0af68';
 
   return (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: '4px',
-      fontSize: '0.8rem',
-      background: color + '22',
-      color,
-    }}>
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color + '22', color }}>
       {status}
     </span>
   );
@@ -566,44 +614,81 @@ function StatusBadge({ status }: { status: string }) {
 
 function EnabledBadge({ status }: { status: string }) {
   const color =
-    status === 'enabled'
-      ? '#9ece6a'
-      : status === 'disabled'
-        ? '#f7768e'
-        : status === 'static'
-          ? '#7aa2f7'
-          : '#565f89';
+    status === 'enabled'  ? '#9ece6a' :
+    status === 'disabled' ? '#f7768e' :
+    status === 'static'   ? '#7aa2f7' : '#565f89';
 
   return (
-    <span style={{
-      display: 'inline-block',
-      padding: '2px 8px',
-      borderRadius: '4px',
-      fontSize: '0.8rem',
-      background: color + '22',
-      color,
-    }}>
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color + '22', color }}>
       {status}
     </span>
   );
 }
 
+// ── Styles ─────────────────────────────────────────────────────────────────────
+
 const styles: Record<string, React.CSSProperties> = {
-  timeCard:       { display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem', marginBottom: '1rem' },
-  timeLeft:       { display: 'flex', alignItems: 'baseline', gap: '0.75rem' },
-  timeClock:      { fontSize: '1.6rem', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.05em' },
-  timeDate:       { fontSize: '0.8rem', color: 'var(--text-secondary)' },
-  timeRight:      { display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' },
-  ntpBadge:       { fontSize: '0.8rem', fontWeight: 600 },
-  tzBadge:        { fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.15rem 0.5rem', fontFamily: 'monospace' },
-  timeBtn:        { padding: '0.25rem 0.7rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: '#7aa2f7', cursor: 'pointer', fontSize: '0.8rem' },
-  overlay:        { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  tzModal:        { background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, width: 420, maxWidth: '95vw', display: 'flex', flexDirection: 'column', maxHeight: '70vh' },
-  tzModalHeader:  { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)' },
-  closeBtn:       { background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1rem' },
-  tzSearch:       { margin: '0.5rem', padding: '0.4rem 0.6rem', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-primary)', fontSize: '0.85rem', outline: 'none' },
-  tzList:         { overflowY: 'auto', flex: 1, padding: '0.25rem 0' },
-  tzItem:         { padding: '0.4rem 1rem', cursor: 'pointer', fontSize: '0.85rem', fontFamily: 'monospace' },
+  tabBar: {
+    display: 'flex',
+    gap: '0.25rem',
+    borderBottom: '1px solid var(--border)',
+    marginBottom: '1rem',
+  },
+  tab: {
+    padding: '0.4rem 1.1rem',
+    border: '1px solid transparent',
+    borderBottom: 'none',
+    borderRadius: '6px 6px 0 0',
+    background: 'transparent',
+    color: 'var(--text-secondary)',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    fontWeight: 500,
+    position: 'relative',
+    bottom: -1,
+  },
+  tabActive: {
+    padding: '0.4rem 1.1rem',
+    border: '1px solid var(--border)',
+    borderBottom: '1px solid var(--bg-primary)',
+    borderRadius: '6px 6px 0 0',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    fontSize: '0.9rem',
+    fontWeight: 600,
+    position: 'relative',
+    bottom: -1,
+  },
+  timerToolbar: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    marginBottom: '0.75rem',
+  },
+  refreshBtn: {
+    padding: '0.3rem 0.8rem',
+    borderRadius: 5,
+    border: '1px solid var(--border)',
+    background: 'transparent',
+    color: '#7aa2f7',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
+  },
+  timerUnit: {
+    fontFamily: 'monospace',
+    fontSize: '0.85rem',
+  },
+  timerDesc: {
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary)',
+    marginTop: '0.15rem',
+  },
+  subState: {
+    marginLeft: '0.4rem',
+    fontSize: '0.75rem',
+    color: 'var(--text-secondary)',
+  },
   filter: {
     margin: '1rem 0',
     padding: '0.5rem',
@@ -642,6 +727,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0.5rem',
     borderBottom: '1px solid var(--border)',
     fontSize: '0.9rem',
+    verticalAlign: 'top' as const,
   },
   clickRow: {
     cursor: 'pointer',
