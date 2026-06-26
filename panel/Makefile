@@ -197,12 +197,14 @@ uninstall:
 	-sudo systemctl disable tenodera-gateway
 	-sudo rm -f $(SYSTEMDDIR)/tenodera-gateway.service
 	-sudo rm -rf $(SYSTEMDDIR)/tenodera-gateway.service.d
+	-sudo systemctl stop tenodera-bridge 2>/dev/null || true
+	-sudo systemctl disable tenodera-bridge 2>/dev/null || true
+	-sudo rm -f $(SYSTEMDDIR)/tenodera-bridge.service
 	-sudo systemctl daemon-reload
 	-sudo pkill -f tenodera-gateway 2>/dev/null || true
 	-sudo pkill -f tenodera-bridge 2>/dev/null || true
 	-sudo rm -f $(BINDIR)/tenodera-gateway $(BINDIR)/tenodera-pam-helper $(BINDIR)/tenodera-bridge
 	-sudo rm -rf $(UIDIR)
-	-sudo rm -f $(CONFDIR)/id_ed25519 $(CONFDIR)/id_ed25519.pub
 	-sudo rm -rf $(CONFDIR)
 	-sudo rm -f /etc/logrotate.d/tenodera
 	-sudo rm -f /etc/pam.d/tenodera

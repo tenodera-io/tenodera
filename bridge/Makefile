@@ -77,6 +77,9 @@ uninstall:
 	-sudo rm -f $(SYSTEMDDIR)/tenodera-bridge.service
 	-sudo systemctl daemon-reload
 	-sudo rm -f $(BINDIR)/tenodera-bridge
+	-sudo rm -f $(CONFDIR)/bridge.env
+	-sudo rmdir $(CONFDIR) 2>/dev/null || true
+	-sudo rm -f /var/log/tenodera_audit.log
 	@echo "Done."
 
 # ── Packages ──────────────────────────────────────────────
