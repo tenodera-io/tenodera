@@ -21,7 +21,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::get,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ws", get(ws::ws_upgrade))
         .route("/api/bridge", get(bridge_ws::bridge_ws_upgrade))
         .route("/api/hosts", axum::routing::get(hosts_list))
-        .route("/api/hosts/{id}", axum::routing::delete(hosts_remove))
+        .route("/api/hosts/{id}", axum::routing::delete(hosts_remove).patch(hosts_patch))
         .route("/api/health", get(health))
         .route("/api/health/ready", get(health_ready))
         // Serve built frontend from ui/dist (production)
@@ -242,7 +242,12 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
 struct HostListEntry {
     id: String,
     name: String,
+    hostname: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    display_name: Option<String>,
     added_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_seen: Option<String>,
     online: bool,
     is_local: bool,
 }
@@ -255,7 +260,10 @@ async fn hosts_list(
     let hosts: Vec<HostListEntry> = config.hosts.iter().map(|h| HostListEntry {
         id: h.id.clone(),
         name: h.name.clone(),
+        hostname: h.hostname.clone(),
+        display_name: h.display_name.clone(),
         added_at: h.added_at.clone(),
+        last_seen: h.last_seen.clone(),
         online: online.contains(&h.id),
         is_local: h.is_local,
     }).collect();
@@ -287,6 +295,44 @@ async fn hosts_remove(
             tracing::info!(host_id = %id, "host removed");
             StatusCode::NO_CONTENT
         }
+        Err(e) => {
+            tracing::error!(error = %e, "failed to save hosts.json");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct PatchHostRequest {
+    display_name: Option<String>,
+}
+
+async fn hosts_patch(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+    Json(body): Json<PatchHostRequest>,
+) -> StatusCode {
+    let token = match extract_bearer_token(&headers) {
+        Some(t) => t,
+        None => return StatusCode::UNAUTHORIZED,
+    };
+    if state.sessions.get(&token).await.is_none() {
+        return StatusCode::UNAUTHORIZED;
+    }
+
+    let mut config = hosts_config::load().await;
+    let Some(host) = config.hosts.iter_mut().find(|h| h.id == id) else {
+        return StatusCode::NOT_FOUND;
+    };
+
+    host.display_name = body.display_name.and_then(|n| {
+        let t = n.trim().to_string();
+        if t.is_empty() { None } else { Some(t) }
+    });
+
+    match hosts_config::save(&config).await {
+        Ok(()) => StatusCode::NO_CONTENT,
         Err(e) => {
             tracing::error!(error = %e, "failed to save hosts.json");
             StatusCode::INTERNAL_SERVER_ERROR

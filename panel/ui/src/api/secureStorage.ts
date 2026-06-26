@@ -81,14 +81,21 @@ async function getOrCreateKey(): Promise<CryptoKey> {
   return key;
 }
 
+const PLAIN_KEY = 'su_plain';
+
 /* ── public API ──────────────────────────────────────────── */
 
 /**
  * Encrypt and store the superuser password in sessionStorage.
- * Returns true on success, false if crypto is unavailable.
+ * On plain HTTP (no crypto.subtle), falls back to unencrypted sessionStorage —
+ * acceptable because plain HTTP offers no transport security anyway.
+ * Returns true on success.
  */
 export async function saveSuperuserPassword(password: string): Promise<boolean> {
-  if (!isSecureContext()) return false;
+  if (!isSecureContext()) {
+    sessionStorage.setItem(PLAIN_KEY, password);
+    return true;
+  }
   try {
     const key = await getOrCreateKey();
     const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -115,7 +122,9 @@ export async function saveSuperuserPassword(password: string): Promise<boolean> 
  * Returns the password string or null if unavailable/failed.
  */
 export async function loadSuperuserPassword(): Promise<string | null> {
-  if (!isSecureContext()) return null;
+  if (!isSecureContext()) {
+    return sessionStorage.getItem(PLAIN_KEY);
+  }
   try {
     const b64 = sessionStorage.getItem(SESSION_KEY);
     if (!b64) return null;
@@ -142,6 +151,7 @@ export async function loadSuperuserPassword(): Promise<string | null> {
  */
 export async function clearSuperuserPassword(): Promise<void> {
   sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(PLAIN_KEY);
   try {
     const db = await openDB();
     await idbDelete(db, KEY_ID);

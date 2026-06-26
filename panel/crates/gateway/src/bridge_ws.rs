@@ -147,6 +147,7 @@ async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket) {
     }
 
     // ── Cleanup ───────────────────────────────────────────────────────────
+    hosts_config::update_last_seen(&host.id).await;
     registry.unregister(&host.id).await;
     writer_handle.abort();
     tracing::info!(host = %host.id, "bridge disconnected");

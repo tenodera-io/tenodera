@@ -15,6 +15,12 @@ pub struct HostEntry {
     /// True for the host where the panel itself is installed.
     #[serde(default)]
     pub is_local: bool,
+    /// User-assigned display name; falls back to `name` when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display_name: Option<String>,
+    /// ISO-8601 timestamp of the last bridge disconnect (updated on each disconnect).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<String>,
     /// Legacy field — kept so existing hosts.json files deserialize cleanly.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub token: String,
@@ -47,6 +53,14 @@ pub async fn find_host(host_id: &str) -> Option<HostEntry> {
     load().await.hosts.into_iter().find(|h| h.id == host_id)
 }
 
+pub async fn update_last_seen(host_id: &str) {
+    let mut config = load().await;
+    if let Some(h) = config.hosts.iter_mut().find(|h| h.id == host_id) {
+        h.last_seen = Some(chrono::Utc::now().to_rfc3339());
+        let _ = save(&config).await;
+    }
+}
+
 /// Look up a host by its system hostname. If not found, auto-register it.
 /// Existing entries without a hostname field are matched by name as a migration path.
 pub async fn find_or_register_by_hostname(hostname: &str, is_local: bool) -> HostEntry {
@@ -73,6 +87,8 @@ pub async fn find_or_register_by_hostname(hostname: &str, is_local: bool) -> Hos
         hostname: hostname.to_string(),
         added_at: chrono::Utc::now().to_rfc3339(),
         is_local,
+        display_name: None,
+        last_seen: None,
         token: String::new(),
     };
     tracing::info!(hostname, is_local, "auto-registered new host");

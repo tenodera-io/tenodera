@@ -7,7 +7,6 @@ interface Props {
   activeHost: HostEntry | null;
   hostStatuses: Record<string, HostStatus>;
   connState: ConnectionState;
-  suActive: boolean;
   onSwitchHost: (host: HostEntry | null) => void;
   onOpenManageHosts: () => void;
 }
@@ -39,7 +38,7 @@ const NAV_SECTIONS = [
 
 export function Sidebar({
   hosts, activeHost, hostStatuses, connState,
-  suActive, onSwitchHost, onOpenManageHosts,
+  onSwitchHost, onOpenManageHosts,
 }: Props) {
   const navigate = useNavigate();
   const [hostSelectorOpen, setHostSelectorOpen] = React.useState(false);
@@ -129,26 +128,6 @@ export function Sidebar({
             </ul>
           </li>
         ))}
-        {suActive && (
-          <li>
-            <div style={S.sectionDivider} />
-            <div style={S.sectionLabel}>Administration</div>
-            <ul style={S.sectionList}>
-              <li>
-                <NavLink
-                  to="/manage-hosts"
-                  style={({ isActive }) => ({
-                    ...S.navLink,
-                    background: isActive ? 'var(--bg-card)' : 'transparent',
-                    borderLeft: isActive ? '3px solid #9ece6a' : '3px solid transparent',
-                  })}
-                >
-                  <span style={S.navIcon}>&#x1F5A7;</span>Manage Hosts
-                </NavLink>
-              </li>
-            </ul>
-          </li>
-        )}
       </ul>
     </nav>
   );

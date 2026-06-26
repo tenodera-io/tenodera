@@ -51,25 +51,24 @@ systemd services, and starts the panel on port 9090.
 
 ### Bridge (managed hosts)
 
-Before running this, **add the host in the panel UI** (Admin → Manage Hosts → Add Host).
-The UI will display a ready-to-run install command with the correct gateway URL and token.
-Copy it and run it on the managed host:
+Run on each host you want to manage — no pre-registration in the UI required:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
-  | sudo bash -s -- --gateway https://<your-panel-host>:9090 --token <token-from-ui>
+  | sudo bash -s -- --gateway https://<your-panel-host>:9090
 ```
 
 For plaintext HTTP (dev/LAN only):
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
-  | sudo bash -s -- --gateway http://<your-panel-host>:9090 --token <token-from-ui> --accept-insecure
+  | sudo bash -s -- --gateway http://<your-panel-host>:9090 --accept-insecure
 ```
 
 The installer builds the bridge binary, writes `/etc/tenodera/bridge.env`, installs a systemd
-service, and starts it. The bridge then connects outbound to the gateway — no inbound ports
-needed on the managed host.
+service, and starts it. The bridge connects outbound to the gateway — no inbound ports needed
+on the managed host. The host is registered automatically on first connection, identified by
+its hostname.
 
 ### Build from source
 
@@ -104,7 +103,7 @@ The bridge config lives at `/etc/tenodera/bridge.env` on each managed host:
 
 ```bash
 TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint
-TENODERA_BRIDGE_TOKEN=<uuid>                     # Per-host token (set during install)
+# TENODERA_BRIDGE_ACCEPT_INSECURE=1              # Allow self-signed TLS (dev only)
 ```
 
 Edit and restart: `sudo systemctl restart tenodera-bridge`
@@ -195,15 +194,19 @@ operations.
 
 ### Adding remote hosts
 
-1. In the panel UI, open the host selector (top-left) and click **Manage hosts…**
-2. Click **Add Host**, enter a name, and copy the generated install command.
-3. Paste and run the command on the managed host — it installs the bridge,
-   configures it with the correct gateway URL and per-host token, and starts it.
+Run the bridge installer on each host you want to manage:
 
-The bridge connects outbound to the gateway. No SSH keys, no open ports on the managed host.
+```bash
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
+  | sudo bash -s -- --gateway https://<panel-host>:9090
+```
 
-The host appears online in the selector as soon as the bridge connects.
-Select it to start managing it.
+The bridge connects outbound to the gateway and registers itself by hostname — no UI
+pre-registration, no tokens, no SSH keys, no open ports on the managed host.
+
+The host appears in the panel UI as soon as the bridge connects. Open the host selector
+(top-left) and click **Manage hosts…** to see all connected hosts. Select a host to
+start managing it.
 
 ```bash
 # Service management (gateway host)
@@ -236,7 +239,7 @@ orchestration.
      v
 [ Gateway ]   Axum HTTP/WS server, PAM auth, session management
      ^
-     |--- reverse WS (outbound from bridge, auth via per-host Bearer token)
+     |--- reverse WS (outbound from bridge, identified by hostname)
      |
 [ Bridge ]    lightweight agent, runs as a systemd service on each managed host
      |
@@ -246,8 +249,8 @@ orchestration.
 - **Gateway** authenticates users via PAM, manages sessions, serves the
   React UI, and multiplexes user sessions over persistent bridge WebSockets.
 - **Bridge** is a long-running agent that connects outbound to the gateway,
-  authenticates with its per-host token, and handles system operations via
-  channel-multiplexed JSON.
+  sends its hostname in the `Hello` handshake, and handles system operations via
+  channel-multiplexed JSON. The gateway auto-registers unknown hosts on first connect.
 - **Protocol** is a shared Rust crate defining the message types used by
   both gateway and bridge.
 

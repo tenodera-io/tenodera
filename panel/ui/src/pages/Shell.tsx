@@ -25,7 +25,6 @@ const Packages    = lazy(() => import('./Packages.tsx').then(m => ({ default: m.
 const Kdump       = lazy(() => import('./Kdump.tsx').then(m => ({ default: m.Kdump })));
 const LogFiles    = lazy(() => import('./LogFiles.tsx').then(m => ({ default: m.LogFiles })));
 const Users       = lazy(() => import('./Users.tsx').then(m => ({ default: m.Users })));
-const BulkHosts   = lazy(() => import('./BulkHosts.tsx').then(m => ({ default: m.BulkHosts })));
 
 interface ShellProps {
   sessionId: string;
@@ -117,7 +116,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
             activeHost={activeHost}
             hostStatuses={hostStatuses}
             connState={connState}
-            suActive={su.suActive}
+
             onSwitchHost={switchHost}
             onOpenManageHosts={() => setHostManageOpen(true)}
           />
@@ -149,7 +148,6 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/files" element={<Files user={user} />} />
                       <Route path="/kdump" element={<Kdump />} />
                       <Route path="/log-files" element={<LogFiles />} />
-                      <Route path="/manage-hosts" element={<BulkHosts />} />
                     </Routes>
                   </Suspense>
                 </ErrorBoundary>
