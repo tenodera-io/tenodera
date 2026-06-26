@@ -72,9 +72,17 @@ pub async fn find_or_register_by_hostname(hostname: &str, is_local: bool) -> Hos
     });
 
     if let Some(i) = pos {
-        // Backfill hostname if missing (migration from token-based entries)
+        let mut changed = false;
         if config.hosts[i].hostname.is_empty() {
             config.hosts[i].hostname = hostname.to_string();
+            changed = true;
+        }
+        // Update is_local if it changed (e.g. bridge.env switched to localhost URL)
+        if config.hosts[i].is_local != is_local {
+            config.hosts[i].is_local = is_local;
+            changed = true;
+        }
+        if changed {
             let _ = save(&config).await;
         }
         return config.hosts[i].clone();
