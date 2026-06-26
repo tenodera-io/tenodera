@@ -32,6 +32,7 @@ Each bridge connects outbound to the gateway over a persistent WebSocket.
 | **Files** | Remote file browser with sudo fallback |
 | **Logs** | journald viewer with unit/priority filters and timestamps |
 | **Log Files** | Browse `/var/log` with keyword search, context lines, date/time range |
+| **Cron Jobs** | List all crontab sources (/etc/crontab, cron.d, user crontabs), view entries, edit raw crontab content |
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
 | **Multi-host** | Manage multiple servers from one panel via reverse-WebSocket bridge |
 | **Access control** | Role-based: Admin (sudo/wheel users) get full access; non-sudo users get read-only access |
@@ -243,7 +244,7 @@ orchestration.
      |
 [ Bridge ]    lightweight agent, runs as a systemd service on each managed host
      |
-     |--- 21 handler modules (system, services, packages, users, terminal, ...)
+     |--- 24 handler modules (system, services, packages, users, terminal, ...)
 ```
 
 - **Gateway** authenticates users via PAM, manages sessions, serves the
@@ -271,7 +272,7 @@ panel/                   Central server (gateway + UI)
   Makefile               Build & install
 
 bridge/                  Standalone bridge binary (deployed to managed hosts)
-  src/handlers/          21 handler modules
+  src/handlers/          24 handler modules
   Makefile               Build & install
 
 protocol/                Shared message types (Rust library crate)
