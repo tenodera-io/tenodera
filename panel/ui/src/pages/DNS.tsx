@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 
@@ -318,12 +318,25 @@ function HostsTab({ info, su, request, onReload }: {
 
 // ── Lookup tab ─────────────────────────────────────────────────────────────────
 
+const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
 function LookupTab({ request }: { request: ReturnType<typeof useTransport>['request'] }) {
   const [name, setName] = useState('');
   const [qtype, setQtype] = useState('A');
   const [output, setOutput] = useState('');
   const [looking, setLooking] = useState(false);
   const [ok, setOk] = useState(true);
+  const [frame, setFrame] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (looking) {
+      timerRef.current = setInterval(() => setFrame((f) => (f + 1) % SPINNER.length), 80);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [looking]);
 
   const doLookup = async () => {
     if (!name.trim()) return;
@@ -359,9 +372,16 @@ function LookupTab({ request }: { request: ReturnType<typeof useTransport>['requ
             {QTYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
           <button style={S.lookupBtn} onClick={doLookup} disabled={looking || !name.trim()}>
-            {looking ? '…' : 'Lookup'}
+            Lookup
           </button>
         </div>
+
+        {looking && (
+          <div style={S.spinnerRow}>
+            <span style={S.spinnerChar}>{SPINNER[frame]}</span>
+            <span style={S.muted}>Querying {name} {qtype}…</span>
+          </div>
+        )}
 
         {output && (
           <pre style={{ ...S.pre, marginTop: '1rem', color: ok ? 'var(--text-primary)' : '#f7768e' }}>
@@ -597,5 +617,16 @@ const S: Record<string, React.CSSProperties> = {
   muted: {
     color: 'var(--text-secondary)',
     fontSize: '0.85rem',
+  },
+  spinnerRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    marginTop: '0.75rem',
+  },
+  spinnerChar: {
+    fontFamily: 'monospace',
+    fontSize: '1rem',
+    color: '#7aa2f7',
   },
 };
