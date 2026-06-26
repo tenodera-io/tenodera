@@ -71,7 +71,7 @@ impl ChannelHandler for DnsLookupHandler {
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
         let data = Value::Object(options.extra.clone());
         let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("").trim();
-        let qtype = data.get("type").and_then(|v| v.as_str()).unwrap_or("A").trim();
+        let qtype = data.get("qtype").and_then(|v| v.as_str()).unwrap_or("A").trim();
 
         let result = if name.is_empty() {
             json!({ "ok": false, "output": "No hostname specified" })

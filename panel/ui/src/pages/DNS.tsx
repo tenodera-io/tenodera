@@ -343,7 +343,7 @@ function LookupTab({ request }: { request: ReturnType<typeof useTransport>['requ
     setLooking(true);
     setOutput('');
     try {
-      const [r] = await request('dns.lookup', { name: name.trim(), type: qtype });
+      const [r] = await request('dns.lookup', { name: name.trim(), qtype });
       const res = r as { ok?: boolean; output?: string };
       setOk(res?.ok !== false);
       setOutput(res?.output ?? '(no response)');
