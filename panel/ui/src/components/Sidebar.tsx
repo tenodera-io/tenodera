@@ -23,6 +23,7 @@ const NAV_SECTIONS = [
       { path: '/packages', label: 'Packages', icon: '📦' },
       { path: '/users', label: 'Users', icon: '👤' },
       { path: '/cron', label: 'Cron Jobs', icon: '⏰' },
+      { path: '/dns', label: 'DNS', icon: '🌍' },
     ],
   },
   {
