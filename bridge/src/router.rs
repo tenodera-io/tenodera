@@ -77,6 +77,8 @@ impl Router {
         self.register(Arc::new(dns::DnsInfoHandler));
         self.register(Arc::new(dns::DnsManageHandler));
         self.register(Arc::new(dns::DnsLookupHandler));
+        self.register(Arc::new(dns::DnsResolvedInfoHandler));
+        self.register(Arc::new(dns::DnsResolvedManageHandler));
     }
 
     /// Route a single message. Returns immediate responses and may spawn

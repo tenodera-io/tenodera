@@ -12,7 +12,7 @@ interface DnsInfo {
   resolved_active: boolean;
 }
 
-type DnsTab = 'resolver' | 'hosts' | 'lookup';
+type DnsTab = 'resolver' | 'hosts' | 'lookup' | 'resolved';
 
 const QTYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'CNAME', 'PTR', 'SOA', 'SRV'];
 
@@ -44,13 +44,13 @@ export function DNS() {
       <h2>DNS</h2>
 
       <div style={S.tabBar}>
-        {(['resolver', 'hosts', 'lookup'] as DnsTab[]).map((t) => (
+        {(['resolver', 'hosts', 'lookup', 'resolved'] as DnsTab[]).map((t) => (
           <button
             key={t}
             style={activeTab === t ? S.tabActive : S.tab}
             onClick={() => setActiveTab(t)}
           >
-            {t === 'resolver' ? 'Resolver' : t === 'hosts' ? '/etc/hosts' : 'Lookup'}
+            {t === 'resolver' ? 'Resolver' : t === 'hosts' ? '/etc/hosts' : t === 'lookup' ? 'Lookup' : 'systemd-resolved'}
           </button>
         ))}
       </div>
@@ -61,8 +61,10 @@ export function DNS() {
         <ResolverTab info={info} su={su} request={request} onReload={reload} />
       ) : activeTab === 'hosts' ? (
         <HostsTab info={info} su={su} request={request} onReload={reload} />
-      ) : (
+      ) : activeTab === 'lookup' ? (
         <LookupTab request={request} />
+      ) : (
+        <ResolvedTab su={su} request={request} />
       )}
     </div>
   );
@@ -393,6 +395,303 @@ function LookupTab({ request }: { request: ReturnType<typeof useTransport>['requ
   );
 }
 
+// ── systemd-resolved tab ───────────────────────────────────────────────────────
+
+interface ResolvedConf {
+  has_user_conf: boolean;
+  dns: string; fallback_dns: string; domains: string;
+  dnssec: string; dns_over_tls: string; cache: string;
+  llmnr: string; mdns: string;
+}
+
+interface ResolvedInfo {
+  active: boolean;
+  has_resolvectl: boolean;
+  mode: string;
+  current_dns: string;
+  dns_servers: string[];
+  fallback_dns: string[];
+  dns_domain: string;
+  dnssec: string;
+  dns_over_tls: string;
+  llmnr: string;
+  mdns: string;
+  links: { name: string; current_dns: string; dns_servers: string[]; dns_domain: string }[];
+  stat_transactions: number;
+  stat_hits: number;
+  stat_misses: number;
+  conf: ResolvedConf;
+}
+
+const DNSSEC_OPTS   = ['', 'yes', 'no', 'allow-downgrade'];
+const DOT_OPTS      = ['', 'yes', 'no', 'opportunistic'];
+const CACHE_OPTS    = ['', 'yes', 'no', 'no-negative'];
+const TOGGLE_OPTS   = ['', 'yes', 'no', 'resolve'];
+
+function ResolvedTab({ su, request }: {
+  su: ReturnType<typeof useSuperuser>;
+  request: ReturnType<typeof useTransport>['request'];
+}) {
+  const [info, setInfo] = useState<ResolvedInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [conf, setConf] = useState<ResolvedConf | null>(null);
+  const [msg, setMsg] = useState('');
+  const [pwPrompt, setPwPrompt] = useState<string | null>(null);
+  const [pw, setPw] = useState('');
+
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 5000); };
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [data] = await request('dns.resolved.info', {});
+      const d = data as ResolvedInfo;
+      setInfo(d);
+      setConf({ ...d.conf });
+    } catch { /* ignore */ }
+    finally { setLoading(false); }
+  }, [request]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const execAction = async (action: string, password: string, extra?: Record<string, unknown>) => {
+    try {
+      const [r] = await request('dns.resolved.manage', { action, password, ...extra });
+      const res = r as { ok?: boolean; error?: string };
+      if (res?.ok) { flash('✓ Done'); reload(); }
+      else flash(res?.error ?? 'Failed');
+    } catch (e) { flash(String(e)); }
+  };
+
+  const handleAction = (action: string, extra?: Record<string, unknown>) => {
+    if (su.active) { execAction(action, su.password, extra); return; }
+    setPwPrompt(action); setPw('');
+  };
+
+  const handleSaveConf = () => {
+    if (!conf) return;
+    handleAction('set_config', {
+      dns: conf.dns, fallback_dns: conf.fallback_dns, domains: conf.domains,
+      dnssec: conf.dnssec, dns_over_tls: conf.dns_over_tls,
+      cache: conf.cache, llmnr: conf.llmnr, mdns: conf.mdns,
+    });
+  };
+
+  const confirmPw = () => {
+    if (!pw || !pwPrompt) return;
+    const action = pwPrompt;
+    setPwPrompt(null); setPw('');
+    if (action === 'set_config' && conf) {
+      execAction(action, pw, {
+        dns: conf.dns, fallback_dns: conf.fallback_dns, domains: conf.domains,
+        dnssec: conf.dnssec, dns_over_tls: conf.dns_over_tls,
+        cache: conf.cache, llmnr: conf.llmnr, mdns: conf.mdns,
+      });
+    } else {
+      execAction(action, pw);
+    }
+  };
+
+  if (loading && !info) return <p style={S.muted}>Loading…</p>;
+  if (!info) return <p style={S.muted}>No data.</p>;
+
+  const hitRate = info.stat_hits + info.stat_misses > 0
+    ? Math.round(info.stat_hits / (info.stat_hits + info.stat_misses) * 100)
+    : null;
+
+  return (
+    <div style={S.section}>
+      {/* Service status */}
+      <div style={S.card}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+          <span style={S.cardTitle}>systemd-resolved</span>
+          <span style={{ ...S.badge, color: info.active ? '#9ece6a' : '#565f89', background: (info.active ? '#9ece6a' : '#565f89') + '22' }}>
+            {info.active ? 'active' : 'inactive'}
+          </span>
+          {info.active && (
+            <>
+              <span style={{ ...S.badge, background: '#7aa2f722', color: '#7aa2f7' }}>
+                {info.mode ? `resolv.conf: ${info.mode}` : ''}
+              </span>
+              <button style={S.actionBtn} onClick={() => handleAction('flush_caches')}>↺ Flush cache</button>
+              <button style={{ ...S.actionBtn, color: '#f7768e' }} onClick={() => handleAction('stop')}>Stop</button>
+            </>
+          )}
+          {!info.active && (
+            <button style={{ ...S.actionBtn, color: '#9ece6a' }} onClick={() => handleAction('start')}>Start</button>
+          )}
+          {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{msg}</span>}
+        </div>
+
+        {/* Runtime status badges */}
+        {info.active && (info.dnssec || info.dns_over_tls || info.llmnr || info.mdns) && (
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+            {info.dnssec && <ProtoBadge label="DNSSEC" value={info.dnssec} />}
+            {info.dns_over_tls && <ProtoBadge label="DoT" value={info.dns_over_tls} />}
+            {info.llmnr && <ProtoBadge label="LLMNR" value={info.llmnr} />}
+            {info.mdns && <ProtoBadge label="mDNS" value={info.mdns} />}
+          </div>
+        )}
+
+        {/* Global DNS servers */}
+        {info.active && info.dns_servers.length > 0 && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <span style={S.statusLabel}>DNS servers: </span>
+            {info.dns_servers.map(s => <span key={s} style={S.serverChip}>{s}</span>)}
+            {info.fallback_dns.length > 0 && (
+              <> <span style={S.statusLabel}> fallback: </span>
+                {info.fallback_dns.map(s => <span key={s} style={S.domainChip}>{s}</span>)}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Per-link table */}
+      {info.active && info.links.length > 0 && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Network interfaces</div>
+          <table style={{ ...S.table, marginTop: '0.25rem' }}>
+            <thead>
+              <tr>
+                <th style={S.th}>Interface</th>
+                <th style={S.th}>Current DNS</th>
+                <th style={S.th}>DNS Servers</th>
+                <th style={S.th}>Domain</th>
+              </tr>
+            </thead>
+            <tbody>
+              {info.links.map(l => (
+                <tr key={l.name}>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontWeight: 600 }}>{l.name}</td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.8rem' }}>{l.current_dns || '—'}</td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.8rem' }}>{l.dns_servers.join(' ') || '—'}</td>
+                  <td style={{ ...S.td, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{l.dns_domain || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Configuration editor */}
+      {conf && (
+        <div style={S.card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={S.cardTitle}>/etc/systemd/resolved.conf</div>
+            {!info.conf.has_user_conf && (
+              <span style={{ fontSize: '0.75rem', color: '#e0af68' }}>using system defaults — saving creates /etc/systemd/resolved.conf</span>
+            )}
+          </div>
+
+          <div style={S.confGrid}>
+            <ConfField label="DNS servers" hint="space-separated IPs">
+              <input style={S.confInput} value={conf.dns} onChange={e => setConf(c => c && ({ ...c, dns: e.target.value }))} placeholder="1.1.1.1 8.8.8.8" spellCheck={false} />
+            </ConfField>
+            <ConfField label="Fallback DNS" hint="space-separated IPs">
+              <input style={S.confInput} value={conf.fallback_dns} onChange={e => setConf(c => c && ({ ...c, fallback_dns: e.target.value }))} placeholder="8.8.8.8 8.8.4.4" spellCheck={false} />
+            </ConfField>
+            <ConfField label="Domains" hint="search/routing domains">
+              <input style={S.confInput} value={conf.domains} onChange={e => setConf(c => c && ({ ...c, domains: e.target.value }))} placeholder="~. example.com" spellCheck={false} />
+            </ConfField>
+            <ConfField label="DNSSEC" hint="yes / no / allow-downgrade">
+              <select style={S.confSelect} value={conf.dnssec} onChange={e => setConf(c => c && ({ ...c, dnssec: e.target.value }))}>
+                {DNSSEC_OPTS.map(o => <option key={o} value={o}>{o || '(default)'}</option>)}
+              </select>
+            </ConfField>
+            <ConfField label="DNS over TLS" hint="yes / no / opportunistic">
+              <select style={S.confSelect} value={conf.dns_over_tls} onChange={e => setConf(c => c && ({ ...c, dns_over_tls: e.target.value }))}>
+                {DOT_OPTS.map(o => <option key={o} value={o}>{o || '(default)'}</option>)}
+              </select>
+            </ConfField>
+            <ConfField label="Cache" hint="yes / no / no-negative">
+              <select style={S.confSelect} value={conf.cache} onChange={e => setConf(c => c && ({ ...c, cache: e.target.value }))}>
+                {CACHE_OPTS.map(o => <option key={o} value={o}>{o || '(default)'}</option>)}
+              </select>
+            </ConfField>
+            <ConfField label="LLMNR" hint="yes / no / resolve">
+              <select style={S.confSelect} value={conf.llmnr} onChange={e => setConf(c => c && ({ ...c, llmnr: e.target.value }))}>
+                {TOGGLE_OPTS.map(o => <option key={o} value={o}>{o || '(default)'}</option>)}
+              </select>
+            </ConfField>
+            <ConfField label="Multicast DNS" hint="yes / no / resolve">
+              <select style={S.confSelect} value={conf.mdns} onChange={e => setConf(c => c && ({ ...c, mdns: e.target.value }))}>
+                {TOGGLE_OPTS.map(o => <option key={o} value={o}>{o || '(default)'}</option>)}
+              </select>
+            </ConfField>
+          </div>
+
+          <div style={S.btnRow}>
+            <button style={S.saveBtn} onClick={handleSaveConf}>
+              Save & Reload
+            </button>
+            <button style={S.cancelBtn} onClick={reload}>Reset</button>
+          </div>
+        </div>
+      )}
+
+      {/* Cache statistics */}
+      {info.active && (info.stat_transactions > 0 || info.stat_hits > 0) && (
+        <div style={S.card}>
+          <div style={S.cardTitle}>Cache statistics</div>
+          <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+            <StatItem label="Transactions" value={info.stat_transactions} />
+            <StatItem label="Cache hits" value={info.stat_hits} />
+            <StatItem label="Cache misses" value={info.stat_misses} />
+            {hitRate !== null && <StatItem label="Hit rate" value={`${hitRate}%`} />}
+          </div>
+        </div>
+      )}
+
+      {/* Password prompt */}
+      {pwPrompt && (
+        <div style={S.pwBar}>
+          <span style={S.muted}>Password required for <b>{pwPrompt}</b>:</span>
+          <input
+            type="password" value={pw}
+            onChange={e => setPw(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') confirmPw(); if (e.key === 'Escape') { setPwPrompt(null); setPw(''); } }}
+            autoFocus style={S.pwInput} placeholder="sudo password…"
+          />
+          <button style={S.saveBtn} onClick={confirmPw} disabled={!pw}>Confirm</button>
+          <button style={S.cancelBtn} onClick={() => { setPwPrompt(null); setPw(''); }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+        {label}
+      </label>
+      {children}
+      {hint && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{hint}</span>}
+    </div>
+  );
+}
+
+function ProtoBadge({ label, value }: { label: string; value: string }) {
+  const on = value === 'yes' || value === 'resolve' || value === 'opportunistic' || value === 'allow-downgrade';
+  const color = on ? '#9ece6a' : (value === 'no' ? '#565f89' : '#e0af68');
+  return (
+    <span style={{ ...S.badge, color, background: color + '22', fontSize: '0.75rem' }}>
+      {label}: {value}
+    </span>
+  );
+}
+
+function StatItem({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>{label}</div>
+      <div style={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: 700 }}>{value}</div>
+    </div>
+  );
+}
+
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const S: Record<string, React.CSSProperties> = {
@@ -628,5 +927,58 @@ const S: Record<string, React.CSSProperties> = {
     fontFamily: 'monospace',
     fontSize: '1rem',
     color: '#7aa2f7',
+  },
+  statusLabel: {
+    fontSize: '0.82rem',
+    color: 'var(--text-secondary)',
+    fontWeight: 500,
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+  },
+  th: {
+    textAlign: 'left',
+    fontSize: '0.75rem',
+    fontWeight: 700,
+    color: 'var(--text-secondary)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.03em',
+    padding: '0.3rem 0.6rem',
+    borderBottom: '1px solid var(--border)',
+  },
+  td: {
+    padding: '0.4rem 0.6rem',
+    borderBottom: '1px solid var(--border)',
+    fontSize: '0.88rem',
+  },
+  confGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
+    gap: '0.75rem',
+    marginBottom: '0.5rem',
+  },
+  confInput: {
+    padding: '0.35rem 0.55rem',
+    borderRadius: 4,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-primary)',
+    fontSize: '0.85rem',
+    fontFamily: 'monospace',
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  confSelect: {
+    padding: '0.35rem 0.55rem',
+    borderRadius: 4,
+    border: '1px solid var(--border)',
+    background: 'var(--bg-primary)',
+    color: 'var(--text-primary)',
+    fontSize: '0.85rem',
+    cursor: 'pointer',
+    width: '100%',
+    boxSizing: 'border-box',
   },
 };
