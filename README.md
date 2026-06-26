@@ -260,8 +260,8 @@ Each bridge maintains a persistent outbound WebSocket to the gateway and
 reconnects automatically on disconnect.
 
 The bridge announces its protocol version via a `Hello/HelloAck` handshake on connect.
-The gateway validates compatibility and rejects bridges with an incompatible
-major version. Current protocol version: **1**.
+The gateway checks compatibility and includes a warning in `HelloAck` if versions differ,
+but allows the connection to continue. Current protocol version: **1**.
 
 ## Project Structure
 
