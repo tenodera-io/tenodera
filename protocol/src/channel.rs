@@ -3,7 +3,9 @@ use std::fmt;
 use serde::{Deserialize, Serialize};
 
 /// Maximum length of a channel identifier (bytes).
-const MAX_CHANNEL_ID_LEN: usize = 64;
+/// Extended to 128 to accommodate gateway-side session prefixes
+/// (8 hex chars + separator) prepended to remote bridge channel IDs.
+const MAX_CHANNEL_ID_LEN: usize = 128;
 
 /// Unique channel identifier within a session.
 ///

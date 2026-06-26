@@ -14,29 +14,19 @@ use tenodera_protocol::message;
 
 use crate::AppState;
 use crate::audit;
+use crate::bridge_registry::session_prefix;
 use crate::bridge_transport::BridgeProcess;
-use crate::hosts_config;
 use crate::security_headers::origin_matches_host;
 
-/// Hard limit on simultaneously open channels per WebSocket session.
 const MAX_CHANNELS_PER_SESSION: usize = 512;
-/// Hard limit on remote bridge connections per WebSocket session.
 const MAX_REMOTE_BRIDGES: usize = 50;
-/// Timeout for the initial Auth message after WS upgrade.
 const AUTH_TIMEOUT_SECS: u64 = 10;
 
-/// GET /api/ws — upgrade to WebSocket for channel transport.
-/// Authentication happens inside the WebSocket via the first Auth message
-/// (session token), NOT via query parameters.
-/// Validates Origin header to prevent Cross-Site WebSocket Hijacking.
 pub async fn ws_upgrade(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Validate Origin header against Host to prevent CSWSH.
-    // Browsers always send Origin on WebSocket upgrades; a missing
-    // Origin indicates a non-browser client or suppressed header.
     let origin = headers.get("origin");
     let host = headers
         .get("host")
@@ -52,7 +42,6 @@ pub async fn ws_upgrade(
             }
         }
         None => {
-            // Allow missing Origin only in plaintext dev mode (non-browser tools)
             if !state.config.allow_unencrypted {
                 tracing::warn!(host = %host, "WS upgrade rejected: missing Origin header");
                 return Err(StatusCode::FORBIDDEN);
@@ -63,9 +52,6 @@ pub async fn ws_upgrade(
     Ok(ws.on_upgrade(move |socket| handle_socket(state, socket)))
 }
 
-/// Spawn a task forwarding messages from a bridge to the WebSocket sink.
-/// When the bridge sends a Close message, the channel ID is also sent to
-/// `close_notify` so the main loop can clean up its routing table.
 fn spawn_bridge_forwarder(
     label: String,
     mut from_bridge: mpsc::Receiver<message::Message>,
@@ -74,22 +60,16 @@ fn spawn_bridge_forwarder(
 ) {
     tokio::spawn(async move {
         while let Some(msg) = from_bridge.recv().await {
-            // Detect bridge-initiated Close to notify the main loop
             let close_channel = match &msg {
                 message::Message::Close { channel, .. } => Some(channel.clone()),
                 _ => None,
             };
 
-            match serde_json::to_string(&msg) {
-                Ok(json) => {
-                    tracing::trace!(bridge = %label, raw = %json, "bridge → WS client");
-                    let mut s = sink.lock().await;
-                    if s.send(Message::Text(json.into())).await.is_err() {
-                        break;
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, bridge = %label, "failed to serialize bridge msg");
+            if let Ok(json) = serde_json::to_string(&msg) {
+                tracing::trace!(bridge = %label, raw = %json, "bridge → WS client");
+                let mut s = sink.lock().await;
+                if s.send(Message::Text(json.into())).await.is_err() {
+                    break;
                 }
             }
 
@@ -105,41 +85,30 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     let (sink, mut stream) = socket.split();
     let sink = Arc::new(Mutex::new(sink));
 
-    // ── Auth phase: wait for the first message to be Auth { token } ──
+    // ── Auth phase ────────────────────────────────────────────────────────
     let (session_id, user, role) = {
         let auth_timeout = tokio::time::sleep(std::time::Duration::from_secs(AUTH_TIMEOUT_SECS));
         tokio::pin!(auth_timeout);
 
-        let auth_result = loop {
+        let credentials = loop {
             tokio::select! {
                 _ = &mut auth_timeout => {
-                    tracing::warn!("WS auth timeout — no Auth message received");
                     let err = message::Message::AuthResult {
-                        success: false,
-                        problem: Some("auth-timeout".into()),
-                        user: None,
+                        success: false, problem: Some("auth-timeout".into()), user: None,
                     };
                     let mut s = sink.lock().await;
                     let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
                     return;
                 }
                 maybe_msg = stream.next() => {
-                    let Some(Ok(msg)) = maybe_msg else {
-                        return; // connection closed before auth
-                    };
+                    let Some(Ok(msg)) = maybe_msg else { return };
                     match msg {
                         Message::Text(text) => {
                             match serde_json::from_str::<message::Message>(&text) {
-                                Ok(message::Message::Auth { credentials }) => {
-                                    break credentials;
-                                }
+                                Ok(message::Message::Auth { credentials }) => break credentials,
                                 _ => {
-                                    // Non-auth message before auth — reject
-                                    tracing::warn!(raw = %text, "WS received non-auth message before authentication");
                                     let err = message::Message::AuthResult {
-                                        success: false,
-                                        problem: Some("auth-required".into()),
-                                        user: None,
+                                        success: false, problem: Some("auth-required".into()), user: None,
                                     };
                                     let mut s = sink.lock().await;
                                     let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
@@ -154,14 +123,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             }
         };
 
-        // Validate the token
-        let token = match auth_result {
+        let token = match credentials {
             message::AuthCredentials::Token { token } => token,
             _ => {
                 let err = message::Message::AuthResult {
-                    success: false,
-                    problem: Some("token-scheme-required".into()),
-                    user: None,
+                    success: false, problem: Some("token-scheme-required".into()), user: None,
                 };
                 let mut s = sink.lock().await;
                 let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
@@ -173,9 +139,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             Some(s) => s,
             None => {
                 let err = message::Message::AuthResult {
-                    success: false,
-                    problem: Some("invalid-session".into()),
-                    user: None,
+                    success: false, problem: Some("invalid-session".into()), user: None,
                 };
                 let mut s = sink.lock().await;
                 let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
@@ -183,14 +147,10 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             }
         };
 
-        // Check idle timeout
-        let elapsed = session.last_activity.elapsed().as_secs();
-        if elapsed > state.config.idle_timeout_secs {
+        if session.last_activity.elapsed().as_secs() > state.config.idle_timeout_secs {
             state.sessions.remove(&token).await;
             let err = message::Message::AuthResult {
-                success: false,
-                problem: Some("session-expired".into()),
-                user: None,
+                success: false, problem: Some("session-expired".into()), user: None,
             };
             let mut s = sink.lock().await;
             let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
@@ -201,107 +161,70 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         let user = session.user.clone();
         let role = session.role;
 
-        // Send success
-        let ok = message::Message::AuthResult {
-            success: true,
-            problem: None,
-            user: Some(user.clone()),
-        };
-        {
-            let mut s = sink.lock().await;
-            let _ = s.send(Message::Text(serde_json::to_string(&ok).unwrap().into())).await;
-        }
+        let ok = message::Message::AuthResult { success: true, problem: None, user: Some(user.clone()) };
+        { let mut s = sink.lock().await; let _ = s.send(Message::Text(serde_json::to_string(&ok).unwrap().into())).await; }
 
-        tracing::info!(user = %user, role = %role.as_str(), "WS authenticated via token");
+        tracing::info!(user = %user, role = %role.as_str(), "WS authenticated");
         (token, user, role)
     };
 
-    tracing::debug!(user = %user, "new WebSocket connection");
-
     audit::log(&user, "ws_connect", "websocket", true, "WebSocket connection established");
 
-    // Try to spawn local bridge subprocess as the authenticated session user.
-    // This ensures the bridge can call `sudo -S` for administrative operations.
-    // Requires /etc/sudoers.d/tenodera-gw (installed by `make install`).
+    // ── Spawn local bridge ────────────────────────────────────────────────
     let bridge_bin = &state.config.bridge_bin;
     let local_bridge = match BridgeProcess::spawn(bridge_bin, Some(&user)).await {
-        Ok(b) => {
-            audit::log(&user, "bridge_spawn", "local", true, "local bridge spawned");
-            b
-        }
+        Ok(b) => { audit::log(&user, "bridge_spawn", "local", true, "local bridge spawned"); b }
         Err(e) => {
             audit::log(&user, "bridge_spawn", "local", false, &format!("failed: {e}"));
-            tracing::error!(error = %e, bin = %bridge_bin, "failed to spawn bridge");
-            // Auth already succeeded — close the WebSocket with a reason
-            // instead of sending a second (contradictory) AuthResult.
+            tracing::error!(error = %e, "failed to spawn local bridge");
             let mut s = sink.lock().await;
             let _ = s.send(Message::Close(Some(axum::extract::ws::CloseFrame {
-                code: 1011, // Internal Error
-                reason: format!("bridge-spawn-failed: {e}").into(),
+                code: 1011, reason: format!("bridge-spawn-failed: {e}").into(),
             }))).await;
             return;
         }
     };
 
-    tracing::info!(bin = %bridge_bin, "local bridge spawned");
-
-    // Decompose local bridge
-    let BridgeProcess { child: local_child, to_bridge: local_sender, from_bridge: local_receiver, .. } = local_bridge;
-
-    // Keep all bridge child processes alive for the session
+    let BridgeProcess { child: local_child, to_bridge: local_sender, from_bridge: local_receiver } = local_bridge;
     let mut _children = vec![local_child];
 
-    // Keep temp known_hosts files alive for SSH connections
-    let mut _temp_files: Vec<tempfile::NamedTempFile> = Vec::new();
-
-    // Channel for bridge-initiated Close notifications → main loop cleanup
     let (close_tx, mut close_rx) = mpsc::unbounded_channel::<ChannelId>();
-
-    // Forward local bridge -> WebSocket
     spawn_bridge_forwarder("local".into(), local_receiver, sink.clone(), close_tx.clone());
 
-    // Channel -> bridge sender routing table
+    // channel_id → sender for that bridge
     let mut channel_routes: HashMap<ChannelId, mpsc::Sender<message::Message>> = HashMap::new();
-
-    // Remote bridge senders keyed by host ID
+    // host_id → proxy sender for the remote bridge session
     let mut remote_senders: HashMap<String, mpsc::Sender<message::Message>> = HashMap::new();
 
-    // Periodic session-existence check so that logout (or reaper) kills
-    // live WebSocket connections promptly instead of leaving them orphaned.
     let mut session_check = tokio::time::interval(std::time::Duration::from_secs(5));
-    // consume the first immediate tick
     session_check.tick().await;
 
-    // Main loop: route WebSocket client messages to the correct bridge
+    // Session prefix for channel ID namespacing on remote bridges
+    let s_prefix = session_prefix(&session_id);
+
     loop {
         tokio::select! {
             maybe_msg = stream.next() => {
                 let Some(Ok(msg)) = maybe_msg else { break };
                 match msg {
                     Message::Text(text) => {
-                        // Refresh session activity on every message
                         state.sessions.touch(&session_id).await;
-
                         tracing::trace!(raw = %text, "WS client → gateway");
 
                         match serde_json::from_str::<message::Message>(&text) {
                             Ok(message::Message::Ping) => {
-                                let pong = serde_json::to_string(&message::Message::Pong)
-                                    .expect("pong serialization");
+                                let pong = serde_json::to_string(&message::Message::Pong).unwrap();
                                 let mut s = sink.lock().await;
                                 let _ = s.send(Message::Text(pong.into())).await;
                             }
                             Ok(message::Message::Open { channel, options }) => {
-                                // Enforce per-session channel limit
                                 if channel_routes.len() >= MAX_CHANNELS_PER_SESSION {
-                                    tracing::warn!(user = %user, count = channel_routes.len(), "channel limit reached");
                                     let close = message::Message::Close {
                                         channel: channel.clone(),
                                         problem: Some("channel-limit-exceeded".into()),
                                     };
-                                    let json = serde_json::to_string(&close).unwrap();
                                     let mut s = sink.lock().await;
-                                    let _ = s.send(Message::Text(json.into())).await;
+                                    let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
                                     continue;
                                 }
 
@@ -310,137 +233,98 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                     .map(|s| s.to_string());
 
                                 let target_sender = if let Some(ref hid) = host_id {
-                                    // Route to remote bridge via SSH
                                     if let Some(sender) = remote_senders.get(hid) {
                                         sender.clone()
                                     } else {
-                                        // Enforce per-session remote bridge limit
                                         if remote_senders.len() >= MAX_REMOTE_BRIDGES {
-                                            tracing::warn!(user = %user, count = remote_senders.len(), "remote bridge limit reached");
                                             let close = message::Message::Close {
                                                 channel: channel.clone(),
                                                 problem: Some("remote-bridge-limit-exceeded".into()),
                                             };
-                                            let json = serde_json::to_string(&close).unwrap();
                                             let mut s = sink.lock().await;
-                                            let _ = s.send(Message::Text(json.into())).await;
+                                            let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
                                             continue;
                                         }
 
-                                        // Spawn bridge on remote host via SSH
-                                        match connect_remote(hid, &user, bridge_bin).await {
-                                            Ok(bridge) => {
-                                                audit::log(&user, "bridge_spawn", hid, true, "remote bridge spawned via SSH");
-                                                let BridgeProcess { child, to_bridge: sender, from_bridge, _temp_known_hosts } = bridge;
-                                                _children.push(child);
-                                                if let Some(tmp) = _temp_known_hosts {
-                                                    _temp_files.push(tmp);
-                                                }
+                                        match state.bridge_registry.connect_session(hid, &s_prefix).await {
+                                            Some((proxy_tx, from_rx)) => {
+                                                audit::log(&user, "bridge_connect", hid, true, "remote bridge connected via registry");
                                                 spawn_bridge_forwarder(
                                                     format!("remote:{hid}"),
-                                                    from_bridge,
+                                                    from_rx,
                                                     sink.clone(),
                                                     close_tx.clone(),
                                                 );
-                                                remote_senders.insert(hid.clone(), sender.clone());
-                                                sender
+                                                remote_senders.insert(hid.clone(), proxy_tx.clone());
+                                                proxy_tx
                                             }
-                                            Err(e) => {
-                                                audit::log(&user, "bridge_spawn", hid, false, &format!("remote SSH connect failed: {e}"));
-                                                tracing::error!(host = %hid, error = %e, "remote connect failed");
+                                            None => {
+                                                audit::log(&user, "bridge_connect", hid, false, "host offline");
+                                                tracing::warn!(host = %hid, "bridge not connected");
                                                 let close = message::Message::Close {
                                                     channel: channel.clone(),
-                                                    problem: Some(format!("connect-failed: {e}")),
+                                                    problem: Some("host-offline".into()),
                                                 };
-                                                let json = serde_json::to_string(&close).unwrap();
                                                 let mut s = sink.lock().await;
-                                                let _ = s.send(Message::Text(json.into())).await;
+                                                let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
                                                 continue;
                                             }
                                         }
                                     }
                                 } else {
-                                    // Route to local bridge
                                     local_sender.clone()
                                 };
 
-                                // Store channel -> bridge mapping
                                 let channel_key = channel.clone();
                                 channel_routes.insert(channel_key.clone(), target_sender.clone());
 
-                                // Inject authenticated user+role and strip host field before forwarding
+                                // Inject user+role, strip host field
                                 let open_msg = {
                                     let mut clean = options.clone();
                                     clean.extra.remove("host");
-                                    clean.extra.insert(
-                                        "_user".into(),
-                                        serde_json::Value::String(user.clone()),
-                                    );
-                                    clean.extra.insert(
-                                        "_role".into(),
-                                        serde_json::Value::String(role.as_str().into()),
-                                    );
+                                    clean.extra.insert("_user".into(), serde_json::Value::String(user.clone()));
+                                    clean.extra.insert("_role".into(), serde_json::Value::String(role.as_str().into()));
                                     message::Message::Open { channel, options: clean }
                                 };
 
                                 if target_sender.send(open_msg).await.is_err() {
-                                    tracing::warn!("bridge channel closed on Open");
-                                    // Dead bridge — remove the route we just added
                                     channel_routes.remove(&channel_key);
                                 }
                             }
                             Ok(parsed) => {
-                                // Data, Close, Control — route to owning bridge
                                 let ch = match &parsed {
                                     message::Message::Data { channel, .. } => Some(channel.clone()),
                                     message::Message::Close { channel, .. } => Some(channel.clone()),
                                     message::Message::Control { channel, .. } => Some(channel.clone()),
                                     _ => None,
                                 };
-
                                 let is_close = matches!(&parsed, message::Message::Close { .. });
 
                                 if let Some(ch) = ch {
                                     if let Some(sender) = channel_routes.get(&ch) {
                                         if sender.send(parsed).await.is_err() {
-                                            tracing::warn!(channel = %ch, "bridge closed");
-                                            // G8: dead sender — remove from routing
                                             channel_routes.remove(&ch);
                                         }
-                                    } else {
-                                        tracing::warn!(channel = %ch, "message for unknown channel — dropped");
                                     }
-
                                     if is_close {
                                         channel_routes.remove(&ch);
                                     }
                                 }
                             }
-                            Err(e) => {
-                                tracing::warn!(error = %e, raw = %text, "invalid message from client");
-                            }
+                            Err(e) => tracing::warn!(error = %e, raw = %text, "invalid message from client"),
                         }
                     }
-                    Message::Close(_) => {
-                        tracing::debug!("WebSocket closed by client");
-                        break;
-                    }
+                    Message::Close(_) => { tracing::debug!("WebSocket closed by client"); break; }
                     _ => {}
                 }
             }
-            // Bridge-initiated Close: clean up the channel routing entry.
-            // The forwarder already sent the Close to the WS client; we just
-            // need to remove the stale route from our table (G7).
             Some(closed_ch) = close_rx.recv() => {
                 channel_routes.remove(&closed_ch);
             }
-            // Periodically verify the session still exists — logout or
-            // the reaper may have removed it while the WS was idle.
             _ = session_check.tick() => {
                 if state.sessions.get(&session_id).await.is_none() {
                     tracing::info!(user = %user, "session invalidated — closing WebSocket");
-                    audit::log(&user, "ws_disconnect", "websocket", true, "session invalidated (logout/expired)");
-                    // Send close frame to client before dropping
+                    audit::log(&user, "ws_disconnect", "websocket", true, "session invalidated");
                     let mut s = sink.lock().await;
                     let _ = s.send(Message::Close(None)).await;
                     break;
@@ -449,40 +333,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         }
     }
 
-    // Clean up — dropping senders and children kills bridge processes
     drop(local_sender);
     drop(remote_senders);
     drop(channel_routes);
     audit::log(&user, "ws_disconnect", "websocket", true, "WebSocket connection ended");
-    tracing::debug!("WebSocket connection ended");
-}
-
-/// Spawn tenodera-bridge on a remote host via SSH.
-/// The bridge communicates through SSH stdin/stdout using the same
-/// newline-delimited JSON protocol as a local bridge — no intermediate
-/// daemon or port required on the remote host.
-async fn connect_remote(
-    host_id: &str,
-    session_user: &str,
-    bridge_bin: &str,
-) -> anyhow::Result<BridgeProcess> {
-    let host = hosts_config::find_host(host_id).await
-        .ok_or_else(|| anyhow::anyhow!("host not found: {host_id}"))?;
-
-    let ssh_user = host.effective_user(session_user);
-    tracing::info!(
-        host = %host_id,
-        address = %host.address,
-        ssh_user = %ssh_user,
-        ssh_port = host.ssh_port,
-        "spawning remote bridge via SSH"
-    );
-
-    BridgeProcess::spawn_remote(
-        ssh_user,
-        &host.address,
-        host.ssh_port,
-        bridge_bin,
-        &host.host_key,
-    ).await
 }

@@ -1,0 +1,16 @@
+[Unit]
+Description=Tenodera Bridge Agent
+Documentation=https://github.com/ultherego/Tenodera
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tenodera-bridge
+EnvironmentFile=-/etc/tenodera/bridge.env
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,8 @@
 mod audit;
 mod auth;
+mod bridge_registry;
 mod bridge_transport;
+mod bridge_ws;
 mod config;
 mod hosts_config;
 mod pam;
@@ -16,13 +18,14 @@ use std::sync::Arc;
 use axum::{
     Json, Router,
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::get,
 };
 use serde::Serialize;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+use crate::bridge_registry::BridgeRegistry;
 use crate::config::GatewayConfig;
 use crate::rate_limit::LoginRateLimiter;
 use crate::session::SessionStore;
@@ -32,6 +35,7 @@ pub struct AppState {
     pub config: GatewayConfig,
     pub sessions: SessionStore,
     pub login_limiter: LoginRateLimiter,
+    pub bridge_registry: BridgeRegistry,
     pub started_at: std::time::Instant,
 }
 
@@ -74,6 +78,7 @@ async fn main() -> anyhow::Result<()> {
         config,
         sessions,
         login_limiter,
+        bridge_registry: BridgeRegistry::new(),
         started_at: std::time::Instant::now(),
     });
 
@@ -85,6 +90,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/login", axum::routing::post(auth::login))
         .route("/api/auth/logout", axum::routing::post(auth::logout))
         .route("/api/ws", get(ws::ws_upgrade))
+        .route("/api/bridge", get(bridge_ws::bridge_ws_upgrade))
+        .route("/api/hosts", axum::routing::post(hosts_add).get(hosts_list))
+        .route("/api/hosts/{id}", axum::routing::delete(hosts_remove))
         .route("/api/health", get(health))
         .route("/api/health/ready", get(health_ready))
         // Serve built frontend from ui/dist (production)
@@ -218,4 +226,123 @@ async fn health_ready(
     };
     let code = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
     (code, Json(ReadyResponse { ready, bridge_bin: bin, error }))
+}
+
+fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("Authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|s| s.to_string())
+}
+
+// ── Hosts REST API ──────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct AddHostRequest {
+    name: String,
+}
+
+#[derive(Serialize)]
+struct AddHostResponse {
+    id: String,
+    name: String,
+    token: String,
+    install_command: String,
+}
+
+#[derive(Serialize)]
+struct HostListEntry {
+    id: String,
+    name: String,
+    added_at: String,
+    online: bool,
+}
+
+async fn hosts_list(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let config = hosts_config::load().await;
+    let online = state.bridge_registry.online_host_ids().await;
+    let hosts: Vec<HostListEntry> = config.hosts.iter().map(|h| HostListEntry {
+        id: h.id.clone(),
+        name: h.name.clone(),
+        added_at: h.added_at.clone(),
+        online: online.contains(&h.id),
+    }).collect();
+    Json(serde_json::json!({ "hosts": hosts }))
+}
+
+async fn hosts_add(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(req): Json<AddHostRequest>,
+) -> Result<Json<AddHostResponse>, StatusCode> {
+    let token = extract_bearer_token(&headers).ok_or(StatusCode::UNAUTHORIZED)?;
+    let _session = state.sessions.get(&token).await
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+
+    if req.name.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let token = uuid::Uuid::new_v4().to_string();
+    let added_at = chrono::Utc::now().to_rfc3339();
+
+    let mut config = hosts_config::load().await;
+    config.hosts.push(hosts_config::HostEntry {
+        id: id.clone(),
+        name: req.name.clone(),
+        token: token.clone(),
+        added_at,
+    });
+    hosts_config::save(&config).await.map_err(|e| {
+        tracing::error!(error = %e, "failed to save hosts.json");
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    // Build install command hint
+    let gateway_url = format!("https://{}:{}",
+        state.config.bind_addr.ip(),
+        state.config.bind_addr.port(),
+    );
+    let install_command = format!(
+        "curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash -s -- --gateway {gateway_url} --token {token}"
+    );
+
+    tracing::info!(host_id = %id, name = %req.name, "host added");
+    Ok(Json(AddHostResponse { id, name: req.name, token, install_command }))
+}
+
+async fn hosts_remove(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> StatusCode {
+    let token = match extract_bearer_token(&headers) {
+        Some(t) => t,
+        None => return StatusCode::UNAUTHORIZED,
+    };
+    if state.sessions.get(&token).await.is_none() {
+        return StatusCode::UNAUTHORIZED;
+    }
+
+    let mut config = hosts_config::load().await;
+    let before = config.hosts.len();
+    config.hosts.retain(|h| h.id != id);
+    if config.hosts.len() == before {
+        return StatusCode::NOT_FOUND;
+    }
+
+    match hosts_config::save(&config).await {
+        Ok(()) => {
+            tracing::info!(host_id = %id, "host removed");
+            StatusCode::NO_CONTENT
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "failed to save hosts.json");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
 }

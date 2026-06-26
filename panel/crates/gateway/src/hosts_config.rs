@@ -1,41 +1,22 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-/// Configuration for a remote host managed by the gateway.
-/// Connection is always via SSH — the gateway spawns tenodera-bridge
-/// on the remote host through an SSH session.
-#[derive(Debug, Clone, Deserialize)]
+/// A managed host entry.
+/// The gateway no longer uses SSH to connect — the bridge connects to the gateway.
+/// Each host has a unique token that its bridge presents on connection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostEntry {
     pub id: String,
-    pub address: String,
-    /// SSH user override. Empty or missing -> use the logged-in session user.
+    pub name: String,
+    /// Secret token — the bridge must present this to authenticate.
+    pub token: String,
+    /// ISO-8601 timestamp when the host was added.
     #[serde(default)]
-    pub user: String,
-    #[serde(default = "default_ssh_port")]
-    pub ssh_port: u16,
-    /// Full SSH host key line for strict host key verification.
-    /// Written by the bridge during host enrollment (ssh-keyscan).
-    #[serde(default)]
-    pub host_key: String,
+    pub added_at: String,
 }
 
-impl HostEntry {
-    /// Effective SSH user: host-level override if set, otherwise the session user.
-    pub fn effective_user<'a>(&'a self, session_user: &'a str) -> &'a str {
-        if self.user.is_empty() {
-            session_user
-        } else {
-            &self.user
-        }
-    }
-}
-
-fn default_ssh_port() -> u16 {
-    22
-}
-
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct HostsConfig {
     pub hosts: Vec<HostEntry>,
 }
@@ -44,22 +25,24 @@ fn config_path() -> PathBuf {
     PathBuf::from("/etc/tenodera/hosts.json")
 }
 
-pub async fn find_host(host_id: &str) -> Option<HostEntry> {
+pub async fn load() -> HostsConfig {
     let path = config_path();
-    let content = match tokio::fs::read_to_string(&path).await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(path = %path.display(), error = %e, "failed to read hosts config");
-            return None;
-        }
-    };
-    let config: HostsConfig = match serde_json::from_str(&content) {
-        Ok(c) => c,
-        Err(e) => {
-            tracing::warn!(path = %path.display(), error = %e, "failed to parse hosts config");
-            return None;
-        }
-    };
+    match tokio::fs::read_to_string(&path).await {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => HostsConfig::default(),
+    }
+}
 
-    config.hosts.into_iter().find(|h| h.id == host_id)
+pub async fn save(config: &HostsConfig) -> anyhow::Result<()> {
+    let json = serde_json::to_string_pretty(config)?;
+    tokio::fs::write(config_path(), json.as_bytes()).await?;
+    Ok(())
+}
+
+pub async fn find_host(host_id: &str) -> Option<HostEntry> {
+    load().await.hosts.into_iter().find(|h| h.id == host_id)
+}
+
+pub async fn find_host_by_token(token: &str) -> Option<HostEntry> {
+    load().await.hosts.into_iter().find(|h| h.token == token)
 }
