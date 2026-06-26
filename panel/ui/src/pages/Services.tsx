@@ -197,13 +197,13 @@ export function Services() {
       {/* Tab bar */}
       <div style={styles.tabBar}>
         <button
-          style={activeTab === 'services' ? styles.tabActive : styles.tab}
+          style={activeTab === 'services' ? { ...styles.tab, ...styles.tabActive } : styles.tab}
           onClick={() => setActiveTab('services')}
         >
           Services
         </button>
         <button
-          style={activeTab === 'timers' ? styles.tabActive : styles.tab}
+          style={activeTab === 'timers' ? { ...styles.tab, ...styles.tabActive } : styles.tab}
           onClick={() => setActiveTab('timers')}
         >
           Timers
@@ -635,30 +635,21 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '1rem',
   },
   tab: {
-    padding: '0.4rem 1.1rem',
-    border: '1px solid transparent',
-    borderBottom: 'none',
-    borderRadius: '6px 6px 0 0',
     background: 'transparent',
+    border: 'none',
     color: 'var(--text-secondary)',
+    padding: '0.5rem 1rem',
     cursor: 'pointer',
     fontSize: '0.9rem',
-    fontWeight: 500,
-    position: 'relative',
-    bottom: -1,
+    borderBottom: '2px solid transparent',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.4rem',
+    transition: 'color 0.15s',
   },
   tabActive: {
-    padding: '0.4rem 1.1rem',
-    border: '1px solid var(--border)',
-    borderBottom: '1px solid var(--bg-primary)',
-    borderRadius: '6px 6px 0 0',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
-    cursor: 'pointer',
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    position: 'relative',
-    bottom: -1,
+    color: 'var(--accent)',
+    borderBottom: '2px solid var(--accent)',
   },
   timerToolbar: {
     display: 'flex',
