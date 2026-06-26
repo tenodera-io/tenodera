@@ -3,14 +3,11 @@ import type { HostEntry, HostStatus } from '../hooks/useHosts.ts';
 import type { ConnectionState } from '../api/transport.ts';
 
 interface Props {
-  hostname: string;
   hosts: HostEntry[];
   activeHost: HostEntry | null;
   hostStatuses: Record<string, HostStatus>;
   connState: ConnectionState;
-  connected: boolean;
   suActive: boolean;
-  user: string;
   onSwitchHost: (host: HostEntry | null) => void;
   onOpenManageHosts: () => void;
 }
@@ -41,7 +38,7 @@ const NAV_SECTIONS = [
 ];
 
 export function Sidebar({
-  hostname, hosts, activeHost, hostStatuses, connState, connected,
+  hosts, activeHost, hostStatuses, connState,
   suActive, onSwitchHost, onOpenManageHosts,
 }: Props) {
   const navigate = useNavigate();
@@ -60,7 +57,7 @@ export function Sidebar({
   const connColor = connState === 'connected' ? '#9ece6a' : connState === 'reconnecting' ? '#e0af68' : '#f7768e';
   const connLabel = connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected';
 
-  const visibleHosts = hosts.filter((h) => h.online || activeHost?.id === h.id);
+  const visibleHosts = hosts;
 
   return (
     <nav style={S.sidebar}>
@@ -77,20 +74,12 @@ export function Sidebar({
           onClick={() => setHostSelectorOpen(!hostSelectorOpen)}
         >
           <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {activeHost ? `🌐 ${activeHost.name}` : `🖥️ ${hostname || 'Local'}`}
+            {activeHost ? (activeHost.is_local ? `🖥️ ${activeHost.name}` : `🌐 ${activeHost.name}`) : '🖥️ Select host…'}
           </span>
           <span style={{ fontSize: '0.65rem', opacity: 0.6 }}>▼</span>
         </button>
         {hostSelectorOpen && (
           <div style={S.hostDropdown}>
-            <HostOption
-              dot={connected ? '#9ece6a' : '#f7768e'}
-              isActive={!activeHost}
-              onClick={() => { onSwitchHost(null); setHostSelectorOpen(false); }}
-              name={hostname || 'Local'}
-              addr="localhost"
-            />
-            {visibleHosts.length > 0 && <div style={S.divider} />}
             {visibleHosts.map((h) => {
               const st = hostStatuses[h.id] ?? 'unknown';
               return (
@@ -98,10 +87,10 @@ export function Sidebar({
                   key={h.id}
                   dot={st === 'ok' ? '#9ece6a' : st === 'error' ? '#f7768e' : '#565f89'}
                   isActive={activeHost?.id === h.id}
-                  activeColor="#7aa2f7"
+                  activeColor={h.is_local ? '#9ece6a' : '#7aa2f7'}
                   onClick={() => { onSwitchHost(h); setHostSelectorOpen(false); }}
-                  name={h.name}
-                  addr={h.online ? 'online' : 'offline'}
+                  name={h.is_local ? `${h.name} (local)` : h.name}
+                  addr={h.is_local ? 'this panel host' : (h.online ? 'online' : 'offline')}
                 />
               );
             })}

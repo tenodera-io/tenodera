@@ -5,6 +5,7 @@ export interface HostEntry {
   name: string;
   added_at: string;
   online: boolean;
+  is_local: boolean;
 }
 
 export type HostStatus = 'unknown' | 'ok' | 'error';
@@ -38,13 +39,13 @@ export function useHosts(_connected: boolean): UseHostsResult {
         const match = list.find((h) => h.id === pendingHostId.current);
         if (match) setActiveHost(match);
         pendingHostId.current = null;
+      } else {
+        setActiveHost((prev) => {
+          // Auto-select the local host on first load if nothing is selected
+          if (!prev) return list.find((h) => h.is_local) ?? list[0] ?? null;
+          return list.find((h) => h.id === prev.id) ?? prev;
+        });
       }
-
-      // Refresh activeHost in case its online status changed
-      setActiveHost((prev) => {
-        if (!prev) return prev;
-        return list.find((h) => h.id === prev.id) ?? prev;
-      });
     } catch { /* best-effort */ }
   }, []);
 

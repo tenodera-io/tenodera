@@ -42,7 +42,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
   const navigate = useNavigate();
 
   const { hosts, activeHost, hostStatuses, remoteStatus, loadHosts, switchHost } = useHosts(connected);
-  const su = useSuperuser();
+  const su = useSuperuser(activeHost?.id);
 
   const fetchLocalInfo = useCallback(() => {
     request('system.info').then((results) => {
@@ -113,20 +113,27 @@ export function Shell({ user, role, onLogout }: ShellProps) {
 
         <div style={S.body}>
           <Sidebar
-            hostname={hostname}
             hosts={hosts}
             activeHost={activeHost}
             hostStatuses={hostStatuses}
             connState={connState}
-            connected={connected}
             suActive={su.suActive}
-            user={user}
             onSwitchHost={switchHost}
             onOpenManageHosts={() => setHostManageOpen(true)}
           />
           <main style={S.main} className="page-fade-in">
             <HostTransportProvider value={activeHost?.id ?? null}>
-              {connected ? (
+              {connected && !activeHost ? (
+                <div style={S.offlineOverlay}>
+                  <div style={S.offlineBox}>
+                    <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🌐</div>
+                    <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Select a host to get started</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Choose a host from the sidebar. Use <b>Manage hosts…</b> to add new machines.
+                    </div>
+                  </div>
+                </div>
+              ) : connected ? (
                 <ErrorBoundary>
                   <Suspense fallback={<div style={S.lazyFallback}>Loading...</div>}>
                     <Routes>

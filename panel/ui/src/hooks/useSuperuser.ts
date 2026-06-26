@@ -15,7 +15,7 @@ export interface UseSuperuserResult {
   clearSuperuser: () => void;
 }
 
-export function useSuperuser(): UseSuperuserResult {
+export function useSuperuser(hostId?: string): UseSuperuserResult {
   const [suActive, setSuActive] = useState(false);
   const [suPassword, setSuPassword] = useState('');
   const [suPrompt, setSuPrompt] = useState(false);
@@ -50,7 +50,9 @@ export function useSuperuser(): UseSuperuserResult {
   const handleSuperuserSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!suPwInput) { setSuError('Password required'); return; }
-    request('superuser.verify', { password: suPwInput })
+    const opts: Record<string, unknown> = { password: suPwInput };
+    if (hostId) opts.host = hostId;
+    request('superuser.verify', opts)
       .then((results) => {
         const res = results[0] as { ok?: boolean; error?: string } | undefined;
         if (res?.ok) {

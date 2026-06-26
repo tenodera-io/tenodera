@@ -14,6 +14,10 @@ pub struct HostEntry {
     /// ISO-8601 timestamp when the host was added.
     #[serde(default)]
     pub added_at: String,
+    /// True for the host where the panel itself is installed.
+    /// Set by install-panel.sh; the bridge on that host connects via loopback.
+    #[serde(default)]
+    pub is_local: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]

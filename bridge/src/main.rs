@@ -162,7 +162,7 @@ async fn run_session(config: &BridgeConfig, hostname: &str) -> anyhow::Result<()
     }
 
     drop(out_tx);
-    let _ = writer_handle.await;
+    writer_handle.abort();
     tracing::info!("session ended");
     Ok(())
 }

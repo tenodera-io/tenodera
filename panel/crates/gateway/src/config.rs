@@ -14,6 +14,9 @@ pub struct GatewayConfig {
     pub tls_cert: Option<String>,
     /// TLS private key file path (PEM).
     pub tls_key: Option<String>,
+    /// Publicly reachable URL of this gateway (used in install commands).
+    /// Set TENODERA_EXTERNAL_URL in gateway.env, e.g. https://panel.example.com
+    pub external_url: Option<String>,
 }
 
 impl GatewayConfig {
@@ -131,6 +134,10 @@ impl Default for GatewayConfig {
             tls_key: std::env::var("TENODERA_TLS_KEY")
                 .ok()
                 .filter(|s| !s.is_empty()),
+            external_url: std::env::var("TENODERA_EXTERNAL_URL")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .map(|s| s.trim_end_matches('/').to_string()),
         }
     }
 }

@@ -257,6 +257,7 @@ struct HostListEntry {
     name: String,
     added_at: String,
     online: bool,
+    is_local: bool,
 }
 
 async fn hosts_list(
@@ -269,6 +270,7 @@ async fn hosts_list(
         name: h.name.clone(),
         added_at: h.added_at.clone(),
         online: online.contains(&h.id),
+        is_local: h.is_local,
     }).collect();
     Json(serde_json::json!({ "hosts": hosts }))
 }
@@ -302,13 +304,28 @@ async fn hosts_add(
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
 
-    // Build install command hint
-    let gateway_url = format!("https://{}:{}",
-        state.config.bind_addr.ip(),
-        state.config.bind_addr.port(),
-    );
+    // Derive gateway URL: explicit config > Host header > bind address fallback
+    let proto = if state.config.allow_unencrypted { "http" } else { "https" };
+    let gateway_url = state.config.external_url.clone().unwrap_or_else(|| {
+        headers.get("host")
+            .and_then(|h| h.to_str().ok())
+            .map(|h| format!("{proto}://{h}"))
+            .unwrap_or_else(|| format!("{proto}://{}:{}", state.config.bind_addr.ip(), state.config.bind_addr.port()))
+    });
+
+    // Self-contained install command: writes bridge.env, creates service if missing, starts it.
+    let svc_unit = r"[Unit]\nDescription=Tenodera Bridge Agent\nAfter=network.target\n\n\
+[Service]\nType=simple\nExecStart=/usr/local/bin/tenodera-bridge\nRestart=on-failure\n\
+RestartSec=5\nEnvironmentFile=/etc/tenodera/bridge.env\n\n[Install]\nWantedBy=multi-user.target\n";
     let install_command = format!(
-        "curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash -s -- --gateway {gateway_url} --token {token}"
+        "sudo bash -c $'mkdir -p /etc/tenodera \
+        && printf \"TENODERA_GATEWAY_URL={gateway_url}\\nTENODERA_BRIDGE_TOKEN={token}\\n\" \
+        > /etc/tenodera/bridge.env \
+        && chmod 640 /etc/tenodera/bridge.env \
+        && (systemctl cat tenodera-bridge &>/dev/null \
+            || printf \"{svc_unit}\" > /etc/systemd/system/tenodera-bridge.service) \
+        && systemctl daemon-reload \
+        && systemctl enable --now tenodera-bridge'"
     );
 
     tracing::info!(host_id = %id, name = %req.name, "host added");

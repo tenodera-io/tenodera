@@ -61,37 +61,46 @@ if [ -z "$GATEWAY_URL" ] || [ -z "$TOKEN" ]; then
   fail "Usage: sudo bash install-bridge.sh --gateway https://gw:9090 --token TOKEN"
 fi
 
-# ── Download & build ───────────────────────────────────────────────
+# ── Download & build (skipped if binary already installed) ─────────
 
-REPO="ultherego/Tenodera"
-BRANCH="main"
-WORK_DIR="/tmp/tenodera-bridge-install"
+INSTALL_BIN="${INSTALL_DIR}/tenodera-bridge"
 
-command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
-  fail "curl or wget is required"
+if [ -x "$INSTALL_BIN" ]; then
+  info "tenodera-bridge already installed at ${INSTALL_BIN} — skipping build"
+else
+  REPO="ultherego/Tenodera"
+  BRANCH="main"
+  WORK_DIR="/tmp/tenodera-bridge-install"
 
-info "Downloading bridge source..."
-rm -rf "$WORK_DIR"
-mkdir -p "$WORK_DIR"
+  command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
+    fail "curl or wget is required"
 
-TARBALL_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz"
+  info "Downloading bridge source..."
+  rm -rf "$WORK_DIR"
+  mkdir -p "$WORK_DIR"
 
-if command -v curl >/dev/null 2>&1; then
-  curl -sSfL "$TARBALL_URL" | tar xz -C "$WORK_DIR"
-elif command -v wget >/dev/null 2>&1; then
-  wget -qO- "$TARBALL_URL" | tar xz -C "$WORK_DIR"
+  TARBALL_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -sSfL "$TARBALL_URL" | tar xz -C "$WORK_DIR"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- "$TARBALL_URL" | tar xz -C "$WORK_DIR"
+  fi
+
+  EXTRACTED=$(ls -d "$WORK_DIR"/Tenodera-* 2>/dev/null | head -1)
+  [ -z "$EXTRACTED" ] && fail "Failed to extract source archive"
+
+  BRIDGE_DIR="$EXTRACTED/bridge"
+  [ ! -d "$BRIDGE_DIR" ] || [ ! -d "$EXTRACTED/protocol" ] && \
+    fail "Source directories not found"
+
+  info "Building and installing tenodera-bridge (this may take a few minutes)..."
+  cd "$BRIDGE_DIR"
+  make all 2>&1
+
+  info "Cleaning up build artifacts..."
+  rm -rf "$WORK_DIR"
 fi
-
-EXTRACTED=$(ls -d "$WORK_DIR"/Tenodera-* 2>/dev/null | head -1)
-[ -z "$EXTRACTED" ] && fail "Failed to extract source archive"
-
-BRIDGE_DIR="$EXTRACTED/bridge"
-[ ! -d "$BRIDGE_DIR" ] || [ ! -d "$EXTRACTED/protocol" ] && \
-  fail "Source directories not found"
-
-info "Building and installing tenodera-bridge (this may take a few minutes)..."
-cd "$BRIDGE_DIR"
-make all 2>&1
 
 # ── Write bridge config ────────────────────────────────────────────
 
