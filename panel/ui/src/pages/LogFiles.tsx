@@ -588,7 +588,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   fileItemActive: {
     background: 'var(--c-blue)',
-    color: '#fff',
+    color: 'var(--bg-app)',
   },
   fileName: {
     fontWeight: 500,
@@ -633,7 +633,7 @@ const S: Record<string, React.CSSProperties> = {
     border: '1px solid var(--c-blue)',
     borderBottom: 'none',
     background: 'var(--c-blue)',
-    color: '#fff',
+    color: 'var(--bg-app)',
     cursor: 'pointer',
     fontSize: '0.85rem',
     fontWeight: 600,
@@ -674,7 +674,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     border: 'none',
     background: 'var(--c-blue)',
-    color: '#fff',
+    color: 'var(--bg-app)',
     cursor: 'pointer',
     fontSize: '0.85rem',
     whiteSpace: 'nowrap' as const,
