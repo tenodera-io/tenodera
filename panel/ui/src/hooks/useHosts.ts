@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useToast } from '../contexts/ToastContext.tsx';
 
 export interface HostEntry {
   id: string;
@@ -24,6 +25,9 @@ export function useHosts(_connected: boolean): UseHostsResult {
   const [hosts, setHosts] = useState<HostEntry[]>([]);
   const [activeHost, setActiveHost] = useState<HostEntry | null>(null);
   const pendingHostId = useRef<string | null>(sessionStorage.getItem('active_host_id'));
+  const prevHostsRef = useRef<HostEntry[]>([]);
+  const isFirstLoad = useRef(true);
+  const toast = useToast();
 
   const loadHosts = useCallback(async () => {
     const sessionId = sessionStorage.getItem('session_id') ?? '';
@@ -34,6 +38,25 @@ export function useHosts(_connected: boolean): UseHostsResult {
       if (!res.ok) return;
       const data = await res.json();
       const list: HostEntry[] = data.hosts ?? [];
+
+      // Detect newly connected / reconnected hosts (skip on first load)
+      if (!isFirstLoad.current) {
+        const prev = prevHostsRef.current;
+        for (const h of list) {
+          if (!h.online) continue;
+          const prevEntry = prev.find(p => p.id === h.id);
+          if (!prevEntry) {
+            // Brand-new host registered
+            toast.success(`Host "${h.name}" connected`);
+          } else if (!prevEntry.online) {
+            // Host came back online
+            toast.info(`Host "${h.name}" is back online`);
+          }
+        }
+      }
+      isFirstLoad.current = false;
+      prevHostsRef.current = list;
+
       setHosts(list);
 
       if (pendingHostId.current) {
@@ -51,7 +74,7 @@ export function useHosts(_connected: boolean): UseHostsResult {
         });
       }
     } catch { /* best-effort */ }
-  }, []);
+  }, [toast]);
 
   const switchHost = useCallback((host: HostEntry | null) => {
     setActiveHost(host);

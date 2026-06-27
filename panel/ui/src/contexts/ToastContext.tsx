@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warn';
 
@@ -26,18 +26,47 @@ export function useToast() {
   return useContext(ToastContext);
 }
 
+const MAX_VISIBLE = 5;
+const MAX_TOTAL   = 10;
+const DISMISS_MS  = 4000;
+
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const timerMap = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: number) => {
+    clearTimeout(timerMap.current.get(id));
+    timerMap.current.delete(id);
     setToasts(prev => prev.filter(t => t.id !== id));
   }, []);
 
   const add = useCallback((type: ToastType, message: string) => {
-    const id = Date.now() + Math.random();
-    setToasts(prev => [...prev.slice(-4), { id, type, message }]);
-    setTimeout(() => dismiss(id), 4000);
-  }, [dismiss]);
+    setToasts(prev => {
+      if (prev.length >= MAX_TOTAL) return prev; // queue full — drop
+      const id = Date.now() + Math.random();
+      return [...prev, { id, type, message }];
+    });
+  }, []);
+
+  // Start dismiss timer when a toast enters the visible zone (first MAX_VISIBLE slots).
+  // Fires whenever toasts array changes — catches both new arrivals and promotions
+  // from queue after a visible slot opens.
+  useEffect(() => {
+    const visible = toasts.slice(0, MAX_VISIBLE);
+    for (const t of visible) {
+      if (!timerMap.current.has(t.id)) {
+        const timer = setTimeout(() => dismiss(t.id), DISMISS_MS);
+        timerMap.current.set(t.id, timer);
+      }
+    }
+    // Clean up timers for toasts no longer in the list (manually dismissed)
+    for (const [id, timer] of timerMap.current) {
+      if (!toasts.find(t => t.id === id)) {
+        clearTimeout(timer);
+        timerMap.current.delete(id);
+      }
+    }
+  }, [toasts, dismiss]);
 
   const api: ToastAPI = {
     success: (msg) => add('success', msg),
@@ -49,7 +78,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <ToastContainer toasts={toasts} onDismiss={dismiss} />
+      <ToastContainer toasts={toasts.slice(0, MAX_VISIBLE)} onDismiss={dismiss} />
     </ToastContext.Provider>
   );
 }
