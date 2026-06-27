@@ -18,7 +18,7 @@ export const THEMES: ThemeInfo[] = [
 export const ThemeContext = React.createContext<{
   theme: ThemeName;
   setTheme: (t: ThemeName) => void;
-}>({ theme: 'tokyo-night-moon', setTheme: () => {} });
+}>({ theme: 'catppuccin-mocha', setTheme: () => {} });
 
 export function useTheme() { return React.useContext(ThemeContext); }
 
@@ -26,7 +26,7 @@ export function ThemeProvider({ username, children }: { username: string; childr
   const storageKey = `tenodera_theme_${username}`;
   const [theme, setThemeState] = React.useState<ThemeName>(() => {
     const saved = localStorage.getItem(storageKey);
-    return (THEMES.find(t => t.name === saved)?.name) ?? 'tokyo-night-moon';
+    return (THEMES.find(t => t.name === saved)?.name) ?? 'catppuccin-mocha';
   });
 
   const setTheme = (t: ThemeName) => {

@@ -4,43 +4,8 @@
   padding: 0;
 }
 
-/* ── Tokyo Night Moon (default dark) ───────────────────── */
+/* ── Catppuccin Mocha (default dark) ────────────────────── */
 :root,
-[data-theme="tokyo-night-moon"] {
-  --bg-app:     #222436;
-  --bg-panel:   #1b1d2b;
-  --bg-surface: #2f334d;
-  --bg-input:   #3b3f5e;
-  --bg-hover:   #444874;
-  --text-1:     #c8d3f5;
-  --text-2:     #828bb8;
-  --text-3:     #636da6;
-  --border-1:   #2f334d;
-  --border-2:   #444874;
-  --c-green:    #c3e88d;
-  --c-blue:     #82aaff;
-  --c-red:      #ff757f;
-  --c-yellow:   #ffc777;
-  --c-purple:   #c099ff;
-  --c-cyan:     #86e1fc;
-  --c-orange:   #ff966c;
-  --c-teal:     #4fd6be;
-  /* aliases */
-  --bg-primary:   var(--bg-surface);
-  --bg-secondary: var(--bg-panel);
-  --bg-card:      var(--bg-surface);
-  --bg-base:      var(--bg-app);
-  --text-primary:   var(--text-1);
-  --text-secondary: var(--text-2);
-  --border: var(--border-1);
-  --accent: var(--c-blue);
-  --danger: var(--c-red);
-  --success: var(--c-green);
-  --warning: var(--c-yellow);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-}
-
-/* ── Catppuccin Mocha (dark) ────────────────────────────── */
 [data-theme="catppuccin-mocha"] {
   --bg-app:     #1e1e2e;
   --bg-panel:   #181825;
@@ -60,6 +25,41 @@
   --c-cyan:     #89dceb;
   --c-orange:   #fab387;
   --c-teal:     #94e2d5;
+  /* aliases */
+  --bg-primary:   var(--bg-surface);
+  --bg-secondary: var(--bg-panel);
+  --bg-card:      var(--bg-surface);
+  --bg-base:      var(--bg-app);
+  --text-primary:   var(--text-1);
+  --text-secondary: var(--text-2);
+  --border: var(--border-1);
+  --accent: var(--c-blue);
+  --danger: var(--c-red);
+  --success: var(--c-green);
+  --warning: var(--c-yellow);
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* ── Tokyo Night Moon (dark) ───────────────────────────── */
+[data-theme="tokyo-night-moon"] {
+  --bg-app:     #222436;
+  --bg-panel:   #1b1d2b;
+  --bg-surface: #2f334d;
+  --bg-input:   #3b3f5e;
+  --bg-hover:   #444874;
+  --text-1:     #c8d3f5;
+  --text-2:     #828bb8;
+  --text-3:     #636da6;
+  --border-1:   #2f334d;
+  --border-2:   #444874;
+  --c-green:    #c3e88d;
+  --c-blue:     #82aaff;
+  --c-red:      #ff757f;
+  --c-yellow:   #ffc777;
+  --c-purple:   #c099ff;
+  --c-cyan:     #86e1fc;
+  --c-orange:   #ff966c;
+  --c-teal:     #4fd6be;
   --bg-primary:   var(--bg-surface);
   --bg-secondary: var(--bg-panel);
   --bg-card:      var(--bg-surface);
