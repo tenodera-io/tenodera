@@ -226,7 +226,7 @@ export function Services() {
             placeholder="Filter services..."
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            style={{ ...styles.filter, borderColor: filter ? '#7aa2f7' : '#9ece6a' }}
+            style={{ ...styles.filter, borderColor: filter ? 'var(--c-blue)' : 'var(--c-green)' }}
           />
           <table style={styles.table}>
             <thead>
@@ -375,7 +375,7 @@ function TimersTab({ su }: { su: ReturnType<typeof useSuperuser> }) {
 
             return (
               <Fragment key={key}>
-                <tr style={isPending ? { background: 'var(--bg-secondary)' } : undefined}>
+                <tr style={isPending ? { background: 'var(--bg-panel)' } : undefined}>
                   <td style={styles.td}>
                     <span style={styles.timerUnit}>{t.unit}</span>
                     {t.description && <div style={styles.timerDesc}>{t.description}</div>}
@@ -392,10 +392,10 @@ function TimersTab({ su }: { su: ReturnType<typeof useSuperuser> }) {
                   <td style={styles.td}>
                     <EnabledBadge status={t.enabled} />
                   </td>
-                  <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.8rem', color: t.next === 'n/a' ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                  <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.8rem', color: t.next === 'n/a' ? 'var(--text-2)' : 'var(--text-1)' }}>
                     {t.next}
                   </td>
-                  <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.8rem', color: t.last === 'n/a' ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+                  <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.8rem', color: t.last === 'n/a' ? 'var(--text-2)' : 'var(--text-1)' }}>
                     {t.last}
                   </td>
                   <td style={styles.td}>
@@ -405,14 +405,14 @@ function TimersTab({ su }: { su: ReturnType<typeof useSuperuser> }) {
                         disabled={isActive}
                         loading={actionLoading === `start:${key}`}
                         onClick={() => requestAction('start', key)}
-                        color="#9ece6a"
+                        color="var(--c-green)"
                       />
                       <ActionBtn
                         label="Stop"
                         disabled={!isActive}
                         loading={actionLoading === `stop:${key}`}
                         onClick={() => requestAction('stop', key)}
-                        color="#f7768e"
+                        color="var(--c-red)"
                       />
                       <span style={styles.separator} />
                       <ActionBtn
@@ -420,14 +420,14 @@ function TimersTab({ su }: { su: ReturnType<typeof useSuperuser> }) {
                         disabled={isEnabled || isStatic}
                         loading={actionLoading === `enable:${key}`}
                         onClick={() => requestAction('enable', key)}
-                        color="#9ece6a"
+                        color="var(--c-green)"
                       />
                       <ActionBtn
                         label="Disable"
                         disabled={!isEnabled || isStatic}
                         loading={actionLoading === `disable:${key}`}
                         onClick={() => requestAction('disable', key)}
-                        color="#f7768e"
+                        color="var(--c-red)"
                       />
                     </div>
                   </td>
@@ -449,7 +449,7 @@ function TimersTab({ su }: { su: ReturnType<typeof useSuperuser> }) {
                           }}
                           placeholder="Enter password…"
                           autoFocus
-                          style={{ ...styles.passwordInput, borderColor: password ? '#7aa2f7' : '#9ece6a' }}
+                          style={{ ...styles.passwordInput, borderColor: password ? 'var(--c-blue)' : 'var(--c-green)' }}
                         />
                         <button
                           onClick={confirmAction}
@@ -474,7 +474,7 @@ function TimersTab({ su }: { su: ReturnType<typeof useSuperuser> }) {
         </tbody>
       </table>
       {!fetching && timers.length === 0 && (
-        <p style={{ marginTop: '1rem', color: 'var(--text-secondary)' }}>No timers found.</p>
+        <p style={{ marginTop: '1rem', color: 'var(--text-2)' }}>No timers found.</p>
       )}
     </>
   );
@@ -502,7 +502,7 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
 
   return (
     <>
-      <tr onClick={onToggle} style={{ ...styles.clickRow, background: isExpanded ? 'var(--bg-secondary)' : undefined }}>
+      <tr onClick={onToggle} style={{ ...styles.clickRow, background: isExpanded ? 'var(--bg-panel)' : undefined }}>
         <td style={styles.td}>
           <span style={styles.arrow}>{isExpanded ? '▾' : '▸'}</span>
           {unit.unit}
@@ -529,13 +529,13 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
               ) : null}
 
               <div style={styles.actionButtons}>
-                <ActionBtn label="Start"   disabled={isRunning}  loading={loading === 'start'}   onClick={() => onAction('start')}   color="#9ece6a" />
-                <ActionBtn label="Stop"    disabled={!isActive}  loading={loading === 'stop'}    onClick={() => onAction('stop')}    color="#f7768e" />
-                <ActionBtn label="Restart" disabled={!isActive}  loading={loading === 'restart'} onClick={() => onAction('restart')} color="#e0af68" />
-                <ActionBtn label="Reload"  disabled={!isActive}  loading={loading === 'reload'}  onClick={() => onAction('reload')}  color="#7aa2f7" />
+                <ActionBtn label="Start"   disabled={isRunning}  loading={loading === 'start'}   onClick={() => onAction('start')}   color="var(--c-green)" />
+                <ActionBtn label="Stop"    disabled={!isActive}  loading={loading === 'stop'}    onClick={() => onAction('stop')}    color="var(--c-red)" />
+                <ActionBtn label="Restart" disabled={!isActive}  loading={loading === 'restart'} onClick={() => onAction('restart')} color="var(--c-yellow)" />
+                <ActionBtn label="Reload"  disabled={!isActive}  loading={loading === 'reload'}  onClick={() => onAction('reload')}  color="var(--c-blue)" />
                 <span style={styles.separator} />
-                <ActionBtn label="Enable"  disabled={isEnabled || isStatic}  loading={loading === 'enable'}  onClick={() => onAction('enable')}  color="#9ece6a" />
-                <ActionBtn label="Disable" disabled={!isEnabled || isStatic} loading={loading === 'disable'} onClick={() => onAction('disable')} color="#f7768e" />
+                <ActionBtn label="Enable"  disabled={isEnabled || isStatic}  loading={loading === 'enable'}  onClick={() => onAction('enable')}  color="var(--c-green)" />
+                <ActionBtn label="Disable" disabled={!isEnabled || isStatic} loading={loading === 'disable'} onClick={() => onAction('disable')} color="var(--c-red)" />
               </div>
             </div>
 
@@ -552,7 +552,7 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
                   onClick={(e) => e.stopPropagation()}
                   placeholder="Enter password…"
                   autoFocus
-                  style={{ ...styles.passwordInput, borderColor: password ? '#7aa2f7' : '#9ece6a' }}
+                  style={{ ...styles.passwordInput, borderColor: password ? 'var(--c-blue)' : 'var(--c-green)' }}
                 />
                 <button
                   onClick={(e) => { e.stopPropagation(); onConfirm(); }}
@@ -586,8 +586,8 @@ function ActionBtn({ label, disabled, loading, onClick, color }: {
     <button
       style={{
         ...styles.actionBtn,
-        borderColor: disabled ? 'var(--border)' : color + '66',
-        color: disabled ? 'var(--text-secondary)' : color,
+        borderColor: disabled ? 'var(--border-1)' : `color-mix(in srgb, ${color} 40%, transparent)`,
+        color: disabled ? 'var(--text-2)' : color,
         opacity: disabled ? 0.4 : 1,
         cursor: disabled ? 'default' : 'pointer',
       }}
@@ -601,12 +601,12 @@ function ActionBtn({ label, disabled, loading, onClick, color }: {
 
 function StatusBadge({ status }: { status: string }) {
   const color =
-    status === 'active'   ? '#9ece6a' :
-    status === 'failed'   ? '#f7768e' :
-    status === 'inactive' ? '#565f89' : '#e0af68';
+    status === 'active'   ? 'var(--c-green)' :
+    status === 'failed'   ? 'var(--c-red)' :
+    status === 'inactive' ? 'var(--text-3)' : 'var(--c-yellow)';
 
   return (
-    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color + '22', color }}>
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color , color }}>
       {status}
     </span>
   );
@@ -614,12 +614,12 @@ function StatusBadge({ status }: { status: string }) {
 
 function EnabledBadge({ status }: { status: string }) {
   const color =
-    status === 'enabled'  ? '#9ece6a' :
-    status === 'disabled' ? '#f7768e' :
-    status === 'static'   ? '#7aa2f7' : '#565f89';
+    status === 'enabled'  ? 'var(--c-green)' :
+    status === 'disabled' ? 'var(--c-red)' :
+    status === 'static'   ? 'var(--c-blue)' : 'var(--text-3)';
 
   return (
-    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color + '22', color }}>
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color , color }}>
       {status}
     </span>
   );
@@ -637,7 +637,7 @@ const styles: Record<string, React.CSSProperties> = {
   tab: {
     background: 'transparent',
     border: 'none',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '0.5rem 1rem',
     cursor: 'pointer',
     fontSize: '0.9rem',
@@ -648,8 +648,8 @@ const styles: Record<string, React.CSSProperties> = {
     transition: 'color 0.15s',
   },
   tabActive: {
-    color: 'var(--accent)',
-    borderBottom: '2px solid var(--accent)',
+    color: 'var(--c-blue)',
+    borderBottom: '2px solid var(--c-blue)',
   },
   timerToolbar: {
     display: 'flex',
@@ -662,7 +662,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 5,
     border: '1px solid var(--border)',
     background: 'transparent',
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
@@ -672,13 +672,13 @@ const styles: Record<string, React.CSSProperties> = {
   },
   timerDesc: {
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     marginTop: '0.15rem',
   },
   subState: {
     marginLeft: '0.4rem',
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
   },
   filter: {
     margin: '1rem 0',
@@ -686,9 +686,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     maxWidth: '400px',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     fontSize: '0.9rem',
   },
   table: {
@@ -699,7 +699,7 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '0.5rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     textTransform: 'uppercase' as const,
   },
@@ -707,7 +707,7 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '0.5rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     textTransform: 'uppercase' as const,
     cursor: 'pointer',
@@ -728,12 +728,12 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'inline-block',
     width: '1.2em',
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
   },
   actionCell: {
     padding: 0,
     borderBottom: '1px solid var(--border)',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
   },
   actionBar: {
     display: 'flex',
@@ -750,7 +750,7 @@ const styles: Record<string, React.CSSProperties> = {
   },
   statusLabel: {
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 600,
   },
   actionButtons: {
@@ -774,16 +774,16 @@ const styles: Record<string, React.CSSProperties> = {
     margin: '0 0.25rem',
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
   },
   error: {
-    background: '#f7768e22',
-    border: '1px solid #f7768e44',
+    background: 'color-mix(in srgb, var(--c-red) 13%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--c-red) 27%, transparent)',
     borderRadius: 6,
     padding: '0.5rem 1rem',
     marginBottom: '1rem',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -792,7 +792,7 @@ const styles: Record<string, React.CSSProperties> = {
   errorClose: {
     background: 'none',
     border: 'none',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     cursor: 'pointer',
     fontSize: '1rem',
   },
@@ -806,24 +806,24 @@ const styles: Record<string, React.CSSProperties> = {
   },
   passwordLabel: {
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     whiteSpace: 'nowrap' as const,
   },
   passwordInput: {
     padding: '0.3rem 0.5rem',
     borderRadius: 4,
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     width: 200,
   },
   confirmBtn: {
     padding: '0.3rem 0.7rem',
     borderRadius: 4,
-    border: '1px solid #9ece6a66',
-    background: '#9ece6a22',
-    color: '#9ece6a',
+    border: '1px solid color-mix(in srgb, var(--c-green) 40%, transparent)',
+    background: 'color-mix(in srgb, var(--c-green) 13%, transparent)',
+    color: 'var(--c-green)',
     fontSize: '0.8rem',
     fontWeight: 500,
     cursor: 'pointer',
@@ -833,7 +833,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     border: '1px solid var(--border)',
     background: 'transparent',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     fontWeight: 500,
     cursor: 'pointer',

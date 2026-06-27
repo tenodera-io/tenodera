@@ -5,6 +5,7 @@ import { HostTransportProvider } from '../api/HostTransportContext.tsx';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { RoleContext } from '../contexts/RoleContext.ts';
 import { ToastProvider } from '../contexts/ToastContext.tsx';
+import { ThemeProvider } from '../contexts/ThemeContext.tsx';
 import { useHosts } from '../hooks/useHosts.ts';
 import { useSuperuser } from '../hooks/useSuperuser.ts';
 import { TopBar } from '../components/TopBar.tsx';
@@ -91,6 +92,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
   const suCtx = useMemo(() => ({ active: su.suActive, password: su.suPassword }), [su.suActive, su.suPassword]);
 
   return (
+    <ThemeProvider username={user}>
     <RoleContext.Provider value={role}>
     <SuperuserContext.Provider value={suCtx}>
     <ToastProvider>
@@ -133,7 +135,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                   <div style={S.offlineBox}>
                     <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>🌐</div>
                     <div style={{ fontWeight: 600, marginBottom: '0.35rem' }}>Select a host to get started</div>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
                       Choose a host from the sidebar. Use <b>Manage hosts…</b> to add new machines.
                     </div>
                   </div>
@@ -171,7 +173,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       {connState === 'reconnecting' ? 'Reconnecting…' : 'Connecting to server…'}
                     </div>
                     {connState === 'reconnecting' && (
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>
                         Connection lost. Retrying automatically.
                       </div>
                     )}
@@ -193,6 +195,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
     </ToastProvider>
     </SuperuserContext.Provider>
     </RoleContext.Provider>
+    </ThemeProvider>
   );
 }
 
@@ -200,11 +203,11 @@ const S: Record<string, React.CSSProperties> = {
   wrapper: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
   body: { display: 'flex', flex: 1, overflow: 'hidden' },
   main: { flex: 1, padding: '1.5rem', overflow: 'auto' },
-  lazyFallback: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)', fontSize: '0.9rem' },
+  lazyFallback: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-2)', fontSize: '0.9rem' },
   offlineOverlay: { display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, height: '100%' },
-  offlineBox: { textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' },
+  offlineBox: { textAlign: 'center', color: 'var(--text-2)', fontSize: '0.9rem' },
   modalOverlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500 },
-  modal: { background: '#1a1b26', border: '1px solid #292e42', borderRadius: 10, padding: '1.5rem', width: '100%' },
+  modal: { background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderRadius: 10, padding: '1.5rem', width: '100%' },
 };
 
 import React from 'react';

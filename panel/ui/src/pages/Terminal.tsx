@@ -24,18 +24,18 @@ export function Terminal({ user, hostname }: TerminalProps) {
       fontSize: 14,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       theme: {
-        background: '#1a1b26',
-        foreground: '#c0caf5',
-        cursor: '#c0caf5',
-        selectionBackground: '#33467c',
+        background: 'var(--bg-app)',
+        foreground: 'var(--text-1)',
+        cursor: 'var(--text-1)',
+        selectionBackground: 'color-mix(in srgb, var(--c-blue) 30%, var(--bg-app))',
         black: '#15161e',
-        red: '#f7768e',
-        green: '#9ece6a',
-        yellow: '#e0af68',
-        blue: '#7aa2f7',
-        magenta: '#bb9af7',
-        cyan: '#7dcfff',
-        white: '#a9b1d6',
+        red: 'var(--c-red)',
+        green: 'var(--c-green)',
+        yellow: 'var(--c-yellow)',
+        blue: 'var(--c-blue)',
+        magenta: 'var(--c-purple)',
+        cyan: 'var(--c-cyan)',
+        white: 'var(--text-2)',
       },
       scrollback: 10000,
       convertEol: true,
@@ -147,9 +147,9 @@ export function Terminal({ user, hostname }: TerminalProps) {
       </div>
       <div style={S.termBorder}>
         <div style={S.termTitleBar}>
-        <span style={dotStyle('#f7768e')} />
-        <span style={dotStyle('#e0af68')} />
-        <span style={dotStyle('#9ece6a')} />
+        <span style={dotStyle('var(--c-red)')} />
+        <span style={dotStyle('var(--c-yellow)')} />
+        <span style={dotStyle('var(--c-green)')} />
           <span style={S.termTitleText}>Tenodera — {user}@{hostname || 'local'}</span>
         </div>
         <div ref={containerRef} style={S.termContainer} />
@@ -174,23 +174,23 @@ const S: Record<string, React.CSSProperties> = {
   title: {
     margin: 0,
     fontSize: '1.4rem',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
   },
   hint: {
-    color: '#e0af68',
+    color: 'var(--c-yellow)',
     fontSize: '0.82rem',
     margin: '0.25rem 0 0.5rem 0',
     transition: 'color 0.3s',
   },
   hintCopied: {
-    color: '#9ece6a',
+    color: 'var(--c-green)',
   },
   termBorder: {
     flex: 1,
     minHeight: 0,
     display: 'flex',
     flexDirection: 'column',
-    border: '1px solid #414868',
+    border: '1px solid var(--bg-hover)',
     borderRadius: 10,
     overflow: 'hidden',
     boxShadow: '0 4px 24px rgba(0,0,0,0.4), 0 0 0 1px rgba(122,162,247,0.1)',
@@ -200,18 +200,18 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '6px',
     padding: '6px 12px',
-    background: '#1e1f2e',
-    borderBottom: '1px solid #2a2b3d',
+    background: 'var(--bg-panel)',
+    borderBottom: '1px solid var(--border-1)',
     flexShrink: 0,
   },
   termTitleText: {
-    color: '#565f89',
+    color: 'var(--text-3)',
     fontSize: '0.75rem',
     marginLeft: '6px',
     fontFamily: 'monospace',
   },
   termContainer: {
-    background: '#1a1b26',
+    background: 'var(--bg-app)',
     padding: '4px',
     flex: 1,
     minHeight: 0,

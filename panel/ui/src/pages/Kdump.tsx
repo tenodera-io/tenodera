@@ -98,7 +98,7 @@ export function Kdump() {
   );
 
   if (loading) return <p>Loading kdump information...</p>;
-  if (error) return <p style={{ color: 'var(--danger, #e55)' }}>Error: {error}</p>;
+  if (error) return <p style={{ color: 'var(--c-red)' }}>Error: {error}</p>;
   if (!info) return <p>No kdump data available.</p>;
 
   const { status, crashkernel, config, dumps } = info;
@@ -146,7 +146,7 @@ export function Kdump() {
       <div style={S.card}>
         <h3 style={S.cardTitle}>Crash Dumps ({dumps.length})</h3>
         {dumps.length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)', margin: '0.5rem 0' }}>
+          <p style={{ color: 'var(--text-2)', margin: '0.5rem 0' }}>
             No crash dumps found. This is good — no kernel panics recorded.
           </p>
         ) : (
@@ -164,7 +164,7 @@ export function Kdump() {
                   </span>
                   <span style={S.dumpBadges}>
                     {dump.has_vmcore && <span style={S.badge}>vmcore</span>}
-                    {dump.has_dmesg && <span style={{ ...S.badge, background: 'var(--accent)' }}>dmesg</span>}
+                    {dump.has_dmesg && <span style={{ ...S.badge, background: 'var(--c-blue)' }}>dmesg</span>}
                   </span>
                 </div>
 
@@ -223,7 +223,7 @@ function StatusRow({ label, value, ok }: { label: string; value: string; ok?: bo
       <span style={S.statusLabel}>{label}</span>
       <span style={{
         ...S.statusValue,
-        ...(ok === true ? { color: 'var(--success, #4c6)' } : ok === false ? { color: 'var(--danger, #e55)' } : {}),
+        ...(ok === true ? { color: 'var(--c-green)' } : ok === false ? { color: 'var(--c-red)' } : {}),
       }}>
         {value}
       </span>
@@ -252,7 +252,7 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.5rem 1rem',
     borderRadius: '4px',
     border: 'none',
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
     cursor: 'pointer',
   },
@@ -260,13 +260,13 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.3rem 0.7rem',
     borderRadius: '4px',
     border: 'none',
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
   card: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: '8px',
     padding: '1rem',
     marginBottom: '1rem',
@@ -285,10 +285,10 @@ const S: Record<string, React.CSSProperties> = {
     justifyContent: 'space-between',
     padding: '0.35rem 0.5rem',
     borderRadius: '4px',
-    background: 'var(--bg-primary, #1a1a2e)',
+    background: 'var(--bg-app)',
   },
   statusLabel: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.9rem',
   },
   statusValue: {
@@ -296,7 +296,7 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.9rem',
   },
   pre: {
-    background: 'var(--bg-primary, #1a1a2e)',
+    background: 'var(--bg-app)',
     padding: '0.75rem',
     borderRadius: '4px',
     overflow: 'auto',
@@ -328,7 +328,7 @@ const S: Record<string, React.CSSProperties> = {
     minWidth: '180px',
   },
   dumpMeta: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
     flex: 1,
   },
@@ -340,7 +340,7 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.15rem 0.5rem',
     borderRadius: '10px',
     fontSize: '0.75rem',
-    background: 'var(--warning, #c80)',
+    background: 'var(--c-yellow)',
     color: '#fff',
     fontWeight: 600,
   },
@@ -356,7 +356,7 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '0.3rem 0.5rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 500,
   },
   td: {

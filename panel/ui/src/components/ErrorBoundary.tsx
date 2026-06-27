@@ -32,12 +32,12 @@ export class ErrorBoundary extends Component<Props, State> {
     return (
       <div style={{
         padding: '2rem',
-        color: '#f7768e',
+        color: 'var(--c-red)',
         fontFamily: 'monospace',
         fontSize: '0.9rem',
       }}>
         <div style={{ fontWeight: 700, marginBottom: '0.5rem' }}>Something went wrong</div>
-        <div style={{ color: '#a9b1d6', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+        <div style={{ color: 'var(--text-2)', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {this.state.error?.message}
         </div>
         <button
@@ -46,9 +46,9 @@ export class ErrorBoundary extends Component<Props, State> {
             marginTop: '1rem',
             padding: '0.4rem 0.9rem',
             borderRadius: 4,
-            border: '1px solid #f7768e44',
-            background: '#f7768e22',
-            color: '#f7768e',
+            border: '1px solid color-mix(in srgb, var(--c-red) 27%, transparent)',
+            background: 'color-mix(in srgb, var(--c-red) 13%, transparent)',
+            color: 'var(--c-red)',
             cursor: 'pointer',
             fontSize: '0.82rem',
           }}

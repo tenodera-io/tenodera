@@ -102,7 +102,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
       ) : hosts.length === 0 ? (
         <div style={S.empty}>
           <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>&#128421;&#65039;</div>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+          <div style={{ color: 'var(--text-2)', fontSize: '0.9rem' }}>
             No hosts connected yet.
           </div>
         </div>
@@ -114,7 +114,7 @@ export function Hosts({ onClose, onChange }: HostsProps) {
             const showHostname = h.hostname && h.hostname !== label;
             return (
               <div key={h.id} style={S.row}>
-                <div style={{ ...S.dot, background: h.online ? '#9ece6a' : '#565f89' }}
+                <div style={{ ...S.dot, background: h.online ? 'var(--c-green)' : 'var(--text-3)' }}
                   title={h.online ? 'Online' : 'Offline'} />
 
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -142,10 +142,10 @@ export function Hosts({ onClose, onChange }: HostsProps) {
 
                   <div style={S.meta}>
                     {showHostname && <span style={S.metaChip}>{h.hostname}</span>}
-                    {h.is_local && <span style={{ ...S.metaChip, color: '#7aa2f7' }}>local</span>}
+                    {h.is_local && <span style={{ ...S.metaChip, color: 'var(--c-blue)' }}>local</span>}
                     {h.remote_ip && <span style={{ ...S.metaChip, fontFamily: 'monospace' }}>{h.remote_ip}</span>}
                     {h.online
-                      ? <span style={{ color: '#9ece6a' }}>online</span>
+                      ? <span style={{ color: 'var(--c-green)' }}>online</span>
                       : <span>last seen: {h.last_seen ? timeAgo(h.last_seen) : 'never'}</span>
                     }
                     <span style={S.metaDot}>·</span>
@@ -178,20 +178,20 @@ export function Hosts({ onClose, onChange }: HostsProps) {
 const S: Record<string, React.CSSProperties> = {
   header:    { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' },
   title:     { fontSize: '1.1rem', fontWeight: 700, margin: 0 },
-  iconBtn:   { padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.9rem' },
-  empty:     { textAlign: 'center', padding: '2rem', background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)' },
+  iconBtn:   { padding: '0.4rem 0.6rem', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.9rem' },
+  empty:     { textAlign: 'center', padding: '2rem', background: 'var(--bg-surface)', borderRadius: 8, border: '1px solid var(--border)' },
   list:      { display: 'flex', flexDirection: 'column', gap: '0.4rem' },
-  row:       { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6 },
+  row:       { display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0.75rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6 },
   dot:       { width: 8, height: 8, borderRadius: '50%', flexShrink: 0 },
   hostLabel: { fontWeight: 700, fontSize: '0.9rem' },
-  editBtn:   { background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0.2rem', opacity: 0.55, lineHeight: 1 },
-  editInput: { background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-primary)', fontSize: '0.9rem', padding: '0.2rem 0.4rem', outline: 'none', flex: 1, minWidth: 0 },
-  saveBtn:   { background: '#3d59a1', border: 'none', borderRadius: 4, color: '#fff', fontSize: '0.8rem', padding: '0.2rem 0.6rem', cursor: 'pointer' },
-  cancelBtn: { background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0.2rem' },
-  meta:      { fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' },
+  editBtn:   { background: 'transparent', border: 'none', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0.2rem', opacity: 0.55, lineHeight: 1 },
+  editInput: { background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-1)', fontSize: '0.9rem', padding: '0.2rem 0.4rem', outline: 'none', flex: 1, minWidth: 0 },
+  saveBtn:   { background: 'var(--c-blue)', border: 'none', borderRadius: 4, color: '#fff', fontSize: '0.8rem', padding: '0.2rem 0.6rem', cursor: 'pointer' },
+  cancelBtn: { background: 'transparent', border: 'none', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0.2rem' },
+  meta:      { fontSize: '0.75rem', color: 'var(--text-2)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' },
   metaChip:  { opacity: 0.7 },
   metaDot:   { opacity: 0.4 },
-  removeBtn: { background: 'transparent', border: 'none', color: '#f7768e', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', padding: '0 0.3rem', flexShrink: 0 },
-  hint:      { fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.6rem 0.75rem', marginTop: '0.75rem', lineHeight: 1.6 },
-  hintCode:  { display: 'block', marginTop: '0.4rem', fontFamily: 'monospace', fontSize: '0.72rem', color: '#9ece6a', wordBreak: 'break-all' },
+  removeBtn: { background: 'transparent', border: 'none', color: 'var(--c-red)', fontWeight: 700, fontSize: '1rem', cursor: 'pointer', padding: '0 0.3rem', flexShrink: 0 },
+  hint:      { fontSize: '0.8rem', color: 'var(--text-2)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.6rem 0.75rem', marginTop: '0.75rem', lineHeight: 1.6 },
+  hintCode:  { display: 'block', marginTop: '0.4rem', fontFamily: 'monospace', fontSize: '0.72rem', color: 'var(--c-green)', wordBreak: 'break-all' },
 };

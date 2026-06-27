@@ -66,7 +66,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ];
 
 const HISTORY_LEN = 90;
-const IFACE_COLORS = ['#7aa2f7', '#f7768e', '#9ece6a', '#e0af68', '#bb9af7', '#7dcfff', '#ff9e64', '#73daca'];
+const IFACE_COLORS = ['var(--c-blue)', 'var(--c-red)', 'var(--c-green)', 'var(--c-yellow)', 'var(--c-purple)', 'var(--c-cyan)', 'var(--c-orange)', 'var(--c-teal)'];
 
 const INTERVAL_OPTIONS = [
   { label: '1 sec',  ms: 1_000 },
@@ -92,10 +92,10 @@ function formatRate(bytesPerSec: number): string {
 
 function stateColor(state: string): string {
   switch (state.toLowerCase()) {
-    case 'up': return '#9ece6a';
-    case 'down': return '#f7768e';
-    case 'lowerlayerdown': return '#e0af68';
-    default: return '#565f89';
+    case 'up': return 'var(--c-green)';
+    case 'down': return 'var(--c-red)';
+    case 'lowerlayerdown': return 'var(--c-yellow)';
+    default: return 'var(--text-3)';
   }
 }
 
@@ -114,13 +114,13 @@ function ifaceIcon(type: string): string {
 /* ── tooltip styling ───────────────────────────────────── */
 
 const tooltipStyle: React.CSSProperties = {
-  background: '#1a1b26',
-  border: '1px solid #292e42',
+  background: 'var(--bg-app)',
+  border: '1px solid var(--bg-surface)',
   borderRadius: 6,
   fontSize: '0.8rem',
-  color: '#c0caf5',
+  color: 'var(--text-1)',
 };
-const tooltipItemStyle: React.CSSProperties = { color: '#c0caf5' };
+const tooltipItemStyle: React.CSSProperties = { color: 'var(--text-1)' };
 
 /* ── component ─────────────────────────────────────────── */
 
@@ -531,7 +531,7 @@ export function Networking() {
               value={pwInput}
               onChange={e => setPwInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') pendingAction?.(); }}
-              style={{ ...S.input, borderColor: pwInput ? '#7aa2f7' : '#9ece6a' }}
+              style={{ ...S.input, borderColor: pwInput ? 'var(--c-blue)' : 'var(--c-green)' }}
               autoFocus
               placeholder="Password"
             />
@@ -564,9 +564,9 @@ export function Networking() {
                         </linearGradient>
                       ))}
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                    <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                    <YAxis tick={{ fontSize: 10, fill: '#565f89' }}
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                    <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-3)' }}
                       tickFormatter={(v: number) => formatRate(v)} />
                     <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                       formatter={((v: unknown) => [formatRate(v as number)]) as never} />
@@ -595,9 +595,9 @@ export function Networking() {
                         </linearGradient>
                       ))}
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                    <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                    <YAxis tick={{ fontSize: 10, fill: '#565f89' }}
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                    <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--text-3)' }}
                       tickFormatter={(v: number) => formatRate(v)} />
                     <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                       formatter={((v: unknown) => [formatRate(v as number)]) as never} />
@@ -673,10 +673,10 @@ export function Networking() {
                   {vpns.map(v => (
                     <tr key={v.name} style={S.tr}>
                       <td style={S.td}>🔐 {v.name}</td>
-                      <td style={{ ...S.td, color: 'var(--text-secondary)' }}>{v.type}</td>
+                      <td style={{ ...S.td, color: 'var(--text-2)' }}>{v.type}</td>
                       <td style={S.td}>{v.device || '—'}</td>
                       <td style={S.td}>
-                        <span style={{ ...S.badge, background: v.device ? '#9ece6a' : '#565f89' }}>
+                        <span style={{ ...S.badge, background: v.device ? 'var(--c-green)' : 'var(--text-3)' }}>
                           {v.device ? 'connected' : 'disconnected'}
                         </span>
                       </td>
@@ -718,12 +718,12 @@ export function Networking() {
                 <div key={be.backend} style={{ ...S.card, marginBottom: '0.75rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
                     <h3 style={{ margin: 0, fontSize: '0.95rem' }}>
-                      {be.backend}: <span style={{ color: be.active ? '#9ece6a' : '#f7768e', fontWeight: 700 }}>
+                      {be.backend}: <span style={{ color: be.active ? 'var(--c-green)' : 'var(--c-red)', fontWeight: 700 }}>
                         {be.active ? 'Active' : 'Inactive'}
                       </span>
                     </h3>
                     {be.backend === fwStatus.primary && (
-                      <span style={{ ...S.badgeOutline, borderColor: '#bb9af7', color: '#bb9af7' }}>primary</span>
+                      <span style={{ ...S.badgeOutline, borderColor: 'var(--c-purple)', color: 'var(--c-purple)' }}>primary</span>
                     )}
                     {be.details && <span style={{ ...S.muted, fontSize: '0.8rem' }}>{be.details}</span>}
                     <button
@@ -744,7 +744,7 @@ export function Networking() {
                     {fwAvailableBackends.length > 1 && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>Backend</span>
-                        <select style={{ ...S.input, borderColor: ruleBackend ? '#7aa2f7' : '#9ece6a' }} value={ruleBackend} onChange={e => setRuleBackend(e.target.value)}>
+                        <select style={{ ...S.input, borderColor: ruleBackend ? 'var(--c-blue)' : 'var(--c-green)' }} value={ruleBackend} onChange={e => setRuleBackend(e.target.value)}>
                           {fwAvailableBackends.map(b => (
                             <option key={b} value={b}>{b}</option>
                           ))}
@@ -754,18 +754,18 @@ export function Networking() {
                     {ruleBackend === 'firewalld' && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>Service</span>
-                        <input style={{ ...S.input, borderColor: ruleService ? '#7aa2f7' : '#9ece6a' }} value={ruleService} onChange={e => setRuleService(e.target.value)}
+                        <input style={{ ...S.input, borderColor: ruleService ? 'var(--c-blue)' : 'var(--c-green)' }} value={ruleService} onChange={e => setRuleService(e.target.value)}
                           placeholder="e.g. http, ssh" />
                       </label>
                     )}
                     <label style={S.formLabel}>
                       <span style={S.formLabelText}>Port</span>
-                      <input style={{ ...S.input, width: 90, borderColor: rulePort ? '#7aa2f7' : '#9ece6a' }} value={rulePort} onChange={e => setRulePort(e.target.value)}
+                      <input style={{ ...S.input, width: 90, borderColor: rulePort ? 'var(--c-blue)' : 'var(--c-green)' }} value={rulePort} onChange={e => setRulePort(e.target.value)}
                         placeholder="e.g. 80" />
                     </label>
                     <label style={S.formLabel}>
                       <span style={S.formLabelText}>Protocol</span>
-                      <select style={{ ...S.input, borderColor: ruleProto ? '#7aa2f7' : '#9ece6a' }} value={ruleProto} onChange={e => setRuleProto(e.target.value)}>
+                      <select style={{ ...S.input, borderColor: ruleProto ? 'var(--c-blue)' : 'var(--c-green)' }} value={ruleProto} onChange={e => setRuleProto(e.target.value)}>
                         <option value="tcp">TCP</option>
                         <option value="udp">UDP</option>
                       </select>
@@ -773,7 +773,7 @@ export function Networking() {
                     {(ruleBackend === 'ufw' || ruleBackend === 'iptables' || ruleBackend === 'nftables') && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>Action</span>
-                        <select style={{ ...S.input, borderColor: ruleAction ? '#7aa2f7' : '#9ece6a' }} value={ruleAction} onChange={e => setRuleAction(e.target.value)}>
+                        <select style={{ ...S.input, borderColor: ruleAction ? 'var(--c-blue)' : 'var(--c-green)' }} value={ruleAction} onChange={e => setRuleAction(e.target.value)}>
                           <option value="allow">{ruleBackend === 'ufw' ? 'Allow' : 'Accept'}</option>
                           <option value="deny">{ruleBackend === 'ufw' ? 'Deny' : 'Drop'}</option>
                           <option value="reject">Reject</option>
@@ -783,7 +783,7 @@ export function Networking() {
                     {ruleBackend === 'ufw' && (
                       <label style={S.formLabel}>
                         <span style={S.formLabelText}>From</span>
-                        <input style={{ ...S.input, width: 120, borderColor: ruleFrom ? '#7aa2f7' : '#9ece6a' }} value={ruleFrom} onChange={e => setRuleFrom(e.target.value)}
+                        <input style={{ ...S.input, width: 120, borderColor: ruleFrom ? 'var(--c-blue)' : 'var(--c-green)' }} value={ruleFrom} onChange={e => setRuleFrom(e.target.value)}
                           placeholder="any" />
                       </label>
                     )}
@@ -808,7 +808,7 @@ export function Networking() {
                     <tbody>
                       {fwRules.map((r, i) => (
                         <tr key={i} style={S.tr}>
-                          <td style={{ ...S.td, fontFamily: 'monospace', color: '#565f89' }}>{r.number ?? i + 1}</td>
+                          <td style={{ ...S.td, fontFamily: 'monospace', color: 'var(--text-3)' }}>{r.number ?? i + 1}</td>
                           <td style={S.td}>
                             <span style={S.badgeOutline}>{r.backend || '?'}</span>
                           </td>
@@ -869,7 +869,7 @@ export function Networking() {
                       <td style={{ ...S.td, fontWeight: 600 }}>
                         {ifaceIcon(iface.iface_type)} {iface.name}
                       </td>
-                      <td style={{ ...S.td, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{iface.iface_type}</td>
+                      <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>{iface.iface_type}</td>
                       <td style={S.td}>
                         <span style={{ ...S.badge, background: stateColor(iface.state) }}>{iface.state}</span>
                       </td>
@@ -907,7 +907,7 @@ export function Networking() {
               <div style={S.formRow}>
                 <label style={S.formLabel}>
                   <span style={S.formLabelText}>Bridge name</span>
-                  <input style={{ ...S.input, borderColor: bridgeName ? '#7aa2f7' : '#9ece6a' }} value={bridgeName} onChange={e => setBridgeName(e.target.value)}
+                  <input style={{ ...S.input, borderColor: bridgeName ? 'var(--c-blue)' : 'var(--c-green)' }} value={bridgeName} onChange={e => setBridgeName(e.target.value)}
                     placeholder="e.g. br0" />
                 </label>
                 <button onClick={createBridge} style={{ ...S.btnPrimary, alignSelf: 'flex-end' }}>Create</button>
@@ -920,7 +920,7 @@ export function Networking() {
               <div style={S.formRow}>
                 <label style={S.formLabel}>
                   <span style={S.formLabelText}>Parent interface</span>
-                  <select style={{ ...S.input, borderColor: vlanParent ? '#7aa2f7' : '#9ece6a' }} value={vlanParent} onChange={e => setVlanParent(e.target.value)}>
+                  <select style={{ ...S.input, borderColor: vlanParent ? 'var(--c-blue)' : 'var(--c-green)' }} value={vlanParent} onChange={e => setVlanParent(e.target.value)}>
                     <option value="">Select…</option>
                     {interfaces.filter(i => i.iface_type === 'ethernet').map(i => (
                       <option key={i.name} value={i.name}>{i.name}</option>
@@ -929,7 +929,7 @@ export function Networking() {
                 </label>
                 <label style={S.formLabel}>
                   <span style={S.formLabelText}>VLAN ID</span>
-                  <input style={{ ...S.input, width: 80, borderColor: vlanId ? '#7aa2f7' : '#9ece6a' }} value={vlanId} onChange={e => setVlanId(e.target.value)}
+                  <input style={{ ...S.input, width: 80, borderColor: vlanId ? 'var(--c-blue)' : 'var(--c-green)' }} value={vlanId} onChange={e => setVlanId(e.target.value)}
                     placeholder="1-4094" type="number" min={1} max={4094} />
                 </label>
                 <button onClick={createVlan} style={{ ...S.btnPrimary, alignSelf: 'flex-end' }}>Create</button>
@@ -988,16 +988,16 @@ const S: Record<string, React.CSSProperties> = {
   },
   intervalLabel: {
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     marginRight: '0.25rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
   intervalSelect: {
-    background: '#292e42',
-    border: '1px solid #292e42',
-    color: '#c0caf5',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--bg-surface)',
+    color: 'var(--text-1)',
     padding: '0.25rem 0.5rem',
     borderRadius: 5,
     fontSize: '0.75rem',
@@ -1009,14 +1009,14 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '0.25rem',
     marginTop: '0.75rem',
-    borderBottom: '1px solid #292e42',
+    borderBottom: '1px solid var(--bg-surface)',
     paddingBottom: 0,
   },
   tabBtn: {
     background: 'transparent',
     border: 'none',
     borderBottom: '2px solid transparent',
-    color: '#565f89',
+    color: 'var(--text-3)',
     padding: '0.6rem 1.1rem',
     cursor: 'pointer',
     fontSize: '0.85rem',
@@ -1024,8 +1024,8 @@ const S: Record<string, React.CSSProperties> = {
     transition: 'color 0.15s, border-color 0.15s',
   },
   tabBtnActive: {
-    color: '#c0caf5',
-    borderBottomColor: '#7aa2f7',
+    color: 'var(--text-1)',
+    borderBottomColor: 'var(--c-blue)',
   },
 
   chartsRow: {
@@ -1035,18 +1035,18 @@ const S: Record<string, React.CSSProperties> = {
     marginTop: '1rem',
   },
   chartCard: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: 10,
     padding: '1rem 1.25rem',
   },
   chartTitle: {
     marginBottom: '0.75rem',
     fontSize: '0.85rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 600,
   },
   card: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: 10,
     padding: '1rem 1.25rem',
     marginTop: '1rem',
@@ -1054,13 +1054,13 @@ const S: Record<string, React.CSSProperties> = {
   cardTitle: {
     marginBottom: '0.75rem',
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.08em',
     fontWeight: 600,
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
   },
 
@@ -1070,13 +1070,13 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '0.5rem 0.75rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.75rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
-  tr: { borderBottom: '1px solid #292e42' },
+  tr: { borderBottom: '1px solid var(--bg-surface)' },
   td: {
     padding: '0.55rem 0.75rem',
     fontSize: '0.85rem',
@@ -1090,9 +1090,9 @@ const S: Record<string, React.CSSProperties> = {
     gap: '0.75rem',
   },
   ifaceCard: {
-    background: '#1a1b26',
+    background: 'var(--bg-app)',
     borderRadius: 8,
-    border: '1px solid #292e42',
+    border: '1px solid var(--bg-surface)',
     overflow: 'hidden' as const,
   },
   ifaceHeader: {
@@ -1100,7 +1100,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '0.5rem',
     padding: '0.6rem 0.85rem',
-    borderBottom: '1px solid #292e42',
+    borderBottom: '1px solid var(--bg-surface)',
   },
   ifaceName: {
     fontWeight: 700,
@@ -1110,7 +1110,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   ifaceType: {
     fontSize: '0.7rem',
-    color: '#565f89',
+    color: 'var(--text-3)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
@@ -1122,7 +1122,7 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.82rem',
   },
   ifaceLabel: {
-    color: '#565f89',
+    color: 'var(--text-3)',
     minWidth: 40,
     fontWeight: 600,
     fontSize: '0.75rem',
@@ -1139,21 +1139,21 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     fontSize: '0.7rem',
     fontWeight: 600,
-    color: '#1a1b26',
+    color: 'var(--bg-app)',
     textTransform: 'uppercase' as const,
   },
   badgeOutline: {
     padding: '0.15rem 0.5rem',
     borderRadius: 4,
     fontSize: '0.7rem',
-    border: '1px solid #292e42',
-    color: '#565f89',
+    border: '1px solid var(--bg-surface)',
+    color: 'var(--text-3)',
   },
 
   /* ── buttons ── */
   btnPrimary: {
-    background: '#7aa2f7',
-    color: '#1a1b26',
+    background: 'var(--c-blue)',
+    color: 'var(--bg-app)',
     border: 'none',
     borderRadius: 6,
     padding: '0.4rem 1rem',
@@ -1162,8 +1162,8 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   btnSecondary: {
-    background: '#292e42',
-    color: '#c0caf5',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     border: 'none',
     borderRadius: 6,
     padding: '0.4rem 1rem',
@@ -1171,8 +1171,8 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   btnDanger: {
-    background: '#f7768e',
-    color: '#1a1b26',
+    background: 'var(--c-red)',
+    color: 'var(--bg-app)',
     border: 'none',
     borderRadius: 6,
     padding: '0.35rem 0.85rem',
@@ -1181,8 +1181,8 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   btnSmallPrimary: {
-    background: '#7aa2f7',
-    color: '#1a1b26',
+    background: 'var(--c-blue)',
+    color: 'var(--bg-app)',
     border: 'none',
     borderRadius: 4,
     padding: '0.2rem 0.6rem',
@@ -1191,8 +1191,8 @@ const S: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   btnSmallDanger: {
-    background: '#f7768e',
-    color: '#1a1b26',
+    background: 'var(--c-red)',
+    color: 'var(--bg-app)',
     border: 'none',
     borderRadius: 4,
     padding: '0.2rem 0.6rem',
@@ -1215,16 +1215,16 @@ const S: Record<string, React.CSSProperties> = {
   },
   formLabelText: {
     fontSize: '0.72rem',
-    color: '#565f89',
+    color: 'var(--text-3)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
     fontWeight: 600,
   },
   input: {
-    background: '#1a1b26',
-    border: '1px solid #9ece6a',
+    background: 'var(--bg-app)',
+    border: '1px solid var(--c-green)',
     borderRadius: 6,
-    color: '#c0caf5',
+    color: 'var(--text-1)',
     padding: '0.4rem 0.65rem',
     fontSize: '0.85rem',
     outline: 'none',
@@ -1232,11 +1232,11 @@ const S: Record<string, React.CSSProperties> = {
 
   /* ── error bar ── */
   errorBar: {
-    background: '#2d1b2e',
-    border: '1px solid #f7768e',
+    background: 'color-mix(in srgb, var(--c-red) 8%, var(--bg-surface))',
+    border: '1px solid var(--c-red)',
     borderRadius: 6,
     padding: '0.5rem 1rem',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     fontSize: '0.85rem',
     marginTop: '0.75rem',
     display: 'flex',
@@ -1246,7 +1246,7 @@ const S: Record<string, React.CSSProperties> = {
   errorDismiss: {
     background: 'transparent',
     border: 'none',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     cursor: 'pointer',
     fontSize: '1rem',
     padding: '0 0.25rem',
@@ -1266,8 +1266,8 @@ const S: Record<string, React.CSSProperties> = {
     zIndex: 1000,
   },
   modal: {
-    background: '#1a1b26',
-    border: '1px solid #292e42',
+    background: 'var(--bg-app)',
+    border: '1px solid var(--bg-surface)',
     borderRadius: 10,
     padding: '1.5rem',
     minWidth: 320,
@@ -1275,7 +1275,7 @@ const S: Record<string, React.CSSProperties> = {
 
   /* ── logs ── */
   logPre: {
-    background: '#1a1b26',
+    background: 'var(--bg-app)',
     borderRadius: 6,
     padding: '0.85rem',
     fontSize: '0.78rem',
@@ -1284,8 +1284,8 @@ const S: Record<string, React.CSSProperties> = {
     overflow: 'auto' as const,
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-all' as const,
-    color: '#c0caf5',
+    color: 'var(--text-1)',
     lineHeight: 1.5,
-    border: '1px solid #292e42',
+    border: '1px solid var(--bg-surface)',
   },
 };

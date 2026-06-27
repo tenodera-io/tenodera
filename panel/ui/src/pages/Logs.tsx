@@ -50,12 +50,12 @@ export function Logs() {
           placeholder="Filter by unit (e.g. sshd)"
           value={unit}
           onChange={(e) => setUnit(e.target.value)}
-          style={{ ...styles.input, borderColor: unit ? '#7aa2f7' : '#9ece6a' }}
+          style={{ ...styles.input, borderColor: unit ? 'var(--c-blue)' : 'var(--c-green)' }}
         />
         <select
           value={lines}
           onChange={(e) => setLines(Number(e.target.value))}
-          style={{ ...styles.select, borderColor: '#7aa2f7' }}
+          style={{ ...styles.select, borderColor: 'var(--c-blue)' }}
         >
           <option value={50}>50 lines</option>
           <option value={100}>100 lines</option>
@@ -122,7 +122,7 @@ function formatTimestamp(ts?: string): string {
 
 function priorityStyle(p?: string): React.CSSProperties {
   const num = Number(p || 6);
-  const color = num <= 3 ? '#f44336' : num <= 4 ? '#ff9800' : '#888';
+  const color = num <= 3 ? 'var(--c-red)' : num <= 4 ? 'var(--c-orange)' : 'var(--text-3)';
   return {
     color,
     fontFamily: 'monospace',
@@ -142,24 +142,24 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     flex: 1,
     minWidth: '200px',
   },
   select: {
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
   },
   btn: {
     padding: '0.5rem 1rem',
     borderRadius: '4px',
     border: 'none',
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
     cursor: 'pointer',
   },
@@ -168,7 +168,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.85rem',
     maxHeight: 'calc(100vh - 250px)',
     overflow: 'auto',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: '8px',
     padding: '0.5rem',
   },
@@ -179,12 +179,12 @@ const styles: Record<string, React.CSSProperties> = {
     wordBreak: 'break-all' as const,
   },
   unit: {
-    color: 'var(--accent)',
+    color: 'var(--c-blue)',
     marginRight: '0.5rem',
     fontSize: '0.8rem',
   },
   timestamp: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     marginRight: '0.5rem',
     fontSize: '0.8rem',
     minWidth: '4.5rem',

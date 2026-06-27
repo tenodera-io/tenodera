@@ -21,7 +21,7 @@ export function SuperuserModal({ suPwInput, suError, onPwChange, onSubmit, onClo
           placeholder="Password"
           value={suPwInput}
           onChange={(e) => onPwChange(e.target.value)}
-          style={{ ...S.input, borderColor: suPwInput ? '#7aa2f7' : '#9ece6a' }}
+          style={{ ...S.input, borderColor: suPwInput ? 'var(--c-blue)' : 'var(--c-green)' }}
           autoFocus
           autoComplete="current-password"
         />
@@ -42,24 +42,24 @@ const S: Record<string, React.CSSProperties> = {
     zIndex: 500,
   },
   modal: {
-    background: '#1a1b26', border: '1px solid #292e42', borderRadius: 10,
+    background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderRadius: 10,
     padding: '1.5rem', width: '100%', maxWidth: 400,
   },
   title: { fontSize: '1rem', fontWeight: 700, marginBottom: '0.5rem' },
-  desc: { fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.5 },
-  error: { color: '#f7768e', fontSize: '0.82rem', marginBottom: '0.5rem' },
+  desc: { fontSize: '0.82rem', color: 'var(--text-2)', marginBottom: '1rem', lineHeight: 1.5 },
+  error: { color: 'var(--c-red)', fontSize: '0.82rem', marginBottom: '0.5rem' },
   input: {
     width: '100%', padding: '0.6rem', borderRadius: 4,
-    border: '1px solid #9ece6a', background: 'var(--bg-primary)',
-    color: 'var(--text-primary)', fontSize: '0.9rem', marginBottom: '1rem',
+    border: '1px solid var(--c-green)', background: 'var(--bg-input)',
+    color: 'var(--text-1)', fontSize: '0.9rem', marginBottom: '1rem',
   },
   actions: { display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' },
   cancelBtn: {
-    padding: '0.4rem 0.9rem', borderRadius: 4, border: '1px solid var(--border)',
-    background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.82rem',
+    padding: '0.4rem 0.9rem', borderRadius: 4, border: '1px solid var(--border-1)',
+    background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.82rem',
   },
   submitBtn: {
     padding: '0.4rem 0.9rem', borderRadius: 4, border: 'none',
-    background: 'var(--accent)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem',
+    background: 'var(--c-blue)', color: 'var(--bg-app)', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem',
   },
 };

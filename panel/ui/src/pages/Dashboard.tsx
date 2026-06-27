@@ -87,12 +87,12 @@ interface TopProcess {
 
 const HISTORY_LEN = 60;
 const COLORS = {
-  user:   '#7aa2f7',  // blue
-  system: '#f7768e',  // red
-  idle:   '#33394d',  // muted
-  used:   '#e0af68',  // amber
-  avail:  '#9ece6a',  // green
-  free:   '#33394d',
+  user:   'var(--c-blue)',  // blue
+  system: 'var(--c-red)',  // red
+  idle:   'var(--bg-input)',  // muted
+  used:   'var(--c-yellow)',  // amber
+  avail:  'var(--c-green)',  // green
+  free:   'var(--bg-input)',
 };
 
 const INTERVAL_OPTIONS = [
@@ -245,8 +245,8 @@ export function Dashboard() {
 
   const swapPie = swapTotal > 0
     ? [
-        { name: 'Used',  value: swapUsed, color: '#bb9af7' },
-        { name: 'Free',  value: swapFree, color: '#33394d' },
+        { name: 'Used',  value: swapUsed, color: 'var(--c-purple)' },
+        { name: 'Free',  value: swapFree, color: 'var(--bg-input)' },
       ]
     : [];
 
@@ -368,16 +368,16 @@ export function Dashboard() {
             <div style={{ fontSize: '0.8rem' }}>
               {hwInfo.temperatures.map((t, i) => (
                 <div key={i} style={styles.tempRow}>
-                  <span style={{ color: 'var(--text-secondary)', flex: 1 }}>{t.label}</span>
+                  <span style={{ color: 'var(--text-2)', flex: 1 }}>{t.label}</span>
                   <span style={{
                     fontWeight: 600,
-                    color: t.crit_c && t.temp_c > t.crit_c * 0.85 ? '#f7768e'
-                         : t.temp_c > 70 ? '#e0af68' : '#9ece6a',
+                    color: t.crit_c && t.temp_c > t.crit_c * 0.85 ? 'var(--c-red)'
+                         : t.temp_c > 70 ? 'var(--c-yellow)' : 'var(--c-green)',
                   }}>
                     {t.temp_c.toFixed(1)}°C
                   </span>
                   {t.crit_c && (
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.7rem', marginLeft: '0.5rem' }}>
+                    <span style={{ color: 'var(--text-2)', fontSize: '0.7rem', marginLeft: '0.5rem' }}>
                       / {t.crit_c.toFixed(0)}°C
                     </span>
                   )}
@@ -405,8 +405,8 @@ export function Dashboard() {
                     <span style={styles.netName}>{iface.name}</span>
                     <span style={{
                       ...styles.netBadge,
-                      background: iface.state === 'up' ? '#9ece6a22' : '#f7768e22',
-                      color: iface.state === 'up' ? '#9ece6a' : '#f7768e',
+                      background: iface.state === 'up' ? 'color-mix(in srgb, var(--c-green) 13%, transparent)' : 'color-mix(in srgb, var(--c-red) 13%, transparent)',
+                      color: iface.state === 'up' ? 'var(--c-green)' : 'var(--c-red)',
                     }}>{iface.state}</span>
                     {iface.speed_mbps && iface.speed_mbps > 0 && (
                       <span style={styles.netSpeed}>{iface.speed_mbps} Mbps</span>
@@ -427,19 +427,19 @@ export function Dashboard() {
                   )}
                   <div style={styles.netTraffic}>
                     <div style={styles.netDir}>
-                      <span style={{ color: '#9ece6a', fontSize: '0.75rem' }}>▼ IN</span>
+                      <span style={{ color: 'var(--c-green)', fontSize: '0.75rem' }}>▼ IN</span>
                       <span style={{ fontWeight: 600 }}>{formatBytes(iface.rx_bytes)}</span>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                      <span style={{ color: 'var(--text-2)', fontSize: '0.75rem' }}>
                         {iface.rx_packets.toLocaleString()} pkts
-                        {iface.rx_errors > 0 && <span style={{ color: '#f7768e' }}> / {iface.rx_errors} err</span>}
+                        {iface.rx_errors > 0 && <span style={{ color: 'var(--c-red)' }}> / {iface.rx_errors} err</span>}
                       </span>
                     </div>
                     <div style={styles.netDir}>
-                      <span style={{ color: '#7aa2f7', fontSize: '0.75rem' }}>▲ OUT</span>
+                      <span style={{ color: 'var(--c-blue)', fontSize: '0.75rem' }}>▲ OUT</span>
                       <span style={{ fontWeight: 600 }}>{formatBytes(iface.tx_bytes)}</span>
-                      <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                      <span style={{ color: 'var(--text-2)', fontSize: '0.75rem' }}>
                         {iface.tx_packets.toLocaleString()} pkts
-                        {iface.tx_errors > 0 && <span style={{ color: '#f7768e' }}> / {iface.tx_errors} err</span>}
+                        {iface.tx_errors > 0 && <span style={{ color: 'var(--c-red)' }}> / {iface.tx_errors} err</span>}
                       </span>
                     </div>
                   </div>
@@ -456,14 +456,14 @@ export function Dashboard() {
           <Card title="Disk Usage">
             <ResponsiveContainer width="100%" height={Math.max(150, disks.length * 40)}>
               <BarChart data={disks} layout="vertical" margin={{ top: 5, right: 20, bottom: 5, left: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#292e42" horizontal={false} />
-                <XAxis type="number" domain={[0, 100]} unit="%" tick={{ fontSize: 10, fill: '#565f89' }} />
-                <YAxis type="category" dataKey="mount" width={100} tick={{ fontSize: 10, fill: '#c0caf5' }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" horizontal={false} />
+                <XAxis type="number" domain={[0, 100]} unit="%" tick={{ fontSize: 10, fill: 'var(--text-3)' }} />
+                <YAxis type="category" dataKey="mount" width={100} tick={{ fontSize: 10, fill: 'var(--text-1)' }} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((value: unknown) => [`${value}%`]) as never} />
                 <Bar dataKey="use_pct" name="Used" radius={[0, 4, 4, 0]}>
                   {disks.map((d, i) => (
-                    <Cell key={i} fill={d.use_pct > 90 ? '#f7768e' : d.use_pct > 70 ? '#e0af68' : '#7aa2f7'} />
+                    <Cell key={i} fill={d.use_pct > 90 ? 'var(--c-red)' : d.use_pct > 70 ? 'var(--c-yellow)' : 'var(--c-blue)'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -480,8 +480,8 @@ export function Dashboard() {
               {disks.map((d) => (
                 <div key={d.mount} style={styles.diskRow}>
                   <span style={styles.diskCell}>{d.mount}</span>
-                  <span style={{ ...styles.diskCell, color: 'var(--text-secondary)' }}>{d.device.split('/').pop()}</span>
-                  <span style={{ ...styles.diskCell, color: 'var(--text-secondary)' }}>{d.fstype}</span>
+                  <span style={{ ...styles.diskCell, color: 'var(--text-2)' }}>{d.device.split('/').pop()}</span>
+                  <span style={{ ...styles.diskCell, color: 'var(--text-2)' }}>{d.fstype}</span>
                   <span style={styles.diskCell}>{formatBytes(d.total)}</span>
                   <span style={styles.diskCell}>{formatBytes(d.used)}</span>
                   <span style={styles.diskCell}>{formatBytes(d.avail)}</span>
@@ -524,9 +524,9 @@ export function Dashboard() {
                     <stop offset="100%" stopColor={COLORS.system} stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#565f89' }} unit="%" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-3)' }} unit="%" />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle} />
                 <Area type="monotone" dataKey="cpuUser" name="User" stackId="1"
                   stroke={COLORS.user} fill="url(#cpuUserGrad)" />
@@ -549,9 +549,9 @@ export function Dashboard() {
                     <stop offset="100%" stopColor={COLORS.used} stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#565f89' }} unit="%" />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-3)' }} unit="%" />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle} />
                 <Area type="monotone" dataKey="memUsedPct" name="Used"
                   stroke={COLORS.used} fill="url(#memGrad)" />
@@ -569,16 +569,16 @@ export function Dashboard() {
           {history.length > 1 ? (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={history} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                <YAxis tick={{ fontSize: 10, fill: '#565f89' }}
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-3)' }}
                   tickFormatter={(v: number) => formatRate(v)} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((v: unknown) => formatRate(Number(v))) as never} />
                 <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
-                <Line type="monotone" dataKey="netRxRate" name="▼ RX" stroke="#9ece6a"
+                <Line type="monotone" dataKey="netRxRate" name="▼ RX" stroke="var(--c-green)"
                   dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey="netTxRate" name="▲ TX" stroke="#7aa2f7"
+                <Line type="monotone" dataKey="netTxRate" name="▲ TX" stroke="var(--c-blue)"
                   dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
@@ -591,16 +591,16 @@ export function Dashboard() {
           {history.length > 1 ? (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={history} margin={{ top: 5, right: 5, bottom: 0, left: -10 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                <YAxis tick={{ fontSize: 10, fill: '#565f89' }}
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-3)' }}
                   tickFormatter={(v: number) => formatRate(v)} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((v: unknown) => formatRate(Number(v))) as never} />
                 <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
-                <Line type="monotone" dataKey="diskReadRate" name="Read" stroke="#7dcfff"
+                <Line type="monotone" dataKey="diskReadRate" name="Read" stroke="var(--c-cyan)"
                   dot={false} strokeWidth={2} />
-                <Line type="monotone" dataKey="diskWriteRate" name="Write" stroke="#ff9e64"
+                <Line type="monotone" dataKey="diskWriteRate" name="Write" stroke="var(--c-orange)"
                   dot={false} strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
@@ -622,7 +622,7 @@ export function Dashboard() {
                     <div style={{
                       ...styles.coreBarFill,
                       width: `${c.usage_pct}%`,
-                      background: c.usage_pct > 90 ? '#f7768e' : c.usage_pct > 60 ? '#e0af68' : '#7aa2f7',
+                      background: c.usage_pct > 90 ? 'var(--c-red)' : c.usage_pct > 60 ? 'var(--c-yellow)' : 'var(--c-blue)',
                     }} />
                   </div>
                   <div style={styles.corePct}>{c.usage_pct}%</div>
@@ -660,16 +660,16 @@ export function Dashboard() {
                 {sortedProcs.slice(0, 15).map((p) => (
                   <div key={p.pid} style={styles.procRow}>
                     <span style={{ ...styles.procCell, width: 60, fontFamily: 'monospace' }}>{p.pid}</span>
-                    <span style={{ ...styles.procCell, width: 80, color: 'var(--text-secondary)' }}>{p.user}</span>
+                    <span style={{ ...styles.procCell, width: 80, color: 'var(--text-2)' }}>{p.user}</span>
                     <span style={{
                       ...styles.procCell, width: 65, textAlign: 'right', fontWeight: 600,
-                      color: p.cpu_pct > 50 ? '#f7768e' : p.cpu_pct > 20 ? '#e0af68' : '#c0caf5',
+                      color: p.cpu_pct > 50 ? 'var(--c-red)' : p.cpu_pct > 20 ? 'var(--c-yellow)' : 'var(--text-1)',
                     }}>{p.cpu_pct.toFixed(1)}</span>
                     <span style={{
                       ...styles.procCell, width: 65, textAlign: 'right', fontWeight: 600,
-                      color: p.mem_pct > 50 ? '#f7768e' : p.mem_pct > 20 ? '#e0af68' : '#c0caf5',
+                      color: p.mem_pct > 50 ? 'var(--c-red)' : p.mem_pct > 20 ? 'var(--c-yellow)' : 'var(--text-1)',
                     }}>{p.mem_pct.toFixed(1)}</span>
-                    <span style={{ ...styles.procCell, width: 80, textAlign: 'right', color: 'var(--text-secondary)' }}>
+                    <span style={{ ...styles.procCell, width: 80, textAlign: 'right', color: 'var(--text-2)' }}>
                       {formatKb(p.rss_kb)}
                     </span>
                     <span style={{ ...styles.procCell, flex: 1, fontFamily: 'monospace', fontSize: '0.75rem' }}>
@@ -709,7 +709,7 @@ function DonutChart({ data, centerLabel, tooltipFmt }: {
             wrapperStyle={{ zIndex: 10 }}
             position={{ x: 0, y: -10 }}
             formatter={((value: unknown, name: unknown, props: { payload?: { color?: string } }) => {
-              const raw = props?.payload?.color || '#c0caf5';
+              const raw = props?.payload?.color || 'var(--text-1)';
               const color = ensureReadable(raw);
               return [
                 <span style={{ color }}>{tooltipFmt ? tooltipFmt(Number(value)) : `${value}%`}</span>,
@@ -738,8 +738,8 @@ function LoadRing({ label, value, cpuCount }: { label: string; value: number; cp
   const maxLoad = cpuCount > 0 ? cpuCount : 8;
   const pct = Math.min((value / maxLoad) * 100, 100);
   const rest = 100 - pct;
-  const color = value < 1 ? '#9ece6a' : value < maxLoad ? '#e0af68' : '#f7768e';
-  const bgColor = '#292e42';
+  const color = value < 1 ? 'var(--c-green)' : value < maxLoad ? 'var(--c-yellow)' : 'var(--c-red)';
+  const bgColor = 'var(--bg-surface)';
 
   const data = [
     { name: 'Load', value: pct, color },
@@ -768,7 +768,7 @@ function LoadRing({ label, value, cpuCount }: { label: string; value: number; cp
           {value.toFixed(2)}
         </div>
       </div>
-      <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: 6 }}>{label}</div>
+      <div style={{ fontSize: '0.85rem', color: 'var(--text-2)', marginTop: 6 }}>{label}</div>
     </div>
   );
 }
@@ -785,7 +785,7 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div style={styles.stat}>
-      <span style={{ color: 'var(--text-secondary)' }}>{label}</span>
+      <span style={{ color: 'var(--text-2)' }}>{label}</span>
       <span>{value}</span>
     </div>
   );
@@ -825,28 +825,28 @@ function formatRate(bytesPerSec: number): string {
   return `${Math.round(bytesPerSec)} B/s`;
 }
 
-/** Compute relative luminance and return white if color is too dark on #1a1b26 bg */
+/** Compute relative luminance and return white if color is too dark on var(--bg-app) bg */
 function ensureReadable(hex: string): string {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
   const lin = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
-  return L < 0.15 ? '#c0caf5' : hex;
+  return L < 0.15 ? 'var(--text-1)' : hex;
 }
 
 /* ── styles ────────────────────────────────────────────── */
 
 const tooltipStyle: React.CSSProperties = {
-  background: '#1a1b26',
-  border: '1px solid #292e42',
+  background: 'var(--bg-app)',
+  border: '1px solid var(--bg-surface)',
   borderRadius: 6,
   fontSize: '0.8rem',
-  color: '#c0caf5',
+  color: 'var(--text-1)',
 };
 
 const tooltipItemStyle: React.CSSProperties = {
-  color: '#c0caf5',
+  color: 'var(--text-1)',
 };
 
 const styles: Record<string, React.CSSProperties> = {
@@ -862,16 +862,16 @@ const styles: Record<string, React.CSSProperties> = {
   },
   intervalLabel: {
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     marginRight: '0.25rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
   intervalSelect: {
-    background: '#292e42',
-    border: '1px solid #292e42',
-    color: '#c0caf5',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--bg-surface)',
+    color: 'var(--text-1)',
     padding: '0.25rem 0.5rem',
     borderRadius: 5,
     fontSize: '0.75rem',
@@ -898,7 +898,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginTop: '1rem',
   },
   card: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: '10px',
     padding: '1rem 1.25rem',
     display: 'flex',
@@ -907,7 +907,7 @@ const styles: Record<string, React.CSSProperties> = {
   cardTitle: {
     marginBottom: '0.75rem',
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.08em',
     fontWeight: 600,
@@ -918,7 +918,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0.3rem 0',
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
   },
   donutCenter: {
@@ -939,7 +939,7 @@ const styles: Record<string, React.CSSProperties> = {
     gap: '0.75rem',
     marginTop: '-0.25rem',
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
   },
   legendItem: {
     display: 'flex',
@@ -968,11 +968,11 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'grid',
     gridTemplateColumns: '1.5fr 1fr 0.6fr 0.8fr 0.8fr 0.8fr',
     padding: '0.25rem 0',
-    borderBottom: '1px solid #292e42',
+    borderBottom: '1px solid var(--bg-surface)',
     gap: '0.5rem',
   },
   diskHeader: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.7rem',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
@@ -984,7 +984,7 @@ const styles: Record<string, React.CSSProperties> = {
     textOverflow: 'ellipsis' as const,
   },
   netCard: {
-    background: '#1a1b2688',
+    background: 'color-mix(in srgb, var(--bg-app) 53%, transparent)',
     borderRadius: 8,
     padding: '0.75rem 1rem',
   },
@@ -1007,12 +1007,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   netSpeed: {
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     marginLeft: 'auto',
   },
   netMac: {
     fontSize: '0.7rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontFamily: 'monospace',
     marginBottom: '0.5rem',
   },
@@ -1025,7 +1025,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.75rem',
   },
   netAddrLabel: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.65rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
@@ -1034,7 +1034,7 @@ const styles: Record<string, React.CSSProperties> = {
   netAddrValue: {
     fontFamily: 'monospace',
     fontSize: '0.75rem',
-    color: '#c0caf5',
+    color: 'var(--text-1)',
   },
   netTraffic: {
     display: 'grid',
@@ -1050,7 +1050,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     padding: '0.3rem 0',
-    borderBottom: '1px solid #292e42',
+    borderBottom: '1px solid var(--bg-surface)',
   },
   coreGrid: {
     display: 'grid',
@@ -1064,14 +1064,14 @@ const styles: Record<string, React.CSSProperties> = {
   },
   coreLabel: {
     fontSize: '0.7rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     width: 28,
     fontFamily: 'monospace',
   },
   coreBarBg: {
     flex: 1,
     height: 10,
-    background: '#292e42',
+    background: 'var(--bg-surface)',
     borderRadius: 5,
     overflow: 'hidden' as const,
   },
@@ -1087,17 +1087,17 @@ const styles: Record<string, React.CSSProperties> = {
     fontFamily: 'monospace',
   },
   sortBtn: {
-    background: '#292e42',
+    background: 'var(--bg-surface)',
     border: 'none',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '0.3rem 0.75rem',
     borderRadius: 6,
     fontSize: '0.75rem',
     cursor: 'pointer',
   },
   sortBtnActive: {
-    background: '#7aa2f733',
-    color: '#7aa2f7',
+    background: 'color-mix(in srgb, var(--c-blue) 20%, transparent)',
+    color: 'var(--c-blue)',
   },
   procTable: {
     fontSize: '0.8rem',
@@ -1107,10 +1107,10 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '0.5rem',
     padding: '0.3rem 0',
-    borderBottom: '1px solid #292e42',
+    borderBottom: '1px solid var(--bg-surface)',
   },
   procHeader: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.7rem',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
@@ -1119,7 +1119,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: 'flex',
     gap: '0.5rem',
     padding: '0.25rem 0',
-    borderBottom: '1px solid #1a1b2688',
+    borderBottom: '1px solid color-mix(in srgb, var(--bg-app) 53%, transparent)',
   },
   procCell: {
     overflow: 'hidden' as const,

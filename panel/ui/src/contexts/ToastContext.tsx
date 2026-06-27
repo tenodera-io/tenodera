@@ -57,10 +57,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 // ── Toast container ────────────────────────────────────────────────────────────
 
 const COLORS: Record<ToastType, string> = {
-  success: '#9ece6a',
-  error:   '#f7768e',
-  info:    '#7aa2f7',
-  warn:    '#e0af68',
+  success: 'var(--c-green)',
+  error:   'var(--c-red)',
+  info:    'var(--c-blue)',
+  warn:    'var(--c-yellow)',
 };
 
 const ICONS: Record<ToastType, string> = {
@@ -90,10 +90,10 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: '0.6rem',
-      background: '#1e2030', border: `1px solid ${color}44`,
+      background: 'var(--bg-app)', border: `1px solid color-mix(in srgb, ${color} 27%, transparent)`,
       borderLeft: `3px solid ${color}`, borderRadius: 6,
       padding: '0.55rem 0.75rem',
-      boxShadow: `0 4px 16px rgba(0,0,0,0.4), 0 0 0 1px ${color}11`,
+      boxShadow: `0 4px 16px rgba(0,0,0,0.4)`,
       minWidth: 240, maxWidth: 360,
       pointerEvents: 'all', cursor: 'default',
       animation: 'toast-in 0.18s ease',
@@ -101,13 +101,13 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
       <span style={{ color, fontWeight: 700, fontSize: '0.85rem', flexShrink: 0, marginTop: 1 }}>
         {ICONS[toast.type]}
       </span>
-      <span style={{ flex: 1, fontSize: '0.84rem', color: 'var(--text-primary)', lineHeight: 1.4 }}>
+      <span style={{ flex: 1, fontSize: '0.84rem', color: 'var(--text-1)', lineHeight: 1.4 }}>
         {toast.message}
       </span>
       <button
         onClick={() => onDismiss(toast.id)}
         style={{
-          background: 'none', border: 'none', color: 'var(--text-secondary)',
+          background: 'none', border: 'none', color: 'var(--text-2)',
           cursor: 'pointer', fontSize: '0.85rem', padding: 0, flexShrink: 0, marginTop: 1,
           lineHeight: 1,
         }}

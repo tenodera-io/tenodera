@@ -100,13 +100,13 @@ function flattenTree(devices: BlockDevice[]): FlatRow[] {
 /* ── tooltip ───────────────────────────────────────────── */
 
 const tooltipStyle: React.CSSProperties = {
-  background: '#1a1b26',
-  border: '1px solid #292e42',
+  background: 'var(--bg-app)',
+  border: '1px solid var(--bg-surface)',
   borderRadius: 6,
   fontSize: '0.8rem',
-  color: '#c0caf5',
+  color: 'var(--text-1)',
 };
-const tooltipItemStyle: React.CSSProperties = { color: '#c0caf5' };
+const tooltipItemStyle: React.CSSProperties = { color: 'var(--text-1)' };
 
 /* ── component ─────────────────────────────────────────── */
 
@@ -207,17 +207,17 @@ export function Storage() {
               <AreaChart data={history} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
                 <defs>
                   <linearGradient id="readGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7aa2f7" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#7aa2f7" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="var(--c-blue)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--c-blue)" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                <YAxis tick={{ fontSize: 10, fill: '#565f89' }} unit=" KiB/s"
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-3)' }} unit=" KiB/s"
                   tickFormatter={(v: number) => v >= 1024 ? `${(v / 1024).toFixed(1)}M` : `${v.toFixed(0)}`} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((v: unknown) => [formatRate((v as number) * 1024)]) as never} />
-                <Area type="monotone" dataKey="readKBs" name="Read" stroke="#7aa2f7" fill="url(#readGrad)" />
+                <Area type="monotone" dataKey="readKBs" name="Read" stroke="var(--c-blue)" fill="url(#readGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -232,17 +232,17 @@ export function Storage() {
               <AreaChart data={history} margin={{ top: 5, right: 10, bottom: 0, left: -10 }}>
                 <defs>
                   <linearGradient id="writeGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f7768e" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#f7768e" stopOpacity={0.05} />
+                    <stop offset="0%" stopColor="var(--c-red)" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="var(--c-red)" stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#292e42" />
-                <XAxis dataKey="t" tick={{ fontSize: 10, fill: '#565f89' }} interval="preserveEnd" />
-                <YAxis tick={{ fontSize: 10, fill: '#565f89' }} unit=" KiB/s"
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--bg-surface)" />
+                <XAxis dataKey="t" tick={{ fontSize: 10, fill: 'var(--text-3)' }} interval="preserveEnd" />
+                <YAxis tick={{ fontSize: 10, fill: 'var(--text-3)' }} unit=" KiB/s"
                   tickFormatter={(v: number) => v >= 1024 ? `${(v / 1024).toFixed(1)}M` : `${v.toFixed(0)}`} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((v: unknown) => [formatRate((v as number) * 1024)]) as never} />
-                <Area type="monotone" dataKey="writeKBs" name="Write" stroke="#f7768e" fill="url(#writeGrad)" />
+                <Area type="monotone" dataKey="writeKBs" name="Write" stroke="var(--c-red)" fill="url(#writeGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -270,16 +270,16 @@ export function Storage() {
                 <tr key={`${row.name}-${i}`} style={S.tr}>
                   <td style={{ ...S.td, fontFamily: 'monospace' }}>
                     {row.depth > 0 && (
-                      <span style={{ color: '#565f89', marginRight: 2, paddingLeft: (row.depth - 1) * 16 }}>
+                      <span style={{ color: 'var(--text-3)', marginRight: 2, paddingLeft: (row.depth - 1) * 16 }}>
                         {row.prefix}
                       </span>
                     )}
                     {row.name}
                   </td>
-                  <td style={{ ...S.td, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                  <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>
                     {row.type}
                   </td>
-                  <td style={{ ...S.td, color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                  <td style={{ ...S.td, color: 'var(--text-2)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
                     {row.mountpoints.join(', ') || '—'}
                   </td>
                   <td style={S.td}>
@@ -290,7 +290,7 @@ export function Storage() {
                             style={{
                               ...S.barInner,
                               width: `${row.use_pct}%`,
-                              background: row.use_pct > 90 ? '#f7768e' : row.use_pct > 70 ? '#e0af68' : '#7aa2f7',
+                              background: row.use_pct > 90 ? 'var(--c-red)' : row.use_pct > 70 ? 'var(--c-yellow)' : 'var(--c-blue)',
                             }}
                           />
                         )}
@@ -328,16 +328,16 @@ const S: Record<string, React.CSSProperties> = {
   },
   intervalLabel: {
     fontSize: '0.75rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     marginRight: '0.25rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
   intervalSelect: {
-    background: '#292e42',
-    border: '1px solid #292e42',
-    color: '#c0caf5',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--bg-surface)',
+    color: 'var(--text-1)',
     padding: '0.25rem 0.5rem',
     borderRadius: 5,
     fontSize: '0.75rem',
@@ -352,18 +352,18 @@ const S: Record<string, React.CSSProperties> = {
     marginTop: '1rem',
   },
   chartCard: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: 10,
     padding: '1rem 1.25rem',
   },
   chartTitle: {
     marginBottom: '0.75rem',
     fontSize: '0.85rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 600,
   },
   card: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: 10,
     padding: '1rem 1.25rem',
     marginTop: '1rem',
@@ -371,13 +371,13 @@ const S: Record<string, React.CSSProperties> = {
   cardTitle: {
     marginBottom: '0.75rem',
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textTransform: 'uppercase' as const,
     letterSpacing: '0.08em',
     fontWeight: 600,
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
   },
   table: {
@@ -388,14 +388,14 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '0.5rem 0.75rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.75rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
   },
   tr: {
-    borderBottom: '1px solid #292e42',
+    borderBottom: '1px solid var(--bg-surface)',
   },
   td: {
     padding: '0.6rem 0.75rem',
@@ -410,7 +410,7 @@ const S: Record<string, React.CSSProperties> = {
   barOuter: {
     flex: 1,
     height: 18,
-    background: '#292e42',
+    background: 'var(--bg-surface)',
     borderRadius: 3,
     overflow: 'hidden' as const,
   },
@@ -422,7 +422,7 @@ const S: Record<string, React.CSSProperties> = {
   sizeLabel: {
     whiteSpace: 'nowrap' as const,
     fontSize: '0.8rem',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     minWidth: 120,
     textAlign: 'right' as const,
   },

@@ -190,7 +190,7 @@ function CertsTab({ su, request }: TabProps) {
         <button style={S.btnAccent} onClick={() => { setShowImport(v => !v); setChecked(null); setCheckErr(''); }}>
           {showImport ? '✕ Cancel import' : '+ Import Certificate'}
         </button>
-        {msg && <span style={{ fontSize: '0.82rem', color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{msg}</span>}
+        {msg && <span style={{ fontSize: '0.82rem', color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)' }}>{msg}</span>}
       </div>
 
       {/* Import form */}
@@ -258,18 +258,18 @@ function CertsTab({ su, request }: TabProps) {
           </div>
 
           {checkErr && (
-            <p style={{ color: '#f7768e', fontSize: '0.85rem', marginTop: '0.6rem' }}>✗ {checkErr}</p>
+            <p style={{ color: 'var(--c-red)', fontSize: '0.85rem', marginTop: '0.6rem' }}>✗ {checkErr}</p>
           )}
         </div>
       )}
 
       {/* Check result — preview + save */}
       {checked && (
-        <div style={{ ...S.card, borderColor: '#9ece6a44' }}>
+        <div style={{ ...S.card, borderColor: 'color-mix(in srgb, var(--c-green) 27%, transparent)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
-            <span style={{ color: '#9ece6a', fontWeight: 700, fontSize: '0.9rem' }}>✓ Certificate and key match</span>
+            <span style={{ color: 'var(--c-green)', fontWeight: 700, fontSize: '0.9rem' }}>✓ Certificate and key match</span>
             <ExpiryBadge days={checked.days_remaining} />
-            {checked.is_ca && <span style={{ ...S.badge, color: '#bb9af7', background: '#bb9af722' }}>CA</span>}
+            {checked.is_ca && <span style={{ ...S.badge, color: 'var(--c-purple)', background: 'color-mix(in srgb, var(--c-purple) 13%, transparent)' }}>CA</span>}
           </div>
           <div style={S.detailGrid}>
             <Detail label="Common Name" value={checked.cn || '—'} />
@@ -297,7 +297,7 @@ function CertsTab({ su, request }: TabProps) {
             </button>
             <button style={S.cancelBtn} onClick={() => { setChecked(null); setCheckErr(''); }}>Back</button>
             {!importName.trim() && (
-              <span style={{ fontSize: '0.8rem', color: '#e0af68' }}>Set a name first</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--c-yellow)' }}>Set a name first</span>
             )}
           </div>
         </div>
@@ -325,14 +325,14 @@ function CertsTab({ su, request }: TabProps) {
                   <td style={S.td}>
                     <div style={{ fontWeight: 600, fontSize: '0.88rem' }}>{cert.cn}</div>
                     {cert.sans.length > 0 && (
-                      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                      <div style={{ fontSize: '0.75rem', color: 'var(--text-2)', marginTop: 2 }}>
                         {cert.sans.slice(0, 3).join(', ')}{cert.sans.length > 3 ? ` +${cert.sans.length - 3}` : ''}
                       </div>
                     )}
                   </td>
                   <td style={S.td}>
                     <div style={{ fontSize: '0.85rem' }}>{cert.issuer_cn || '—'}</div>
-                    {cert.issuer_org && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{cert.issuer_org}</div>}
+                    {cert.issuer_org && <div style={{ fontSize: '0.75rem', color: 'var(--text-2)' }}>{cert.issuer_org}</div>}
                   </td>
                   <td style={S.td}><SourceBadge source={cert.source} /></td>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.82rem' }}>{cert.not_after}</td>
@@ -500,7 +500,7 @@ function TrustStoreTab({ su, request }: TabProps) {
           {rawInput && <button style={S.cancelBtn} onClick={() => { setRawInput(''); setParsed(null); setParseErr(''); }}>Clear</button>}
         </div>
 
-        {parseErr && <p style={{ color: '#f7768e', fontSize: '0.85rem', marginTop: '0.5rem' }}>{parseErr}</p>}
+        {parseErr && <p style={{ color: 'var(--c-red)', fontSize: '0.85rem', marginTop: '0.5rem' }}>{parseErr}</p>}
       </div>
 
       {/* Preview & confirm */}
@@ -509,7 +509,7 @@ function TrustStoreTab({ su, request }: TabProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
             <div style={S.cardTitle}>Certificate preview</div>
             <ExpiryBadge days={parsed.days_remaining} />
-            {parsed.is_ca && <span style={{ ...S.badge, color: '#bb9af7', background: '#bb9af722' }}>CA</span>}
+            {parsed.is_ca && <span style={{ ...S.badge, color: 'var(--c-purple)', background: 'color-mix(in srgb, var(--c-purple) 13%, transparent)' }}>CA</span>}
           </div>
 
           <div style={S.detailGrid}>
@@ -549,11 +549,11 @@ function TrustStoreTab({ su, request }: TabProps) {
             </span>
           </div>
 
-          {msg && <p style={{ color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e', fontSize: '0.85rem', marginTop: '0.5rem' }}>{msg}</p>}
+          {msg && <p style={{ color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)', fontSize: '0.85rem', marginTop: '0.5rem' }}>{msg}</p>}
         </div>
       )}
 
-      {msg && !parsed && <p style={{ color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e', fontSize: '0.85rem' }}>{msg}</p>}
+      {msg && !parsed && <p style={{ color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)', fontSize: '0.85rem' }}>{msg}</p>}
 
       {/* Verify trust */}
       <div style={S.card}>
@@ -580,8 +580,8 @@ function TrustStoreTab({ su, request }: TabProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <span style={{
                 ...S.badge,
-                color: verifyResult.trusted ? '#9ece6a' : '#f7768e',
-                background: (verifyResult.trusted ? '#9ece6a' : '#f7768e') + '22',
+                color: verifyResult.trusted ? 'var(--c-green)' : 'var(--c-red)',
+                background: (verifyResult.trusted ? 'var(--c-green)' : 'var(--c-red)') ,
               }}>
                 {verifyResult.trusted ? '✓ Trusted' : '✗ Not trusted / error'}
               </span>
@@ -674,7 +674,7 @@ function LetsEncryptTab({ su, request }: TabProps) {
         <button style={S.btn} onClick={reload}>↺ Refresh</button>
         <button style={S.btnAccent} onClick={() => handleAction('renew_all')}>↺ Renew all</button>
         {info.version && <span style={S.versionBadge}>{info.version}</span>}
-        {msg && <span style={{ fontSize: '0.82rem', color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{msg}</span>}
+        {msg && <span style={{ fontSize: '0.82rem', color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)' }}>{msg}</span>}
       </div>
 
       {info.certs.length === 0 ? (
@@ -698,7 +698,7 @@ function LetsEncryptTab({ su, request }: TabProps) {
               {info.certs.map(cert => (
                 <tr key={cert.name}>
                   <td style={{ ...S.td, fontWeight: 600, fontFamily: 'monospace', fontSize: '0.88rem' }}>{cert.name}</td>
-                  <td style={{ ...S.td, fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{cert.domains}</td>
+                  <td style={{ ...S.td, fontSize: '0.82rem', color: 'var(--text-2)' }}>{cert.domains}</td>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.82rem' }}>{cert.expiry}</td>
                   <td style={S.td}><ExpiryBadge days={cert.days_remaining} /></td>
                   <td style={S.td}>
@@ -843,8 +843,8 @@ function SelfSignedTab({ su, request }: TabProps) {
           )}
         </div>
 
-        {error && <p style={{ color: '#f7768e', fontSize: '0.85rem', marginTop: '0.5rem' }}>{error}</p>}
-        {msg && <p style={{ color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e', fontSize: '0.85rem', marginTop: '0.5rem' }}>{msg}</p>}
+        {error && <p style={{ color: 'var(--c-red)', fontSize: '0.85rem', marginTop: '0.5rem' }}>{error}</p>}
+        {msg && <p style={{ color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)', fontSize: '0.85rem', marginTop: '0.5rem' }}>{msg}</p>}
 
         <div style={S.btnRow}>
           <button style={S.saveBtn} onClick={handleGenerate} disabled={loading || !form.cn.trim()}>
@@ -867,7 +867,7 @@ function SelfSignedTab({ su, request }: TabProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.5rem' }}>
               <div style={S.cardTitle}>Private Key (PEM)</div>
               <button style={S.btn} onClick={() => copy(result.key)}>Copy</button>
-              <span style={{ fontSize: '0.75rem', color: '#e0af68' }}>Keep this secret — never share</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--c-yellow)' }}>Keep this secret — never share</span>
             </div>
             <pre style={S.codeBlock}>{result.key}</pre>
           </div>
@@ -896,18 +896,18 @@ type TabProps = {
 };
 
 function ExpiryBadge({ days }: { days: number }) {
-  const color = days < 0 ? '#f7768e' : days < 30 ? '#f7768e' : days < 90 ? '#e0af68' : '#9ece6a';
+  const color = days < 0 ? 'var(--c-red)' : days < 30 ? 'var(--c-red)' : days < 90 ? 'var(--c-yellow)' : 'var(--c-green)';
   const label = days < 0 ? 'EXPIRED' : `${days}d`;
-  return <span style={{ ...S.badge, color, background: color + '22' }}>{label}</span>;
+  return <span style={{ ...S.badge, color, background: color  }}>{label}</span>;
 }
 
 function SourceBadge({ source }: { source: string }) {
   const colors: Record<string, string> = {
-    letsencrypt: '#9ece6a', trusted: '#7aa2f7',
-    nginx: '#e0af68', apache: '#e0af68', private: '#bb9af7',
+    letsencrypt: 'var(--c-green)', trusted: 'var(--c-blue)',
+    nginx: 'var(--c-yellow)', apache: 'var(--c-yellow)', private: 'var(--c-purple)',
   };
-  const color = colors[source] ?? '#565f89';
-  return <span style={{ ...S.badge, color, background: color + '22', fontSize: '0.75rem' }}>{source}</span>;
+  const color = colors[source] ?? 'var(--text-3)';
+  return <span style={{ ...S.badge, color, background: color , fontSize: '0.75rem' }}>{source}</span>;
 }
 
 function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
@@ -922,11 +922,11 @@ function Detail({ label, value, mono }: { label: string; value: string; mono?: b
 function ConfField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
         {label}
       </label>
       {children}
-      {hint && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{hint}</span>}
+      {hint && <span style={{ fontSize: '0.7rem', color: 'var(--text-2)' }}>{hint}</span>}
     </div>
   );
 }
@@ -938,39 +938,39 @@ const S: Record<string, React.CSSProperties> = {
   title: { marginTop: 0, marginBottom: '1rem', fontSize: '1.4rem' },
   tabBar: { display: 'flex', gap: '0.25rem', borderBottom: '1px solid var(--border)', marginBottom: '1.5rem' },
   tab: {
-    background: 'transparent', border: 'none', color: 'var(--text-secondary)',
+    background: 'transparent', border: 'none', color: 'var(--text-2)',
     padding: '0.5rem 1rem', cursor: 'pointer', fontSize: '0.9rem',
     borderBottom: '2px solid transparent', display: 'flex', alignItems: 'center',
     gap: '0.4rem', transition: 'color 0.15s',
   },
-  tabActive: { color: 'var(--accent)', borderBottom: '2px solid var(--accent)' },
+  tabActive: { color: 'var(--c-blue)', borderBottom: '2px solid var(--c-blue)' },
   section: { display: 'flex', flexDirection: 'column', gap: '1rem' },
-  card: { background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '1rem' },
-  cardTitle: { fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.5rem' },
-  hint: { fontSize: '0.83rem', color: 'var(--text-secondary)', margin: '0 0 0.5rem' },
-  muted: { color: 'var(--text-secondary)', fontSize: '0.85rem' },
+  card: { background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, padding: '1rem' },
+  cardTitle: { fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.5rem' },
+  hint: { fontSize: '0.83rem', color: 'var(--text-2)', margin: '0 0 0.5rem' },
+  muted: { color: 'var(--text-2)', fontSize: '0.85rem' },
   table: { width: '100%', borderCollapse: 'collapse' },
-  th: { textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0.3rem 0.6rem', borderBottom: '1px solid var(--border)' },
+  th: { textAlign: 'left', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.03em', padding: '0.3rem 0.6rem', borderBottom: '1px solid var(--border)' },
   td: { padding: '0.45rem 0.6rem', borderBottom: '1px solid var(--border)', fontSize: '0.88rem' },
   badge: { display: 'inline-block', padding: '2px 8px', borderRadius: 4, fontSize: '0.78rem', fontWeight: 600 },
-  btn: { padding: '0.3rem 0.8rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-primary)', cursor: 'pointer', fontSize: '0.83rem' },
-  btnAccent: { padding: '0.3rem 0.8rem', borderRadius: 5, border: '1px solid #7aa2f766', background: '#7aa2f722', color: '#7aa2f7', cursor: 'pointer', fontSize: '0.83rem' },
-  actionBtn: { padding: '0.2rem 0.6rem', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: '#7aa2f7', cursor: 'pointer', fontSize: '0.78rem' },
-  dangerBtn: { padding: '0.2rem 0.6rem', borderRadius: 4, border: '1px solid #f7768e44', background: 'transparent', color: '#f7768e', cursor: 'pointer', fontSize: '0.78rem' },
-  saveBtn: { padding: '0.35rem 0.9rem', borderRadius: 5, border: '1px solid #9ece6a66', background: '#9ece6a22', color: '#9ece6a', cursor: 'pointer', fontSize: '0.85rem' },
-  cancelBtn: { padding: '0.35rem 0.9rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem' },
+  btn: { padding: '0.3rem 0.8rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-1)', cursor: 'pointer', fontSize: '0.83rem' },
+  btnAccent: { padding: '0.3rem 0.8rem', borderRadius: 5, border: '1px solid color-mix(in srgb, var(--c-blue) 40%, transparent)', background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)', color: 'var(--c-blue)', cursor: 'pointer', fontSize: '0.83rem' },
+  actionBtn: { padding: '0.2rem 0.6rem', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--c-blue)', cursor: 'pointer', fontSize: '0.78rem' },
+  dangerBtn: { padding: '0.2rem 0.6rem', borderRadius: 4, border: '1px solid color-mix(in srgb, var(--c-red) 27%, transparent)', background: 'transparent', color: 'var(--c-red)', cursor: 'pointer', fontSize: '0.78rem' },
+  saveBtn: { padding: '0.35rem 0.9rem', borderRadius: 5, border: '1px solid color-mix(in srgb, var(--c-green) 40%, transparent)', background: 'color-mix(in srgb, var(--c-green) 13%, transparent)', color: 'var(--c-green)', cursor: 'pointer', fontSize: '0.85rem' },
+  cancelBtn: { padding: '0.35rem 0.9rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.85rem' },
   btnRow: { display: 'flex', gap: '0.5rem', marginTop: '0.75rem' },
-  textarea: { width: '100%', boxSizing: 'border-box', fontFamily: 'monospace', fontSize: '0.85rem', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-primary)', padding: '0.75rem', resize: 'vertical', outline: 'none', lineHeight: 1.5 },
-  input: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem', outline: 'none' },
-  codeBlock: { margin: 0, fontFamily: 'monospace', fontSize: '0.82rem', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 5, padding: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-primary)', maxHeight: 300, overflow: 'auto' },
-  pwBar: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem' },
-  pwInput: { padding: '0.3rem 0.5rem', borderRadius: 4, border: '1px solid #7aa2f766', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem', width: 200, outline: 'none' },
+  textarea: { width: '100%', boxSizing: 'border-box', fontFamily: 'monospace', fontSize: '0.85rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-1)', padding: '0.75rem', resize: 'vertical', outline: 'none', lineHeight: 1.5 },
+  input: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontSize: '0.85rem', outline: 'none' },
+  codeBlock: { margin: 0, fontFamily: 'monospace', fontSize: '0.82rem', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 5, padding: '0.75rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-1)', maxHeight: 300, overflow: 'auto' },
+  pwBar: { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.75rem 1rem' },
+  pwInput: { padding: '0.3rem 0.5rem', borderRadius: 4, border: '1px solid color-mix(in srgb, var(--c-blue) 40%, transparent)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontSize: '0.85rem', width: 200, outline: 'none' },
   detailGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '0.75rem' },
-  detailLabel: { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '0.15rem' },
-  sanChip: { fontFamily: 'monospace', fontSize: '0.8rem', background: '#7aa2f722', color: '#7aa2f7', border: '1px solid #7aa2f733', borderRadius: 4, padding: '0.15rem 0.5rem' },
-  versionBadge: { fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.15rem 0.5rem' },
-  fieldLabel: { display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.03em', marginBottom: '0.3rem' },
+  detailLabel: { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '0.15rem' },
+  sanChip: { fontFamily: 'monospace', fontSize: '0.8rem', background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)', color: 'var(--c-blue)', border: '1px solid color-mix(in srgb, var(--c-blue) 20%, transparent)', borderRadius: 4, padding: '0.15rem 0.5rem' },
+  versionBadge: { fontSize: '0.75rem', color: 'var(--text-2)', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.15rem 0.5rem' },
+  fieldLabel: { display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-2)', textTransform: 'uppercase' as const, letterSpacing: '0.03em', marginBottom: '0.3rem' },
   confGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' },
-  confInput: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem', outline: 'none', width: '100%', boxSizing: 'border-box' },
-  confSelect: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem', cursor: 'pointer', width: '100%', boxSizing: 'border-box' },
+  confInput: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontSize: '0.85rem', outline: 'none', width: '100%', boxSizing: 'border-box' },
+  confSelect: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontSize: '0.85rem', cursor: 'pointer', width: '100%', boxSizing: 'border-box' },
 };

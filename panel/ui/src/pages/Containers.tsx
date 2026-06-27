@@ -114,15 +114,15 @@ function formatSize(bytes?: number | string): string {
 
 function stateColor(state?: string): string {
   const s = (state || '').toLowerCase();
-  if (s === 'running') return '#9ece6a';
-  if (s === 'exited' || s === 'dead') return '#f7768e';
-  if (s === 'paused') return '#e0af68';
-  if (s === 'created' || s === 'restarting') return '#7aa2f7';
-  return '#565f89';
+  if (s === 'running') return 'var(--c-green)';
+  if (s === 'exited' || s === 'dead') return 'var(--c-red)';
+  if (s === 'paused') return 'var(--c-yellow)';
+  if (s === 'created' || s === 'restarting') return 'var(--c-blue)';
+  return 'var(--text-3)';
 }
 
 function ownerColor(owner?: string): string {
-  return owner === 'root' ? '#9ece6a' : '#e0af68';
+  return owner === 'root' ? 'var(--c-green)' : 'var(--c-yellow)';
 }
 
 /* ── component ─────────────────────────────────────────── */
@@ -397,7 +397,7 @@ export function Containers() {
       <div>
         <h2>Containers</h2>
         <div style={S.card}>
-          <p style={{ color: '#f7768e' }}>No container runtime detected.</p>
+          <p style={{ color: 'var(--c-red)' }}>No container runtime detected.</p>
           <p style={S.muted}>Install <strong>podman</strong> or <strong>docker</strong> to manage containers.</p>
         </div>
       </div>
@@ -421,13 +421,13 @@ export function Containers() {
       {/* Service control */}
       {service && (
         <div style={S.serviceBar}>
-          <span style={S.muted}>Service: <strong style={{ color: 'var(--text-primary)' }}>{service.service}</strong></span>
+          <span style={S.muted}>Service: <strong style={{ color: 'var(--text-1)' }}>{service.service}</strong></span>
           <span style={{
             ...S.stateBadge,
-            background: service.active === 'active' ? '#9ece6a22' : '#f7768e22',
-            color: service.active === 'active' ? '#9ece6a' : '#f7768e',
+            background: service.active === 'active' ? 'color-mix(in srgb, var(--c-green) 13%, transparent)' : 'color-mix(in srgb, var(--c-red) 13%, transparent)',
+            color: service.active === 'active' ? 'var(--c-green)' : 'var(--c-red)',
           }}>{service.active}</span>
-          <span style={{ ...S.stateBadge, background: '#7aa2f722', color: '#7aa2f7' }}>{service.enabled}</span>
+          <span style={{ ...S.stateBadge, background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)', color: 'var(--c-blue)' }}>{service.enabled}</span>
           <div style={{ flex: 1 }} />
           <button style={S.btn} onClick={() => requestPrivileged('service_start', `Start ${service.service}`)}>Start</button>
           <button style={S.btn} onClick={() => requestPrivileged('service_stop', `Stop ${service.service}`)}>Stop</button>
@@ -448,7 +448,7 @@ export function Containers() {
             onKeyDown={(e) => { if (e.key === 'Enter') confirmAction(); if (e.key === 'Escape') cancelAction(); }}
             placeholder="Enter password…"
             autoFocus
-            style={{ ...S.passwordInput, borderColor: password ? '#7aa2f7' : '#9ece6a' }}
+            style={{ ...S.passwordInput, borderColor: password ? 'var(--c-blue)' : 'var(--c-green)' }}
           />
           <button
             onClick={confirmAction}
@@ -490,7 +490,7 @@ export function Containers() {
         <div style={S.card}>
           <div style={S.searchRow}>
             <input
-              style={{ ...S.searchInput, borderColor: ctrSearch ? '#7aa2f7' : '#9ece6a' }}
+              style={{ ...S.searchInput, borderColor: ctrSearch ? 'var(--c-blue)' : 'var(--c-green)' }}
               placeholder="Search containers by name…"
               value={ctrSearch}
               onChange={(e) => setCtrSearch(e.target.value)}
@@ -531,19 +531,19 @@ export function Containers() {
                   return (
                     <tr key={id + owner} style={S.tr}>
                       <td style={S.td}><strong>{getContainerName(c)}</strong></td>
-                      <td style={{ ...S.td, color: 'var(--text-secondary)', fontSize: '0.8rem' }}>{c.Image}</td>
+                      <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>{c.Image}</td>
                       <td style={S.td}>
-                        <span style={{ ...S.stateBadge, background: stateColor(c.State) + '22', color: stateColor(c.State) }}>
+                        <span style={{ ...S.stateBadge, background: stateColor(c.State) , color: stateColor(c.State) }}>
                           {c.State}
                         </span>
                       </td>
                       <td style={S.td}>
-                        <span style={{ ...S.stateBadge, background: ownerColor(owner) + '22', color: ownerColor(owner) }}>
+                        <span style={{ ...S.stateBadge, background: ownerColor(owner) , color: ownerColor(owner) }}>
                           {owner}
                         </span>
                       </td>
-                      <td style={{ ...S.td, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{c.Status}</td>
-                      <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{id}</td>
+                      <td style={{ ...S.td, fontSize: '0.8rem', color: 'var(--text-2)' }}>{c.Status}</td>
+                      <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-2)' }}>{id}</td>
                       <td style={S.td}>
                         <div style={S.actions}>
                           {state !== 'running' && (
@@ -558,15 +558,15 @@ export function Containers() {
                           }} title="Logs">📋</button>
                           {confirmingRemove === `ctr:${id}:${owner}` ? (
                             <span style={S.confirmInline}>
-                              <span style={{ color: '#f7768e', fontSize: '0.75rem' }}>Sure?</span>
-                              <button style={{ ...S.actBtn, color: '#f7768e', fontWeight: 600 }} onClick={() => {
+                              <span style={{ color: 'var(--c-red)', fontSize: '0.75rem' }}>Sure?</span>
+                              <button style={{ ...S.actBtn, color: 'var(--c-red)', fontWeight: 600 }} onClick={() => {
                                 setConfirmingRemove(null);
                                 requestPrivileged('remove', `Remove ${getContainerName(c)}`, id, { force: true, owner });
                               }}>Yes</button>
                               <button style={S.actBtn} onClick={() => setConfirmingRemove(null)}>No</button>
                             </span>
                           ) : (
-                            <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => setConfirmingRemove(`ctr:${id}:${owner}`)} title="Remove">✕</button>
+                            <button style={{ ...S.actBtn, color: 'var(--c-red)' }} onClick={() => setConfirmingRemove(`ctr:${id}:${owner}`)} title="Remove">✕</button>
                           )}
                         </div>
                       </td>
@@ -585,7 +585,7 @@ export function Containers() {
           <div style={{ ...S.card, marginBottom: '1rem' }}>
             <div style={S.pullRow}>
               <input
-                style={{ ...S.input, borderColor: pullImage ? '#7aa2f7' : '#9ece6a' }}
+                style={{ ...S.input, borderColor: pullImage ? 'var(--c-blue)' : 'var(--c-green)' }}
                 placeholder="Image name (e.g. nginx:latest)"
                 value={pullImage}
                 onChange={(e) => setPullImage(e.target.value)}
@@ -629,24 +629,24 @@ export function Containers() {
                       <tr key={id + owner + getImageName(img)} style={S.tr}>
                         <td style={S.td}><strong>{getImageName(img)}</strong></td>
                         <td style={S.td}>
-                          <span style={{ ...S.stateBadge, background: ownerColor(owner) + '22', color: ownerColor(owner) }}>
+                          <span style={{ ...S.stateBadge, background: ownerColor(owner) , color: ownerColor(owner) }}>
                             {owner}
                           </span>
                         </td>
-                        <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{id}</td>
+                        <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-2)' }}>{id}</td>
                         <td style={S.td}>{formatSize(img.Size)}</td>
                         <td style={S.td}>
                           {confirmingRemove === `img:${id}:${owner}` ? (
                             <span style={S.confirmInline}>
-                              <span style={{ color: '#f7768e', fontSize: '0.75rem' }}>Sure?</span>
-                              <button style={{ ...S.actBtn, color: '#f7768e', fontWeight: 600 }} onClick={() => {
+                              <span style={{ color: 'var(--c-red)', fontSize: '0.75rem' }}>Sure?</span>
+                              <button style={{ ...S.actBtn, color: 'var(--c-red)', fontWeight: 600 }} onClick={() => {
                                 setConfirmingRemove(null);
                                 requestPrivileged('remove_image', `Remove image ${getImageName(img)}`, id, { force: true, owner });
                               }}>Yes</button>
                               <button style={S.actBtn} onClick={() => setConfirmingRemove(null)}>No</button>
                             </span>
                           ) : (
-                            <button style={{ ...S.actBtn, color: '#f7768e' }} onClick={() => setConfirmingRemove(`img:${id}:${owner}`)} title="Remove">✕</button>
+                            <button style={{ ...S.actBtn, color: 'var(--c-red)' }} onClick={() => setConfirmingRemove(`img:${id}:${owner}`)} title="Remove">✕</button>
                           )}
                         </td>
                       </tr>
@@ -665,11 +665,11 @@ export function Containers() {
           <h3 style={S.formTitle}>Create New Container</h3>
           <div style={S.formGrid}>
             <label style={S.label}>Image *
-              <input style={{ ...S.input, borderColor: form.image ? '#7aa2f7' : '#9ece6a' }} placeholder="nginx:latest" value={form.image}
+              <input style={{ ...S.input, borderColor: form.image ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="nginx:latest" value={form.image}
                 onChange={(e) => setForm({ ...form, image: e.target.value })} />
             </label>
             <label style={S.label}>Name
-              <input style={{ ...S.input, borderColor: form.name ? '#7aa2f7' : '#9ece6a' }} placeholder="my-container" value={form.name}
+              <input style={{ ...S.input, borderColor: form.name ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="my-container" value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })} />
             </label>
           </div>
@@ -683,10 +683,10 @@ export function Containers() {
             </div>
             {form.ports.map((p, i) => (
               <div key={i} style={S.pairRow}>
-                <input style={{ ...S.inputSm, borderColor: p.host ? '#7aa2f7' : '#9ece6a' }} placeholder="Host port" value={p.host}
+                <input style={{ ...S.inputSm, borderColor: p.host ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="Host port" value={p.host}
                   onChange={(e) => { const ports = [...form.ports]; ports[i] = { ...p, host: e.target.value }; setForm({ ...form, ports }); }} />
                 <span style={S.muted}>→</span>
-                <input style={{ ...S.inputSm, borderColor: p.container ? '#7aa2f7' : '#9ece6a' }} placeholder="Container port" value={p.container}
+                <input style={{ ...S.inputSm, borderColor: p.container ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="Container port" value={p.container}
                   onChange={(e) => { const ports = [...form.ports]; ports[i] = { ...p, container: e.target.value }; setForm({ ...form, ports }); }} />
                 {form.ports.length > 1 && (
                   <button style={S.rmBtn} onClick={() => {
@@ -706,10 +706,10 @@ export function Containers() {
             </div>
             {form.env.map((e, i) => (
               <div key={i} style={S.pairRow}>
-                <input style={{ ...S.inputSm, borderColor: e.key ? '#7aa2f7' : '#9ece6a' }} placeholder="KEY" value={e.key}
+                <input style={{ ...S.inputSm, borderColor: e.key ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="KEY" value={e.key}
                   onChange={(ev) => { const env = [...form.env]; env[i] = { ...e, key: ev.target.value }; setForm({ ...form, env }); }} />
                 <span style={S.muted}>=</span>
-                <input style={{ ...S.inputSm, borderColor: e.value ? '#7aa2f7' : '#9ece6a' }} placeholder="value" value={e.value}
+                <input style={{ ...S.inputSm, borderColor: e.value ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="value" value={e.value}
                   onChange={(ev) => { const env = [...form.env]; env[i] = { ...e, value: ev.target.value }; setForm({ ...form, env }); }} />
                 {form.env.length > 1 && (
                   <button style={S.rmBtn} onClick={() => {
@@ -729,10 +729,10 @@ export function Containers() {
             </div>
             {form.volumes.map((v, i) => (
               <div key={i} style={S.pairRow}>
-                <input style={{ ...S.inputSm, borderColor: v.host ? '#7aa2f7' : '#9ece6a' }} placeholder="Host path" value={v.host}
+                <input style={{ ...S.inputSm, borderColor: v.host ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="Host path" value={v.host}
                   onChange={(e) => { const volumes = [...form.volumes]; volumes[i] = { ...v, host: e.target.value }; setForm({ ...form, volumes }); }} />
                 <span style={S.muted}>→</span>
-                <input style={{ ...S.inputSm, borderColor: v.container ? '#7aa2f7' : '#9ece6a' }} placeholder="Container path" value={v.container}
+                <input style={{ ...S.inputSm, borderColor: v.container ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="Container path" value={v.container}
                   onChange={(e) => { const volumes = [...form.volumes]; volumes[i] = { ...v, container: e.target.value }; setForm({ ...form, volumes }); }} />
                 {form.volumes.length > 1 && (
                   <button style={S.rmBtn} onClick={() => {
@@ -745,7 +745,7 @@ export function Containers() {
 
           <div style={S.formGrid}>
             <label style={S.label}>Restart Policy
-              <select style={{ ...S.input, borderColor: form.restart ? '#7aa2f7' : '#9ece6a' }} value={form.restart}
+              <select style={{ ...S.input, borderColor: form.restart ? 'var(--c-blue)' : 'var(--c-green)' }} value={form.restart}
                 onChange={(e) => setForm({ ...form, restart: e.target.value })}>
                 <option value="">None</option>
                 <option value="always">Always</option>
@@ -754,7 +754,7 @@ export function Containers() {
               </select>
             </label>
             <label style={S.label}>Command (optional)
-              <input style={{ ...S.input, borderColor: form.command ? '#7aa2f7' : '#9ece6a' }} placeholder="e.g. /bin/sh -c 'echo hello'" value={form.command}
+              <input style={{ ...S.input, borderColor: form.command ? 'var(--c-blue)' : 'var(--c-green)' }} placeholder="e.g. /bin/sh -c 'echo hello'" value={form.command}
                 onChange={(e) => setForm({ ...form, command: e.target.value })} />
             </label>
           </div>
@@ -792,8 +792,8 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: '1rem',
   },
   runtimeBadge: {
-    background: '#7aa2f722',
-    color: '#7aa2f7',
+    background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)',
+    color: 'var(--c-blue)',
     padding: '0.2rem 0.6rem',
     borderRadius: 4,
     fontSize: '0.75rem',
@@ -801,21 +801,21 @@ const S: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase' as const,
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
   },
   card: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: '10px',
     padding: '1rem 1.25rem',
   },
   error: {
-    background: '#f7768e22',
-    border: '1px solid #f7768e44',
+    background: 'color-mix(in srgb, var(--c-red) 13%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--c-red) 27%, transparent)',
     borderRadius: 6,
     padding: '0.5rem 1rem',
     marginBottom: '1rem',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -824,7 +824,7 @@ const S: Record<string, React.CSSProperties> = {
   errorClose: {
     background: 'none',
     border: 'none',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     cursor: 'pointer',
     fontSize: '1rem',
   },
@@ -832,7 +832,7 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.75rem',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: 8,
     padding: '0.5rem 1rem',
     marginBottom: '1rem',
@@ -854,22 +854,22 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.45rem 1rem',
     borderRadius: '6px 6px 0 0',
     border: 'none',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-secondary)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-2)',
     cursor: 'pointer',
     fontSize: '0.85rem',
     fontWeight: 500,
   },
   tabActive: {
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
   },
   btn: {
     padding: '0.35rem 0.75rem',
     borderRadius: 4,
     border: '1px solid var(--border)',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     cursor: 'pointer',
     fontSize: '0.8rem',
   },
@@ -882,7 +882,7 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '0.5rem 0.75rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.75rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
@@ -892,7 +892,7 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '0.5rem 0.75rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.75rem',
     fontWeight: 600,
     textTransform: 'uppercase' as const,
@@ -902,7 +902,7 @@ const S: Record<string, React.CSSProperties> = {
     whiteSpace: 'nowrap' as const,
   },
   tr: {
-    borderBottom: '1px solid #292e42',
+    borderBottom: '1px solid var(--bg-surface)',
   },
   td: {
     padding: '0.5rem 0.75rem',
@@ -916,7 +916,7 @@ const S: Record<string, React.CSSProperties> = {
     background: 'none',
     border: '1px solid var(--border)',
     borderRadius: 4,
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     cursor: 'pointer',
     padding: '0.2rem 0.4rem',
     fontSize: '0.8rem',
@@ -943,23 +943,23 @@ const S: Record<string, React.CSSProperties> = {
     flexDirection: 'column' as const,
     gap: '0.3rem',
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
   },
   input: {
     padding: '0.4rem 0.6rem',
     borderRadius: 4,
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     outline: 'none',
   },
   inputSm: {
     padding: '0.3rem 0.5rem',
     borderRadius: 4,
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.8rem',
     outline: 'none',
     flex: 1,
@@ -977,13 +977,13 @@ const S: Record<string, React.CSSProperties> = {
   },
   sectionTitle: {
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 600,
   },
   addBtn: {
     background: 'none',
     border: 'none',
-    color: 'var(--accent)',
+    color: 'var(--c-blue)',
     cursor: 'pointer',
     fontSize: '0.8rem',
     fontWeight: 600,
@@ -991,7 +991,7 @@ const S: Record<string, React.CSSProperties> = {
   rmBtn: {
     background: 'none',
     border: 'none',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     cursor: 'pointer',
     fontSize: '0.85rem',
     padding: '0 0.3rem',
@@ -1012,7 +1012,7 @@ const S: Record<string, React.CSSProperties> = {
     zIndex: 1000,
   },
   modal: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: 10,
     padding: '1rem 1.25rem',
     width: '80vw',
@@ -1028,7 +1028,7 @@ const S: Record<string, React.CSSProperties> = {
     marginBottom: '0.75rem',
   },
   logsPre: {
-    background: 'var(--bg-primary)',
+    background: 'var(--bg-surface)',
     borderRadius: 6,
     padding: '0.75rem',
     fontSize: '0.75rem',
@@ -1038,13 +1038,13 @@ const S: Record<string, React.CSSProperties> = {
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-all' as const,
     maxHeight: '60vh',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
   },
   passwordBar: {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: 8,
     padding: '0.5rem 1rem',
     marginBottom: '1rem',
@@ -1052,24 +1052,24 @@ const S: Record<string, React.CSSProperties> = {
   },
   passwordLabel: {
     fontSize: '0.8rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     whiteSpace: 'nowrap' as const,
   },
   passwordInput: {
     padding: '0.3rem 0.5rem',
     borderRadius: 4,
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     width: 200,
   },
   confirmBtn: {
     padding: '0.3rem 0.7rem',
     borderRadius: 4,
-    border: '1px solid #9ece6a66',
-    background: '#9ece6a22',
-    color: '#9ece6a',
+    border: '1px solid color-mix(in srgb, var(--c-green) 40%, transparent)',
+    background: 'color-mix(in srgb, var(--c-green) 13%, transparent)',
+    color: 'var(--c-green)',
     fontSize: '0.8rem',
     fontWeight: 500,
     cursor: 'pointer',
@@ -1079,18 +1079,18 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     border: '1px solid var(--border)',
     background: 'transparent',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     fontWeight: 500,
     cursor: 'pointer',
   },
   infoBanner: {
-    background: '#7aa2f711',
-    border: '1px solid #7aa2f733',
+    background: 'color-mix(in srgb, var(--c-blue) 7%, transparent)',
+    border: '1px solid color-mix(in srgb, var(--c-blue) 20%, transparent)',
     borderRadius: 6,
     padding: '0.4rem 0.75rem',
     marginBottom: '0.75rem',
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
     fontSize: '0.8rem',
   },
   // ── Search styles ──
@@ -1103,9 +1103,9 @@ const S: Record<string, React.CSSProperties> = {
   searchInput: {
     padding: '0.4rem 0.6rem',
     borderRadius: 4,
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     outline: 'none',
     flex: 1,
@@ -1114,13 +1114,13 @@ const S: Record<string, React.CSSProperties> = {
   searchClear: {
     background: 'none',
     border: 'none',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     cursor: 'pointer',
     fontSize: '0.9rem',
     padding: '0 0.2rem',
   },
   searchCount: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.75rem',
     whiteSpace: 'nowrap' as const,
   },
@@ -1136,7 +1136,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   progressLabel: {
     display: 'block',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     marginBottom: '0.4rem',
   },
@@ -1154,7 +1154,7 @@ const S: Record<string, React.CSSProperties> = {
     width: '50%',
     height: '100%',
     borderRadius: 2,
-    background: 'linear-gradient(90deg, transparent, #7aa2f7, transparent)',
+    background: 'linear-gradient(90deg, transparent, var(--c-blue), transparent)',
     animation: 'progress-slide 1.2s ease-in-out infinite',
   },
 };

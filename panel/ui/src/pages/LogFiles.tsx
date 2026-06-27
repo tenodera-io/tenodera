@@ -286,7 +286,7 @@ export function LogFiles() {
             placeholder="Filter files..."
             value={fileFilter}
             onChange={(e) => setFileFilter(e.target.value)}
-            style={{ ...S.filterInput, borderColor: fileFilter ? '#7aa2f7' : '#9ece6a' }}
+            style={{ ...S.filterInput, borderColor: fileFilter ? 'var(--c-blue)' : 'var(--c-green)' }}
           />
           <div style={S.fileList}>
             {filesLoading ? (
@@ -347,7 +347,7 @@ export function LogFiles() {
                       <select
                         value={tailCount}
                         onChange={(e) => setTailCount(Number(e.target.value))}
-                        style={{ ...S.select, borderColor: '#7aa2f7' }}
+                        style={{ ...S.select, borderColor: 'var(--c-blue)' }}
                       >
                         <option value={50}>50</option>
                         <option value={100}>100</option>
@@ -388,14 +388,14 @@ export function LogFiles() {
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && runSearch()}
-                      style={{ ...S.input, flex: 2, minWidth: '200px', borderColor: searchQuery ? '#7aa2f7' : '#9ece6a' }}
+                      style={{ ...S.input, flex: 2, minWidth: '200px', borderColor: searchQuery ? 'var(--c-blue)' : 'var(--c-green)' }}
                     />
                     <label style={S.label}>
                       Max:
                       <select
                         value={searchMaxLines}
                         onChange={(e) => setSearchMaxLines(Number(e.target.value))}
-                        style={{ ...S.select, borderColor: '#7aa2f7' }}
+                        style={{ ...S.select, borderColor: 'var(--c-blue)' }}
                       >
                         <option value={50}>50</option>
                         <option value={100}>100</option>
@@ -414,7 +414,7 @@ export function LogFiles() {
                         max={50}
                         value={searchBefore}
                         onChange={(e) => setSearchBefore(Number(e.target.value))}
-                        style={{ ...S.input, width: '60px', borderColor: '#7aa2f7' }}
+                        style={{ ...S.input, width: '60px', borderColor: 'var(--c-blue)' }}
                       />
                     </label>
                     <label style={S.label}>
@@ -425,7 +425,7 @@ export function LogFiles() {
                         max={50}
                         value={searchAfter}
                         onChange={(e) => setSearchAfter(Number(e.target.value))}
-                        style={{ ...S.input, width: '60px', borderColor: '#7aa2f7' }}
+                        style={{ ...S.input, width: '60px', borderColor: 'var(--c-blue)' }}
                       />
                     </label>
                     <label style={S.label}>
@@ -434,13 +434,13 @@ export function LogFiles() {
                         type="date"
                         value={searchDateFrom}
                         onChange={(e) => setSearchDateFrom(e.target.value)}
-                        style={{ ...S.input, borderColor: searchDateFrom ? '#7aa2f7' : '#9ece6a' }}
+                        style={{ ...S.input, borderColor: searchDateFrom ? 'var(--c-blue)' : 'var(--c-green)' }}
                       />
                       <input
                         type="time"
                         value={searchTimeFrom}
                         onChange={(e) => setSearchTimeFrom(e.target.value)}
-                        style={{ ...S.input, width: '100px', borderColor: searchTimeFrom ? '#7aa2f7' : '#9ece6a' }}
+                        style={{ ...S.input, width: '100px', borderColor: searchTimeFrom ? 'var(--c-blue)' : 'var(--c-green)' }}
                       />
                     </label>
                     <label style={S.label}>
@@ -449,13 +449,13 @@ export function LogFiles() {
                         type="date"
                         value={searchDateTo}
                         onChange={(e) => setSearchDateTo(e.target.value)}
-                        style={{ ...S.input, borderColor: searchDateTo ? '#7aa2f7' : '#9ece6a' }}
+                        style={{ ...S.input, borderColor: searchDateTo ? 'var(--c-blue)' : 'var(--c-green)' }}
                       />
                       <input
                         type="time"
                         value={searchTimeTo}
                         onChange={(e) => setSearchTimeTo(e.target.value)}
-                        style={{ ...S.input, width: '100px', borderColor: searchTimeTo ? '#7aa2f7' : '#9ece6a' }}
+                        style={{ ...S.input, width: '100px', borderColor: searchTimeTo ? 'var(--c-blue)' : 'var(--c-green)' }}
                       />
                     </label>
                     <button onClick={runSearch} style={S.btn} disabled={searchLoading || (!searchQuery && !searchDateFrom && !searchDateTo)}>
@@ -567,15 +567,15 @@ const S: Record<string, React.CSSProperties> = {
   filterInput: {
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
   },
   fileList: {
     flex: 1,
     overflow: 'auto',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: '8px',
     maxHeight: 'calc(100vh - 220px)',
   },
@@ -587,7 +587,7 @@ const S: Record<string, React.CSSProperties> = {
     transition: 'background 0.1s',
   },
   fileItemActive: {
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
   },
   fileName: {
@@ -608,7 +608,7 @@ const S: Record<string, React.CSSProperties> = {
   selectedPath: {
     fontFamily: 'monospace',
     fontSize: '0.9rem',
-    color: 'var(--accent)',
+    color: 'var(--c-blue)',
     marginBottom: '0.5rem',
     fontWeight: 600,
   },
@@ -622,17 +622,17 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: '4px 4px 0 0',
     border: '1px solid var(--border)',
     borderBottom: 'none',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-secondary)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-2)',
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
   tabActive: {
     padding: '0.4rem 1rem',
     borderRadius: '4px 4px 0 0',
-    border: '1px solid var(--accent)',
+    border: '1px solid var(--c-blue)',
     borderBottom: 'none',
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
     cursor: 'pointer',
     fontSize: '0.85rem',
@@ -650,30 +650,30 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '0.3rem',
     fontSize: '0.85rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     whiteSpace: 'nowrap' as const,
   },
   input: {
     padding: '0.4rem',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
   },
   select: {
     padding: '0.4rem',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
   },
   btn: {
     padding: '0.4rem 1rem',
     borderRadius: '4px',
     border: 'none',
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
     cursor: 'pointer',
     fontSize: '0.85rem',
@@ -684,7 +684,7 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.8rem',
     flex: 1,
     overflow: 'auto',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: '8px',
     padding: '0.5rem',
     maxHeight: 'calc(100vh - 340px)',
@@ -697,7 +697,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: '0.5rem',
   },
   lineNum: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     opacity: 0.5,
     minWidth: '40px',
     textAlign: 'right' as const,
@@ -706,7 +706,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   matchLine: {
     background: 'rgba(255, 200, 50, 0.12)',
-    borderLeft: '3px solid var(--warning, #c80)',
+    borderLeft: '3px solid var(--c-yellow)',
     paddingLeft: '6px',
   },
   contextLine: {
@@ -717,7 +717,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   groupSep: {
     textAlign: 'center' as const,
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     opacity: 0.4,
     padding: '0.25rem 0',
     fontSize: '0.9rem',
@@ -730,16 +730,16 @@ const S: Record<string, React.CSSProperties> = {
   },
   matchInfo: {
     fontSize: '0.85rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     margin: '0 0 0.5rem 0',
   },
   error: {
-    color: 'var(--danger, #e55)',
+    color: 'var(--c-red)',
     fontSize: '0.85rem',
     margin: '0.25rem 0',
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '1rem',
   },
 };

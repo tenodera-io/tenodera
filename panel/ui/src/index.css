@@ -4,25 +4,149 @@
   padding: 0;
 }
 
-:root {
-  --bg-primary: #1a1a2e;
-  --bg-secondary: #16213e;
-  --bg-card: #0f3460;
-  --accent: #e94560;
-  --text-primary: #eee;
-  --text-secondary: #aaa;
-  --border: #333;
+/* ── Tokyo Night Moon (default dark) ───────────────────── */
+:root,
+[data-theme="tokyo-night-moon"] {
+  --bg-app:     #222436;
+  --bg-panel:   #1b1d2b;
+  --bg-surface: #2f334d;
+  --bg-input:   #3b3f5e;
+  --bg-hover:   #444874;
+  --text-1:     #c8d3f5;
+  --text-2:     #828bb8;
+  --text-3:     #636da6;
+  --border-1:   #2f334d;
+  --border-2:   #444874;
+  --c-green:    #c3e88d;
+  --c-blue:     #82aaff;
+  --c-red:      #ff757f;
+  --c-yellow:   #ffc777;
+  --c-purple:   #c099ff;
+  --c-cyan:     #86e1fc;
+  --c-orange:   #ff966c;
+  --c-teal:     #4fd6be;
+  /* aliases */
+  --bg-primary:   var(--bg-surface);
+  --bg-secondary: var(--bg-panel);
+  --bg-card:      var(--bg-surface);
+  --bg-base:      var(--bg-app);
+  --text-primary:   var(--text-1);
+  --text-secondary: var(--text-2);
+  --border: var(--border-1);
+  --accent: var(--c-blue);
+  --danger: var(--c-red);
+  --success: var(--c-green);
+  --warning: var(--c-yellow);
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
+/* ── Catppuccin Mocha (dark) ────────────────────────────── */
+[data-theme="catppuccin-mocha"] {
+  --bg-app:     #1e1e2e;
+  --bg-panel:   #181825;
+  --bg-surface: #313244;
+  --bg-input:   #45475a;
+  --bg-hover:   #585b70;
+  --text-1:     #cdd6f4;
+  --text-2:     #bac2de;
+  --text-3:     #9399b2;
+  --border-1:   #313244;
+  --border-2:   #45475a;
+  --c-green:    #a6e3a1;
+  --c-blue:     #89b4fa;
+  --c-red:      #f38ba8;
+  --c-yellow:   #f9e2af;
+  --c-purple:   #cba6f7;
+  --c-cyan:     #89dceb;
+  --c-orange:   #fab387;
+  --c-teal:     #94e2d5;
+  --bg-primary:   var(--bg-surface);
+  --bg-secondary: var(--bg-panel);
+  --bg-card:      var(--bg-surface);
+  --bg-base:      var(--bg-app);
+  --text-primary:   var(--text-1);
+  --text-secondary: var(--text-2);
+  --border: var(--border-1);
+  --accent: var(--c-blue);
+  --danger: var(--c-red);
+  --success: var(--c-green);
+  --warning: var(--c-yellow);
+}
+
+/* ── Tokyo Night Light ─────────────────────────────────── */
+[data-theme="tokyo-night-light"] {
+  --bg-app:     #d5d6db;
+  --bg-panel:   #cbccd1;
+  --bg-surface: #b9bac7;
+  --bg-input:   #e8e9ed;
+  --bg-hover:   #c4c5d0;
+  --text-1:     #343b58;
+  --text-2:     #565a86;
+  --text-3:     #848cb5;
+  --border-1:   #b9bac7;
+  --border-2:   #9899a8;
+  --c-green:    #33635c;
+  --c-blue:     #34548a;
+  --c-red:      #8c4351;
+  --c-yellow:   #8f5e15;
+  --c-purple:   #5a4a78;
+  --c-cyan:     #007197;
+  --c-orange:   #965027;
+  --c-teal:     #2d7f79;
+  --bg-primary:   var(--bg-surface);
+  --bg-secondary: var(--bg-panel);
+  --bg-card:      var(--bg-surface);
+  --bg-base:      var(--bg-app);
+  --text-primary:   var(--text-1);
+  --text-secondary: var(--text-2);
+  --border: var(--border-1);
+  --accent: var(--c-blue);
+  --danger: var(--c-red);
+  --success: var(--c-green);
+  --warning: var(--c-yellow);
+}
+
+/* ── Catppuccin Latte (light) ──────────────────────────── */
+[data-theme="catppuccin-latte"] {
+  --bg-app:     #eff1f5;
+  --bg-panel:   #e6e9ef;
+  --bg-surface: #ccd0da;
+  --bg-input:   #dce0e8;
+  --bg-hover:   #bcc0cc;
+  --text-1:     #4c4f69;
+  --text-2:     #5c5f77;
+  --text-3:     #7c7f93;
+  --border-1:   #ccd0da;
+  --border-2:   #acb0be;
+  --c-green:    #40a02b;
+  --c-blue:     #1e66f5;
+  --c-red:      #d20f39;
+  --c-yellow:   #df8e1d;
+  --c-purple:   #8839ef;
+  --c-cyan:     #04a5e5;
+  --c-orange:   #fe640b;
+  --c-teal:     #179299;
+  --bg-primary:   var(--bg-surface);
+  --bg-secondary: var(--bg-panel);
+  --bg-card:      var(--bg-surface);
+  --bg-base:      var(--bg-app);
+  --text-primary:   var(--text-1);
+  --text-secondary: var(--text-2);
+  --border: var(--border-1);
+  --accent: var(--c-blue);
+  --danger: var(--c-red);
+  --success: var(--c-green);
+  --warning: var(--c-yellow);
+}
+
 body {
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: var(--bg-app);
+  color: var(--text-1);
   min-height: 100vh;
 }
 
 a {
-  color: var(--accent);
+  color: var(--c-blue);
   text-decoration: none;
 }
 

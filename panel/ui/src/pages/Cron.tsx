@@ -122,7 +122,7 @@ export function Cron() {
       </div>
 
       {loading && <div style={S.msg}>Loading...</div>}
-      {error && <div style={{ ...S.msg, color: '#f7768e' }}>{error}</div>}
+      {error && <div style={{ ...S.msg, color: 'var(--c-red)' }}>{error}</div>}
       {!loading && !error && sources.length === 0 && (
         <div style={S.msg}>No cron jobs found.</div>
       )}
@@ -155,7 +155,7 @@ export function Cron() {
                 {src.entries.map((e, i) => (
                   <tr key={i} style={i % 2 === 0 ? S.rowEven : S.rowOdd}>
                     <td style={{ ...S.td, ...S.tdMono, whiteSpace: 'nowrap' }}>{e.schedule}</td>
-                    <td style={{ ...S.td, color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{describeCron(e.schedule)}</td>
+                    <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.75rem' }}>{describeCron(e.schedule)}</td>
                     <td style={{ ...S.td, ...S.tdMono }}>{e.user}</td>
                     <td style={{ ...S.td, ...S.tdMono, maxWidth: 420, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={e.command}>{e.command}</td>
                   </tr>
@@ -204,30 +204,30 @@ export function Cron() {
 const S: Record<string, React.CSSProperties> = {
   header:      { display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' },
   title:       { fontSize: '1.3rem', fontWeight: 700, margin: 0 },
-  subtitle:    { fontSize: '0.8rem', color: 'var(--text-secondary)' },
-  refreshBtn:  { padding: '0.4rem 0.7rem', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1rem' },
-  msg:         { textAlign: 'center', padding: '3rem', color: 'var(--text-secondary)' },
-  card:        { background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: '1rem', overflow: 'hidden' },
-  cardHeader:  { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.9rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-primary)' },
+  subtitle:    { fontSize: '0.8rem', color: 'var(--text-2)' },
+  refreshBtn:  { padding: '0.4rem 0.7rem', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '1rem' },
+  msg:         { textAlign: 'center', padding: '3rem', color: 'var(--text-2)' },
+  card:        { background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 8, marginBottom: '1rem', overflow: 'hidden' },
+  cardHeader:  { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.6rem 0.9rem', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' },
   cardTitle:   { fontWeight: 700, fontSize: '0.9rem', fontFamily: 'monospace' },
-  cardCount:   { marginLeft: '0.6rem', fontSize: '0.75rem', color: 'var(--text-secondary)' },
-  editBtn:     { padding: '0.3rem 0.75rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: '#7aa2f7', cursor: 'pointer', fontSize: '0.8rem' },
-  emptySource: { padding: '0.75rem 0.9rem', fontSize: '0.8rem', color: 'var(--text-secondary)' },
+  cardCount:   { marginLeft: '0.6rem', fontSize: '0.75rem', color: 'var(--text-2)' },
+  editBtn:     { padding: '0.3rem 0.75rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--c-blue)', cursor: 'pointer', fontSize: '0.8rem' },
+  emptySource: { padding: '0.75rem 0.9rem', fontSize: '0.8rem', color: 'var(--text-2)' },
   table:       { width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem' },
-  th:          { padding: '0.4rem 0.75rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)', background: 'var(--bg-primary)' },
+  th:          { padding: '0.4rem 0.75rem', textAlign: 'left', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-2)', borderBottom: '1px solid var(--border)', background: 'var(--bg-surface)' },
   td:          { padding: '0.4rem 0.75rem', verticalAlign: 'middle' },
   tdMono:      { fontFamily: 'monospace', fontSize: '0.8rem' },
   rowEven:     { background: 'transparent' },
   rowOdd:      { background: 'rgba(255,255,255,0.02)' },
   overlay:     { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  modal:       { background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 10, width: 720, maxWidth: '95vw', display: 'flex', flexDirection: 'column', maxHeight: '85vh' },
+  modal:       { background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 10, width: 720, maxWidth: '95vw', display: 'flex', flexDirection: 'column', maxHeight: '85vh' },
   modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)' },
   modalTitle:  { fontWeight: 700, fontFamily: 'monospace', fontSize: '0.9rem' },
-  closeBtn:    { background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1rem', padding: '0 0.3rem' },
-  textarea:    { flex: 1, margin: '0.75rem', background: '#1a1b26', border: '1px solid var(--border)', borderRadius: 6, color: '#a9b1d6', fontFamily: 'monospace', fontSize: '0.82rem', padding: '0.6rem', resize: 'vertical', minHeight: 280, outline: 'none' },
-  saveError:   { margin: '0 0.75rem', color: '#f7768e', fontSize: '0.8rem' },
-  noSu:        { margin: '0.25rem 0.75rem', color: '#e0af68', fontSize: '0.8rem' },
+  closeBtn:    { background: 'transparent', border: 'none', color: 'var(--text-2)', cursor: 'pointer', fontSize: '1rem', padding: '0 0.3rem' },
+  textarea:    { flex: 1, margin: '0.75rem', background: 'var(--bg-app)', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-2)', fontFamily: 'monospace', fontSize: '0.82rem', padding: '0.6rem', resize: 'vertical', minHeight: 280, outline: 'none' },
+  saveError:   { margin: '0 0.75rem', color: 'var(--c-red)', fontSize: '0.8rem' },
+  noSu:        { margin: '0.25rem 0.75rem', color: 'var(--c-yellow)', fontSize: '0.8rem' },
   modalActions:{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', padding: '0.75rem 1rem', borderTop: '1px solid var(--border)' },
-  cancelBtn:   { padding: '0.4rem 1rem', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.85rem' },
-  saveBtn:     { padding: '0.4rem 1.2rem', borderRadius: 6, border: 'none', background: '#3d59a1', color: '#fff', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 },
+  cancelBtn:   { padding: '0.4rem 1rem', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.85rem' },
+  saveBtn:     { padding: '0.4rem 1.2rem', borderRadius: 6, border: 'none', background: 'var(--c-blue)', color: '#fff', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 },
 };

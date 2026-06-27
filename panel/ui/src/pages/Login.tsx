@@ -45,7 +45,7 @@ export function Login({ onLogin }: LoginProps) {
           placeholder="Username"
           value={user}
           onChange={(e) => setUser(e.target.value)}
-          style={{ ...styles.input, borderColor: tried && !user ? '#f7768e' : user ? '#7aa2f7' : '#9ece6a' }}
+          style={{ ...styles.input, borderColor: tried && !user ? 'var(--c-red)' : user ? 'var(--c-blue)' : 'var(--c-green)' }}
           autoFocus
           autoComplete="username"
         />
@@ -54,7 +54,7 @@ export function Login({ onLogin }: LoginProps) {
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={{ ...styles.input, borderColor: tried && !password ? '#f7768e' : password ? '#7aa2f7' : '#9ece6a' }}
+          style={{ ...styles.input, borderColor: tried && !password ? 'var(--c-red)' : password ? 'var(--c-blue)' : 'var(--c-green)' }}
           autoComplete="current-password"
         />
         <button type="submit" disabled={loading} style={styles.button}>
@@ -77,7 +77,7 @@ const styles: Record<string, React.CSSProperties> = {
     flexDirection: 'column',
     gap: '1rem',
     padding: '2rem',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     borderRadius: '8px',
     width: '100%',
     maxWidth: '360px',
@@ -90,29 +90,29 @@ const styles: Record<string, React.CSSProperties> = {
   },
   subtitle: {
     textAlign: 'center' as const,
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.875rem',
   },
   input: {
     padding: '0.75rem',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-input)',
+    color: 'var(--text-1)',
     fontSize: '1rem',
   },
   button: {
     padding: '0.75rem',
     borderRadius: '4px',
     border: 'none',
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
     fontSize: '1rem',
     fontWeight: 600,
     cursor: 'pointer',
   },
   error: {
-    color: '#ff6b6b',
+    color: 'var(--c-red)',
     textAlign: 'center' as const,
     fontSize: '0.875rem',
   },

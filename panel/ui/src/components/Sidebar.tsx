@@ -59,7 +59,7 @@ export function Sidebar({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const connColor = connState === 'connected' ? '#9ece6a' : connState === 'reconnecting' ? '#e0af68' : '#f7768e';
+  const connColor = connState === 'connected' ? 'var(--c-green)' : connState === 'reconnecting' ? 'var(--c-yellow)' : 'var(--c-red)';
   const connLabel = connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected';
 
   const visibleHosts = hosts;
@@ -75,7 +75,7 @@ export function Sidebar({
       {/* ── Host Selector ── */}
       <div ref={hostSelectorRef} style={S.hostSelector}>
         <button
-          style={{ ...S.hostSelectorBtn, borderColor: activeHost ? '#7aa2f7' : 'var(--border)' }}
+          style={{ ...S.hostSelectorBtn, borderColor: activeHost ? 'var(--c-blue)' : 'var(--border-1)' }}
           onClick={() => setHostSelectorOpen(!hostSelectorOpen)}
         >
           <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -90,9 +90,9 @@ export function Sidebar({
               return (
                 <HostOption
                   key={h.id}
-                  dot={st === 'ok' ? '#9ece6a' : st === 'error' ? '#f7768e' : '#565f89'}
+                  dot={st === 'ok' ? 'var(--c-green)' : st === 'error' ? 'var(--c-red)' : 'var(--text-3)'}
                   isActive={activeHost?.id === h.id}
-                  activeColor={h.is_local ? '#9ece6a' : '#7aa2f7'}
+                  activeColor={h.is_local ? 'var(--c-green)' : 'var(--c-blue)'}
                   onClick={() => { onSwitchHost(h); setHostSelectorOpen(false); }}
                   name={h.is_local ? `${h.name} (local)` : h.name}
                   addr={h.is_local ? 'this panel host' : (h.online ? 'online' : 'offline')}
@@ -101,7 +101,7 @@ export function Sidebar({
             })}
             <div style={S.divider} />
             <div
-              style={{ ...S.hostOption, color: 'var(--accent)', justifyContent: 'center' }}
+              style={{ ...S.hostOption, color: 'var(--c-blue)', justifyContent: 'center' }}
               onClick={() => { setHostSelectorOpen(false); onOpenManageHosts(); }}
             >
               ⚙ Manage hosts…
@@ -123,8 +123,8 @@ export function Sidebar({
                     to={path} end={path === '/'}
                     style={({ isActive }) => ({
                       ...S.navLink,
-                      background: isActive ? 'var(--bg-card)' : 'transparent',
-                      borderLeft: isActive ? '3px solid #9ece6a' : '3px solid transparent',
+                      background: isActive ? 'var(--bg-surface)' : 'transparent',
+                      borderLeft: isActive ? '3px solid var(--c-green)' : '3px solid transparent',
                     })}
                   >
                     <span style={S.navIcon}>{icon}</span>{label}
@@ -146,8 +146,8 @@ export function Sidebar({
                   to="/management"
                   style={({ isActive }) => ({
                     ...S.navLink,
-                    background: isActive ? 'var(--bg-card)' : 'transparent',
-                    borderLeft: isActive ? '3px solid #bb9af7' : '3px solid transparent',
+                    background: isActive ? 'var(--bg-surface)' : 'transparent',
+                    borderLeft: isActive ? '3px solid var(--c-purple)' : '3px solid transparent',
                   })}
                 >
                   <span style={S.navIcon}>🗂️</span>Management
@@ -162,7 +162,7 @@ export function Sidebar({
 }
 
 function HostOption({
-  dot, isActive, activeColor = '#9ece6a', onClick, name, addr,
+  dot, isActive, activeColor = 'var(--c-green)', onClick, name, addr,
 }: {
   dot: string; isActive: boolean; activeColor?: string;
   onClick: () => void; name: string; addr: string;
@@ -193,41 +193,41 @@ import React from 'react';
 const S: Record<string, React.CSSProperties> = {
   sidebar: {
     width: '220px', minWidth: '220px',
-    background: 'var(--bg-secondary)', padding: '1rem',
+    background: 'var(--bg-panel)', padding: '1rem',
     display: 'flex', flexDirection: 'column',
-    borderRight: '1px solid var(--border)', overflowY: 'auto',
+    borderRight: '1px solid var(--border-1)', overflowY: 'auto',
   },
   logo: {
     fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.5rem',
-    color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer',
+    color: 'var(--c-blue)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer',
   },
   logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
-  status: { fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' },
+  status: { fontSize: '0.75rem', color: 'var(--text-2)', marginBottom: '0.75rem' },
   hostSelector: { position: 'relative', marginBottom: '0.75rem' },
   hostSelectorBtn: {
     width: '100%', display: 'flex', alignItems: 'center', gap: '0.4rem',
-    padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid var(--border)',
-    background: 'var(--bg-primary)', color: 'var(--text-primary)',
+    padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid var(--border-1)',
+    background: 'var(--bg-surface)', color: 'var(--text-1)',
     fontSize: '0.82rem', cursor: 'pointer',
   },
   hostDropdown: {
     position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
-    background: '#1a1b26', border: '1px solid #292e42', borderRadius: 8,
+    background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderRadius: 8,
     padding: '0.3rem 0', zIndex: 300, maxHeight: 290, overflowY: 'auto',
     boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
   },
   hostOption: {
     display: 'flex', alignItems: 'center', gap: '0.5rem',
     padding: '0.45rem 0.6rem', cursor: 'pointer',
-    fontSize: '0.82rem', color: 'var(--text-primary)',
+    fontSize: '0.82rem', color: 'var(--text-1)',
   },
   hostName: { fontWeight: 600, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  hostAddr: { fontSize: '0.7rem', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-  divider: { height: 1, background: '#292e42', margin: '0.25rem 0' },
+  hostAddr: { fontSize: '0.7rem', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  divider: { height: 1, background: 'var(--border-1)', margin: '0.25rem 0' },
   navList: { listStyle: 'none', flex: 1, display: 'flex', flexDirection: 'column', gap: 0 },
-  sectionDivider: { height: '1px', background: '#414868', marginTop: '0.75rem', marginBottom: '0.5rem' },
+  sectionDivider: { height: '1px', background: 'var(--bg-hover)', marginTop: '0.75rem', marginBottom: '0.5rem' },
   sectionLabel: {
-    fontSize: '0.7rem', fontWeight: 700, color: '#a9b1d6',
+    fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-2)',
     textTransform: 'uppercase', letterSpacing: '0.08em',
     padding: '0 0.75rem', marginBottom: '0.35rem',
   },
@@ -235,7 +235,7 @@ const S: Record<string, React.CSSProperties> = {
   navLink: {
     display: 'flex', alignItems: 'center', gap: '0.5rem',
     padding: '0.5rem 0.75rem', borderRadius: '4px',
-    color: 'var(--text-primary)', textDecoration: 'none', fontSize: '0.9rem',
+    color: 'var(--text-1)', textDecoration: 'none', fontSize: '0.9rem',
   },
   navIcon: { fontSize: '1rem', width: '1.4rem', textAlign: 'center' },
 };

@@ -383,7 +383,7 @@ export function Packages() {
                 placeholder="Filter installed packages..."
                 value={installedFilter}
                 onChange={e => setInstalledFilter(e.target.value)}
-                style={{ ...S.input, borderColor: installedFilter ? '#7aa2f7' : '#9ece6a' }}
+                style={{ ...S.input, borderColor: installedFilter ? 'var(--c-blue)' : 'var(--c-green)' }}
               />
               <button onClick={loadInstalled} style={S.btn} disabled={loading}>
                 {loading ? '⏳' : '🔄'} Refresh
@@ -445,7 +445,7 @@ export function Packages() {
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && doSearch()}
-                style={{ ...S.input, flex: 1, borderColor: searchQuery ? '#7aa2f7' : '#9ece6a' }}
+                style={{ ...S.input, flex: 1, borderColor: searchQuery ? 'var(--c-blue)' : 'var(--c-green)' }}
               />
               <button onClick={doSearch} style={S.btn} disabled={loading || !searchQuery.trim()}>
                 {loading ? '⏳' : '🔍'} Search
@@ -559,7 +559,7 @@ export function Packages() {
                       <tr key={u.name} style={S.tr}>
                         <td style={S.td}>{u.name}</td>
                         <td style={S.tdMono}>{u.current || '—'}</td>
-                        <td style={{ ...S.tdMono, color: '#9ece6a' }}>{u.available}</td>
+                        <td style={{ ...S.tdMono, color: 'var(--c-green)' }}>{u.available}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -597,7 +597,7 @@ export function Packages() {
                     placeholder={backend === 'pacman' ? 'Repository name' : 'File name (e.g. docker, custom)'}
                     value={newRepoName}
                     onChange={e => setNewRepoName(e.target.value)}
-                    style={{ ...S.input, width: 200, borderColor: newRepoName ? '#7aa2f7' : '#9ece6a' }}
+                    style={{ ...S.input, width: 200, borderColor: newRepoName ? 'var(--c-blue)' : 'var(--c-green)' }}
                   />
                 )}
                 <input
@@ -609,7 +609,7 @@ export function Packages() {
                   }
                   value={newRepoUrl}
                   onChange={e => setNewRepoUrl(e.target.value)}
-                  style={{ ...S.input, flex: 1, borderColor: newRepoUrl ? '#7aa2f7' : '#9ece6a' }}
+                  style={{ ...S.input, flex: 1, borderColor: newRepoUrl ? 'var(--c-blue)' : 'var(--c-green)' }}
                 />
                 <button onClick={addRepo} style={S.btnSuccess} disabled={!newRepoUrl.trim()}>
                   ➕ Add
@@ -656,7 +656,7 @@ export function Packages() {
                               <tr key={'main-' + i} style={S.tr}>
                                 <td style={S.tdMono}>{r.line || '—'}</td>
                                 <td style={S.td}>
-                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                  <span style={{ color: r.enabled ? 'var(--c-green)' : 'var(--c-red)' }}>
                                     {r.enabled ? '● Enabled' : '○ Disabled'}
                                   </span>
                                 </td>
@@ -714,7 +714,7 @@ export function Packages() {
                                 </div>
                                 <div style={S.deb822Row}>
                                   <span style={S.deb822Label}>Status</span>
-                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                  <span style={{ color: r.enabled ? 'var(--c-green)' : 'var(--c-red)' }}>
                                     {r.enabled ? '● Enabled' : '○ Disabled'}
                                   </span>
                                 </div>
@@ -722,7 +722,7 @@ export function Packages() {
                             ) : (
                               <div key={i} style={S.dropinLine}>
                                 <span style={S.dropinLineMono}>{r.line || '—'}</span>
-                                <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e', fontSize: '0.8rem', flexShrink: 0 }}>
+                                <span style={{ color: r.enabled ? 'var(--c-green)' : 'var(--c-red)', fontSize: '0.8rem', flexShrink: 0 }}>
                                   {r.enabled ? '● Enabled' : '○ Disabled'}
                                 </span>
                               </div>
@@ -774,7 +774,7 @@ export function Packages() {
                                 </td>
                                 <td style={S.tdMono}>{r.sig_level || '—'}</td>
                                 <td style={S.td}>
-                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                  <span style={{ color: r.enabled ? 'var(--c-green)' : 'var(--c-red)' }}>
                                     {r.enabled ? '● Enabled' : '○ Disabled'}
                                   </span>
                                 </td>
@@ -816,7 +816,7 @@ export function Packages() {
                                 </td>
                                 <td style={S.tdMono}>{r.sig_level || '—'}</td>
                                 <td style={S.td}>
-                                  <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                                  <span style={{ color: r.enabled ? 'var(--c-green)' : 'var(--c-red)' }}>
                                     {r.enabled ? '● Enabled' : '○ Disabled'}
                                   </span>
                                 </td>
@@ -863,7 +863,7 @@ export function Packages() {
                             <td style={{ ...S.td, fontWeight: 600 }}>{r.name}</td>
                             <td style={S.td}>{r.description || '—'}</td>
                             <td style={S.td}>
-                              <span style={{ color: r.enabled ? '#9ece6a' : '#f7768e' }}>
+                              <span style={{ color: r.enabled ? 'var(--c-green)' : 'var(--c-red)' }}>
                                 {r.enabled ? '● Enabled' : '○ Disabled'}
                               </span>
                             </td>
@@ -905,7 +905,7 @@ export function Packages() {
               placeholder="Password"
               value={pwInput}
               onChange={e => setPwInput(e.target.value)}
-              style={{ ...S.modalInput, borderColor: pwInput ? '#7aa2f7' : '#9ece6a' }}
+              style={{ ...S.modalInput, borderColor: pwInput ? 'var(--c-blue)' : 'var(--c-green)' }}
               autoFocus
               autoComplete="current-password"
             />
@@ -940,7 +940,7 @@ const S: Record<string, React.CSSProperties> = {
   title: {
     margin: 0,
     fontSize: '1.4rem',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
   },
   headerInfo: {
     display: 'flex',
@@ -948,27 +948,27 @@ const S: Record<string, React.CSSProperties> = {
     gap: '0.5rem',
   },
   badge: {
-    background: '#7aa2f7',
-    color: '#1a1b26',
+    background: 'var(--c-blue)',
+    color: 'var(--bg-app)',
     padding: '2px 10px',
     borderRadius: 12,
     fontSize: '0.8rem',
     fontWeight: 600,
   },
   distro: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.9rem',
   },
   successMsg: {
     background: 'rgba(158,206,106,0.15)',
-    color: '#9ece6a',
+    color: 'var(--c-green)',
     padding: '0.5rem 1rem',
     borderRadius: 8,
     fontSize: '0.85rem',
   },
   errorMsg: {
     background: 'rgba(247,118,142,0.15)',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     padding: '0.5rem 1rem',
     borderRadius: 8,
     fontSize: '0.85rem',
@@ -982,7 +982,7 @@ const S: Record<string, React.CSSProperties> = {
   tab: {
     background: 'transparent',
     border: 'none',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '0.5rem 1rem',
     cursor: 'pointer',
     fontSize: '0.9rem',
@@ -993,11 +993,11 @@ const S: Record<string, React.CSSProperties> = {
     transition: 'color 0.15s',
   },
   tabActive: {
-    color: 'var(--accent)',
-    borderBottom: '2px solid var(--accent)',
+    color: 'var(--c-blue)',
+    borderBottom: '2px solid var(--c-blue)',
   },
   updateBadge: {
-    background: '#f7768e',
+    background: 'var(--c-red)',
     color: '#fff',
     borderRadius: 10,
     padding: '0 6px',
@@ -1017,9 +1017,9 @@ const S: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap',
   },
   input: {
-    background: 'var(--bg-card)',
-    border: '1px solid #9ece6a',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--c-green)',
+    color: 'var(--text-1)',
     padding: '6px 12px',
     borderRadius: 6,
     fontSize: '0.85rem',
@@ -1027,9 +1027,9 @@ const S: Record<string, React.CSSProperties> = {
     minWidth: 200,
   },
   btn: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     padding: '6px 14px',
     borderRadius: 6,
     cursor: 'pointer',
@@ -1038,8 +1038,8 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnSuccess: {
     background: 'rgba(158,206,106,0.2)',
-    border: '1px solid #9ece6a',
-    color: '#9ece6a',
+    border: '1px solid var(--c-green)',
+    color: 'var(--c-green)',
     padding: '6px 14px',
     borderRadius: 6,
     cursor: 'pointer',
@@ -1048,24 +1048,24 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnDanger: {
     background: 'rgba(247,118,142,0.15)',
-    border: '1px solid #f7768e',
-    color: '#f7768e',
+    border: '1px solid var(--c-red)',
+    color: 'var(--c-red)',
     padding: '4px 10px',
     borderRadius: 6,
     cursor: 'pointer',
     fontSize: '0.8rem',
   },
   btnCancel: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '6px 14px',
     borderRadius: 6,
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
   count: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
     marginLeft: 'auto',
   },
@@ -1083,11 +1083,11 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left',
     padding: '8px 12px',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 600,
     position: 'sticky',
     top: 0,
-    background: 'var(--bg-base)',
+    background: 'var(--bg-app)',
     zIndex: 1,
   },
   tr: {
@@ -1095,41 +1095,41 @@ const S: Record<string, React.CSSProperties> = {
   },
   td: {
     padding: '6px 12px',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
   },
   tdMono: {
     padding: '6px 12px',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     fontFamily: 'monospace',
     fontSize: '0.8rem',
   },
   installedBadge: {
     background: 'rgba(158,206,106,0.2)',
-    color: '#9ece6a',
+    color: 'var(--c-green)',
     fontSize: '0.7rem',
     padding: '1px 6px',
     borderRadius: 8,
     marginLeft: 8,
   },
   loadingText: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textAlign: 'center',
     padding: '2rem',
   },
   emptyState: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textAlign: 'center',
     padding: '3rem',
     fontSize: '1.1rem',
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     padding: '0.5rem 0',
   },
   outputPre: {
-    background: 'var(--bg-card)',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     padding: '1rem',
     borderRadius: 8,
     fontSize: '0.8rem',
@@ -1139,7 +1139,7 @@ const S: Record<string, React.CSSProperties> = {
     marginTop: '0.75rem',
   },
   formCard: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
     borderRadius: 8,
     padding: '1rem',
@@ -1147,7 +1147,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   formTitle: {
     margin: '0 0 0.5rem 0',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     fontSize: '0.95rem',
   },
   formRow: {
@@ -1166,7 +1166,7 @@ const S: Record<string, React.CSSProperties> = {
     zIndex: 1000,
   },
   modal: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
     borderRadius: 12,
     padding: '1.5rem',
@@ -1174,18 +1174,18 @@ const S: Record<string, React.CSSProperties> = {
   },
   modalTitle: {
     margin: '0 0 0.5rem 0',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
   },
   modalText: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
     margin: '0 0 1rem 0',
   },
   modalInput: {
     width: '100%',
-    background: 'var(--bg-base)',
-    border: '1px solid #9ece6a',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-app)',
+    border: '1px solid var(--c-green)',
+    color: 'var(--text-1)',
     padding: '8px 12px',
     borderRadius: 6,
     fontSize: '0.9rem',
@@ -1214,13 +1214,13 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '1rem',
   },
   repoSectionTitle: {
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     fontWeight: 600,
     fontSize: '0.95rem',
   },
   repoSectionBadge: {
     background: 'rgba(122,162,247,0.15)',
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
     padding: '1px 8px',
     borderRadius: 8,
     fontSize: '0.7rem',
@@ -1228,13 +1228,13 @@ const S: Record<string, React.CSSProperties> = {
     textTransform: 'uppercase' as const,
   },
   repoSectionCount: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     marginLeft: 'auto',
   },
   // ── APT drop-in card styles ──
   dropinCard: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
     borderRadius: 8,
     marginBottom: '0.5rem',
@@ -1249,13 +1249,13 @@ const S: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid var(--border)',
   },
   dropinFileName: {
-    color: '#e0af68',
+    color: 'var(--c-yellow)',
     fontFamily: 'monospace',
     fontSize: '0.85rem',
     fontWeight: 600,
   },
   dropinFormat: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.7rem',
     background: 'rgba(65,72,104,0.3)',
     padding: '1px 6px',
@@ -1272,7 +1272,7 @@ const S: Record<string, React.CSSProperties> = {
   dropinLineMono: {
     fontFamily: 'monospace',
     fontSize: '0.8rem',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     flex: 1,
     overflow: 'hidden',
     textOverflow: 'ellipsis',
@@ -1289,27 +1289,27 @@ const S: Record<string, React.CSSProperties> = {
     padding: '2px 0',
   },
   deb822Label: {
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
     fontSize: '0.8rem',
     fontWeight: 600,
     minWidth: 90,
     flexShrink: 0,
   },
   deb822Value: {
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     fontFamily: 'monospace',
     fontSize: '0.8rem',
   },
   formHint: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.75rem',
     margin: '0.4rem 0 0 0',
     fontStyle: 'italic' as const,
   },
   warningBanner: {
     background: 'rgba(224,175,104,0.15)',
-    border: '1px solid #e0af68',
-    color: '#e0af68',
+    border: '1px solid var(--c-yellow)',
+    color: 'var(--c-yellow)',
     padding: '0.6rem 1rem',
     borderRadius: 8,
     fontSize: '0.85rem',
@@ -1322,7 +1322,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   progressLabel: {
     display: 'block',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     marginBottom: '0.4rem',
   },
@@ -1340,7 +1340,7 @@ const S: Record<string, React.CSSProperties> = {
     width: '50%',
     height: '100%',
     borderRadius: 2,
-    background: 'linear-gradient(90deg, transparent, #7aa2f7, transparent)',
+    background: 'linear-gradient(90deg, transparent, var(--c-blue), transparent)',
     animation: 'progress-slide 1.2s ease-in-out infinite',
   },
 };

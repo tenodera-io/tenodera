@@ -173,7 +173,7 @@ export function Files({ user }: FilesProps) {
             onChange={(e) => handlePathChange(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => path.includes('/') && fetchSuggestions(path)}
-            style={{ ...styles.pathInput, borderColor: path ? '#7aa2f7' : '#9ece6a' }}
+            style={{ ...styles.pathInput, borderColor: path ? 'var(--c-blue)' : 'var(--c-green)' }}
             spellCheck={false}
           />
           {showSuggestions && suggestions.length > 0 && (
@@ -183,8 +183,8 @@ export function Files({ user }: FilesProps) {
                   key={s}
                   style={{
                     ...styles.suggestionItem,
-                    background: i === selectedIdx ? 'var(--accent)' : 'transparent',
-                    color: i === selectedIdx ? '#fff' : 'var(--text-primary)',
+                    background: i === selectedIdx ? 'var(--c-blue)' : 'transparent',
+                    color: i === selectedIdx ? '#fff' : 'var(--text-1)',
                   }}
                   onMouseDown={() => selectSuggestion(s)}
                   onMouseEnter={() => setSelectedIdx(i)}
@@ -260,8 +260,8 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0.5rem 1rem',
     borderRadius: '4px',
     border: '1px solid var(--border)',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     cursor: 'pointer',
     fontWeight: 700,
   },
@@ -273,9 +273,9 @@ const styles: Record<string, React.CSSProperties> = {
     width: '100%',
     padding: '0.5rem',
     borderRadius: '4px',
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
     fontFamily: 'monospace',
     boxSizing: 'border-box' as const,
   },
@@ -284,7 +284,7 @@ const styles: Record<string, React.CSSProperties> = {
     top: '100%',
     left: 0,
     right: 0,
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     border: '1px solid var(--border)',
     borderTop: 'none',
     borderRadius: '0 0 4px 4px',
@@ -303,7 +303,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '0.5rem 1rem',
     borderRadius: '4px',
     border: 'none',
-    background: 'var(--accent)',
+    background: 'var(--c-blue)',
     color: '#fff',
     cursor: 'pointer',
   },
@@ -315,7 +315,7 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'left',
     padding: '0.5rem',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     textTransform: 'uppercase' as const,
   },
@@ -325,7 +325,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.9rem',
   },
   dirLink: {
-    color: 'var(--accent)',
+    color: 'var(--c-blue)',
     fontWeight: 600,
   },
 };

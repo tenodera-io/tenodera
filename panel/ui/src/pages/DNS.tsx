@@ -139,7 +139,7 @@ function ResolverTab({ info, su, request, onReload }: {
       {/* Status row */}
       <div style={S.statusRow}>
         <span style={S.sectionLabel}>systemd-resolved</span>
-        <span style={{ ...S.badge, color: info.resolved_active ? '#9ece6a' : '#565f89', background: (info.resolved_active ? '#9ece6a' : '#565f89') + '22' }}>
+        <span style={{ ...S.badge, color: info.resolved_active ? 'var(--c-green)' : 'var(--text-3)', background: (info.resolved_active ? 'var(--c-green)' : 'var(--text-3)')  }}>
           {info.resolved_active ? 'active' : 'inactive'}
         </span>
         {info.resolved_active && (
@@ -147,7 +147,7 @@ function ResolverTab({ info, su, request, onReload }: {
             {flushing ? '…' : '↺ Flush cache'}
           </button>
         )}
-        {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{msg}</span>}
+        {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)' }}>{msg}</span>}
       </div>
 
       {/* Nameservers */}
@@ -275,7 +275,7 @@ function EtcHostsTab({ info, su, request, onReload }: {
       <div style={S.card}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
           <div style={S.cardTitle}>/etc/hosts <span style={S.muted}>({lines} lines)</span></div>
-          {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{msg}</span>}
+          {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)' }}>{msg}</span>}
         </div>
         <textarea
           value={content}
@@ -386,7 +386,7 @@ function LookupTab({ request }: { request: ReturnType<typeof useTransport>['requ
         )}
 
         {output && (
-          <pre style={{ ...S.pre, marginTop: '1rem', color: ok ? 'var(--text-primary)' : '#f7768e' }}>
+          <pre style={{ ...S.pre, marginTop: '1rem', color: ok ? 'var(--text-1)' : 'var(--c-red)' }}>
             {output}
           </pre>
         )}
@@ -505,22 +505,22 @@ function ResolvedTab({ su, request }: {
       <div style={S.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <span style={S.cardTitle}>systemd-resolved</span>
-          <span style={{ ...S.badge, color: info.active ? '#9ece6a' : '#565f89', background: (info.active ? '#9ece6a' : '#565f89') + '22' }}>
+          <span style={{ ...S.badge, color: info.active ? 'var(--c-green)' : 'var(--text-3)', background: (info.active ? 'var(--c-green)' : 'var(--text-3)')  }}>
             {info.active ? 'active' : 'inactive'}
           </span>
           {info.active && (
             <>
-              <span style={{ ...S.badge, background: '#7aa2f722', color: '#7aa2f7' }}>
+              <span style={{ ...S.badge, background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)', color: 'var(--c-blue)' }}>
                 {info.mode ? `resolv.conf: ${info.mode}` : ''}
               </span>
               <button style={S.actionBtn} onClick={() => handleAction('flush_caches')}>↺ Flush cache</button>
-              <button style={{ ...S.actionBtn, color: '#f7768e' }} onClick={() => handleAction('stop')}>Stop</button>
+              <button style={{ ...S.actionBtn, color: 'var(--c-red)' }} onClick={() => handleAction('stop')}>Stop</button>
             </>
           )}
           {!info.active && (
-            <button style={{ ...S.actionBtn, color: '#9ece6a' }} onClick={() => handleAction('start')}>Start</button>
+            <button style={{ ...S.actionBtn, color: 'var(--c-green)' }} onClick={() => handleAction('start')}>Start</button>
           )}
-          {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{msg}</span>}
+          {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)' }}>{msg}</span>}
         </div>
 
         {/* Runtime status badges */}
@@ -566,7 +566,7 @@ function ResolvedTab({ su, request }: {
                   <td style={{ ...S.td, fontFamily: 'monospace', fontWeight: 600 }}>{l.name}</td>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.8rem' }}>{l.current_dns || '—'}</td>
                   <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.8rem' }}>{l.dns_servers.join(' ') || '—'}</td>
-                  <td style={{ ...S.td, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{l.dns_domain || '—'}</td>
+                  <td style={{ ...S.td, fontSize: '0.8rem', color: 'var(--text-2)' }}>{l.dns_domain || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -580,7 +580,7 @@ function ResolvedTab({ su, request }: {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
             <div style={S.cardTitle}>/etc/systemd/resolved.conf</div>
             {!info.conf.has_user_conf && (
-              <span style={{ fontSize: '0.75rem', color: '#e0af68' }}>using system defaults — saving creates /etc/systemd/resolved.conf</span>
+              <span style={{ fontSize: '0.75rem', color: 'var(--c-yellow)' }}>using system defaults — saving creates /etc/systemd/resolved.conf</span>
             )}
           </div>
 
@@ -664,20 +664,20 @@ function ResolvedTab({ su, request }: {
 function ConfField({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>
         {label}
       </label>
       {children}
-      {hint && <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{hint}</span>}
+      {hint && <span style={{ fontSize: '0.7rem', color: 'var(--text-2)' }}>{hint}</span>}
     </div>
   );
 }
 
 function ProtoBadge({ label, value }: { label: string; value: string }) {
   const on = value === 'yes' || value === 'resolve' || value === 'opportunistic' || value === 'allow-downgrade';
-  const color = on ? '#9ece6a' : (value === 'no' ? '#565f89' : '#e0af68');
+  const color = on ? 'var(--c-green)' : (value === 'no' ? 'var(--text-3)' : 'var(--c-yellow)');
   return (
-    <span style={{ ...S.badge, color, background: color + '22', fontSize: '0.75rem' }}>
+    <span style={{ ...S.badge, color, background: color , fontSize: '0.75rem' }}>
       {label}: {value}
     </span>
   );
@@ -686,7 +686,7 @@ function ProtoBadge({ label, value }: { label: string; value: string }) {
 function StatItem({ label, value }: { label: string; value: number | string }) {
   return (
     <div>
-      <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.2rem' }}>{label}</div>
+      <div style={{ fontSize: '0.75rem', color: 'var(--text-2)', marginBottom: '0.2rem' }}>{label}</div>
       <div style={{ fontFamily: 'monospace', fontSize: '1.1rem', fontWeight: 700 }}>{value}</div>
     </div>
   );
@@ -704,7 +704,7 @@ const S: Record<string, React.CSSProperties> = {
   tab: {
     background: 'transparent',
     border: 'none',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '0.5rem 1rem',
     cursor: 'pointer',
     fontSize: '0.9rem',
@@ -715,8 +715,8 @@ const S: Record<string, React.CSSProperties> = {
     transition: 'color 0.15s',
   },
   tabActive: {
-    color: 'var(--accent)',
-    borderBottom: '2px solid var(--accent)',
+    color: 'var(--c-blue)',
+    borderBottom: '2px solid var(--c-blue)',
   },
   section: {
     display: 'flex',
@@ -724,7 +724,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: '1rem',
   },
   card: {
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     border: '1px solid var(--border)',
     borderRadius: 8,
     padding: '1rem',
@@ -732,7 +732,7 @@ const S: Record<string, React.CSSProperties> = {
   cardTitle: {
     fontSize: '0.8rem',
     fontWeight: 700,
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
     marginBottom: '0.6rem',
@@ -747,7 +747,7 @@ const S: Record<string, React.CSSProperties> = {
   sectionLabel: {
     fontSize: '0.85rem',
     fontWeight: 600,
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
   },
   badge: {
     display: 'inline-block',
@@ -764,18 +764,18 @@ const S: Record<string, React.CSSProperties> = {
   serverChip: {
     fontFamily: 'monospace',
     fontSize: '0.9rem',
-    background: '#7aa2f722',
-    color: '#7aa2f7',
-    border: '1px solid #7aa2f733',
+    background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)',
+    color: 'var(--c-blue)',
+    border: '1px solid color-mix(in srgb, var(--c-blue) 20%, transparent)',
     borderRadius: 5,
     padding: '0.2rem 0.7rem',
   },
   domainChip: {
     fontFamily: 'monospace',
     fontSize: '0.85rem',
-    background: '#e0af6822',
-    color: '#e0af68',
-    border: '1px solid #e0af6833',
+    background: 'color-mix(in srgb, var(--c-yellow) 13%, transparent)',
+    color: 'var(--c-yellow)',
+    border: '1px solid color-mix(in srgb, var(--c-yellow) 20%, transparent)',
     borderRadius: 5,
     padding: '0.2rem 0.7rem',
   },
@@ -785,8 +785,8 @@ const S: Record<string, React.CSSProperties> = {
     fontSize: '0.85rem',
     whiteSpace: 'pre-wrap',
     wordBreak: 'break-all',
-    color: 'var(--text-primary)',
-    background: 'var(--bg-primary)',
+    color: 'var(--text-1)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
     borderRadius: 5,
     padding: '0.75rem',
@@ -796,10 +796,10 @@ const S: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box',
     fontFamily: 'monospace',
     fontSize: '0.85rem',
-    background: 'var(--bg-primary)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
     borderRadius: 5,
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     padding: '0.75rem',
     resize: 'vertical',
     outline: 'none',
@@ -813,9 +813,9 @@ const S: Record<string, React.CSSProperties> = {
   saveBtn: {
     padding: '0.35rem 0.9rem',
     borderRadius: 5,
-    border: '1px solid #9ece6a66',
-    background: '#9ece6a22',
-    color: '#9ece6a',
+    border: '1px solid color-mix(in srgb, var(--c-green) 40%, transparent)',
+    background: 'color-mix(in srgb, var(--c-green) 13%, transparent)',
+    color: 'var(--c-green)',
     cursor: 'pointer',
     fontSize: '0.85rem',
     fontWeight: 500,
@@ -825,16 +825,16 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 5,
     border: '1px solid var(--border)',
     background: 'transparent',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
   editBtn: {
     padding: '0.2rem 0.7rem',
     borderRadius: 4,
-    border: '1px solid #7aa2f766',
-    background: '#7aa2f722',
-    color: '#7aa2f7',
+    border: '1px solid color-mix(in srgb, var(--c-blue) 40%, transparent)',
+    background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)',
+    color: 'var(--c-blue)',
     cursor: 'pointer',
     fontSize: '0.78rem',
   },
@@ -843,7 +843,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 5,
     border: '1px solid var(--border)',
     background: 'transparent',
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
     cursor: 'pointer',
     fontSize: '0.82rem',
   },
@@ -852,7 +852,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: 'center',
     gap: '0.5rem',
     flexWrap: 'wrap',
-    background: 'var(--bg-secondary)',
+    background: 'var(--bg-panel)',
     border: '1px solid var(--border)',
     borderRadius: 8,
     padding: '0.75rem 1rem',
@@ -860,9 +860,9 @@ const S: Record<string, React.CSSProperties> = {
   pwInput: {
     padding: '0.3rem 0.5rem',
     borderRadius: 4,
-    border: '1px solid #7aa2f766',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    border: '1px solid color-mix(in srgb, var(--c-blue) 40%, transparent)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     width: 200,
     outline: 'none',
@@ -879,8 +879,8 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.45rem 0.65rem',
     borderRadius: 5,
     border: '1px solid var(--border)',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.9rem',
     fontFamily: 'monospace',
     outline: 'none',
@@ -889,23 +889,23 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.4rem 0.5rem',
     borderRadius: 5,
     border: '1px solid var(--border)',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     cursor: 'pointer',
   },
   lookupBtn: {
     padding: '0.4rem 1rem',
     borderRadius: 5,
-    border: '1px solid #7aa2f766',
-    background: '#7aa2f722',
-    color: '#7aa2f7',
+    border: '1px solid color-mix(in srgb, var(--c-blue) 40%, transparent)',
+    background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)',
+    color: 'var(--c-blue)',
     cursor: 'pointer',
     fontSize: '0.85rem',
     fontWeight: 500,
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
   },
   spinnerRow: {
@@ -917,11 +917,11 @@ const S: Record<string, React.CSSProperties> = {
   spinnerChar: {
     fontFamily: 'monospace',
     fontSize: '1rem',
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
   },
   statusLabel: {
     fontSize: '0.82rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 500,
   },
   table: {
@@ -932,7 +932,7 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left',
     fontSize: '0.75rem',
     fontWeight: 700,
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textTransform: 'uppercase',
     letterSpacing: '0.03em',
     padding: '0.3rem 0.6rem',
@@ -953,8 +953,8 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.35rem 0.55rem',
     borderRadius: 4,
     border: '1px solid var(--border)',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     fontFamily: 'monospace',
     outline: 'none',
@@ -965,8 +965,8 @@ const S: Record<string, React.CSSProperties> = {
     padding: '0.35rem 0.55rem',
     borderRadius: 4,
     border: '1px solid var(--border)',
-    background: 'var(--bg-primary)',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     cursor: 'pointer',
     width: '100%',

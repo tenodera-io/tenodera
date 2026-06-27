@@ -1,6 +1,7 @@
 import type { HostEntry, HostStatus } from '../hooks/useHosts.ts';
 import type { ConnectionState } from '../api/transport.ts';
 import { useRole } from '../contexts/RoleContext.ts';
+import { useTheme, THEMES } from '../contexts/ThemeContext.tsx';
 
 interface Props {
   hostname: string;
@@ -33,6 +34,7 @@ export function TopBar({
   suActive, user, onSuperuserClick, onLogout,
 }: Props) {
   const role = useRole();
+  const { theme, setTheme } = useTheme();
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [sessionOpen, setSessionOpen] = React.useState(false);
   const [health, setHealth] = React.useState<GatewayHealth | null>(null);
@@ -61,8 +63,8 @@ export function TopBar({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  const dotColor = remoteStatus === 'ok' ? '#9ece6a' : remoteStatus === 'error' ? '#f7768e' : '#565f89';
-  const connColor = connState === 'connected' ? '#9ece6a' : connState === 'reconnecting' ? '#e0af68' : '#f7768e';
+  const dotColor = remoteStatus === 'ok' ? 'var(--c-green)' : remoteStatus === 'error' ? 'var(--c-red)' : 'var(--text-3)';
+  const connColor = connState === 'connected' ? 'var(--c-green)' : connState === 'reconnecting' ? 'var(--c-yellow)' : 'var(--c-red)';
   const connLabel = connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected';
 
   return (
@@ -79,7 +81,7 @@ export function TopBar({
               marginLeft: '0.4rem', background: dotColor,
               boxShadow: remoteStatus !== 'unknown' ? `0 0 4px ${dotColor}` : 'none',
             }} title={remoteStatus === 'ok' ? 'Connected' : remoteStatus === 'error' ? 'Connection failed' : 'Connecting…'} />
-            <span style={{ fontSize: '0.7rem', color: '#7aa2f7', marginLeft: '0.3rem' }}>remote</span>
+            <span style={{ fontSize: '0.7rem', color: 'var(--c-blue)', marginLeft: '0.3rem' }}>remote</span>
           </>
         )}
       </div>
@@ -88,9 +90,9 @@ export function TopBar({
           onClick={onSuperuserClick}
           style={{
             ...S.topBtn,
-            background: suActive ? '#9ece6a22' : '#f7768e22',
-            color: suActive ? '#9ece6a' : '#f7768e',
-            borderColor: suActive ? '#9ece6a44' : '#f7768e44',
+            background: suActive ? 'color-mix(in srgb, var(--c-green) 13%, transparent)' : 'color-mix(in srgb, var(--c-red) 13%, transparent)',
+            color: suActive ? 'var(--c-green)' : 'var(--c-red)',
+            borderColor: suActive ? 'color-mix(in srgb, var(--c-green) 27%, transparent)' : 'color-mix(in srgb, var(--c-red) 27%, transparent)',
           }}
         >
           {suActive ? '🔓 Administrative access' : '🔒 Limited access'}
@@ -109,13 +111,13 @@ export function TopBar({
               <hr style={S.hr} />
               <Row label="Status" value={connLabel} valueStyle={{ color: connColor }} />
               <Row label="Superuser" value={suActive ? 'Active' : 'Inactive'}
-                valueStyle={{ color: suActive ? '#9ece6a' : '#f7768e' }} />
+                valueStyle={{ color: suActive ? 'var(--c-green)' : 'var(--c-red)' }} />
             </div>
           )}
         </div>
 
         {role === 'readonly' && (
-          <span style={{ fontSize: '0.7rem', padding: '2px 7px', borderRadius: 4, background: '#e0af6822', color: '#e0af68', border: '1px solid #e0af6844' }}>
+          <span style={{ fontSize: '0.7rem', padding: '2px 7px', borderRadius: 4, background: 'color-mix(in srgb, var(--c-yellow) 13%, transparent)', color: 'var(--c-yellow)', border: '1px solid color-mix(in srgb, var(--c-yellow) 27%, transparent)' }}>
             read-only
           </span>
         )}
@@ -128,9 +130,23 @@ export function TopBar({
               <div style={S.dropdownTitle}>Session</div>
               <Row label="User" value={user} />
               <Row label="Role" value={role === 'admin' ? 'Admin' : 'Read-only'}
-                valueStyle={{ color: role === 'admin' ? '#9ece6a' : '#e0af68' }} />
+                valueStyle={{ color: role === 'admin' ? 'var(--c-green)' : 'var(--c-yellow)' }} />
               <Row label="Privileges" value={suActive ? 'Administrative' : 'Limited'}
-                valueStyle={{ color: suActive ? '#9ece6a' : 'var(--text-secondary)' }} />
+                valueStyle={{ color: suActive ? 'var(--c-green)' : 'var(--text-2)' }} />
+              <hr style={S.hr} />
+              <div style={{ padding: '0.3rem 0.9rem 0.2rem', fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Theme</div>
+              {THEMES.map(t => (
+                <button key={t.name} onClick={() => setTheme(t.name)} style={{
+                  width: '100%', padding: '0.3rem 0.9rem',
+                  border: 'none', background: theme === t.name ? 'color-mix(in srgb, var(--c-blue) 15%, transparent)' : 'transparent',
+                  color: theme === t.name ? 'var(--c-blue)' : 'var(--text-2)',
+                  fontSize: '0.78rem', textAlign: 'left', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                }}>
+                  {t.dark ? '🌙' : '☀️'} {t.label}
+                  {theme === t.name && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
+                </button>
+              ))}
               <hr style={S.hr} />
               <button onClick={onLogout} style={S.logoutBtn}>Log Out</button>
             </div>
@@ -155,36 +171,36 @@ import React from 'react';
 const S: Record<string, React.CSSProperties> = {
   topBar: {
     height: 40, minHeight: 40,
-    background: '#0d1117', borderBottom: '1px solid var(--border)',
+    background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-1)',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     padding: '0 1rem', zIndex: 100,
   },
   topLeft: { display: 'flex', alignItems: 'center', gap: '0.4rem' },
   hostIcon: { fontSize: '0.9rem' },
-  hostName: { fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' },
+  hostName: { fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' },
   topRight: { display: 'flex', alignItems: 'center', gap: '0.4rem' },
   topBtn: {
     padding: '0.25rem 0.65rem', borderRadius: 4,
-    border: '1px solid var(--border)', background: 'transparent',
-    color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem', whiteSpace: 'nowrap',
+    border: '1px solid var(--border-1)', background: 'transparent',
+    color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.78rem', whiteSpace: 'nowrap',
   },
   dropdownWrap: { position: 'relative' },
   dropdown: {
     position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-    background: '#1a1b26', border: '1px solid #292e42', borderRadius: 8,
+    background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderRadius: 8,
     padding: '0.6rem 0', minWidth: 220, zIndex: 200,
     boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
   },
   dropdownTitle: {
     padding: '0.3rem 0.9rem 0.5rem', fontSize: '0.8rem', fontWeight: 700,
-    color: 'var(--text-primary)', borderBottom: '1px solid #292e42', marginBottom: '0.3rem',
+    color: 'var(--text-1)', borderBottom: '1px solid var(--border-1)', marginBottom: '0.3rem',
   },
-  row: { display: 'flex', justifyContent: 'space-between', padding: '0.3rem 0.9rem', fontSize: '0.78rem', color: 'var(--text-primary)' },
-  rowLabel: { color: 'var(--text-secondary)' },
-  hr: { border: 'none', borderTop: '1px solid #292e42', margin: '0.4rem 0' },
+  row: { display: 'flex', justifyContent: 'space-between', padding: '0.3rem 0.9rem', fontSize: '0.78rem', color: 'var(--text-1)' },
+  rowLabel: { color: 'var(--text-2)' },
+  hr: { border: 'none', borderTop: '1px solid var(--border-1)', margin: '0.4rem 0' },
   logoutBtn: {
     width: '100%', padding: '0.4rem 0.9rem', border: 'none',
-    background: 'transparent', color: '#f7768e',
+    background: 'transparent', color: 'var(--c-red)',
     fontSize: '0.8rem', fontWeight: 600, textAlign: 'left', cursor: 'pointer',
   },
 };

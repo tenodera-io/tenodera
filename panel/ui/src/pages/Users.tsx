@@ -525,7 +525,7 @@ export function Users() {
                 placeholder="Search users..."
                 value={filter}
                 onChange={e => setFilter(e.target.value)}
-                style={{ ...S.input, borderColor: filter ? '#7aa2f7' : '#9ece6a' }}
+                style={{ ...S.input, borderColor: filter ? 'var(--c-blue)' : 'var(--c-green)' }}
               />
               <label style={S.checkLabel}>
                 <input
@@ -661,7 +661,7 @@ export function Users() {
                       <td style={S.tdMono}>{u.shell.split('/').pop()}</td>
                       <td style={S.td}>{u.last_login || '\u2014'}</td>
                       <td style={S.td}>
-                        <span style={{ color: u.locked ? '#f7768e' : '#9ece6a', fontSize: '0.8rem' }}>
+                        <span style={{ color: u.locked ? 'var(--c-red)' : 'var(--c-green)', fontSize: '0.8rem' }}>
                           {u.locked ? 'Locked' : 'Active'}
                         </span>
                       </td>
@@ -683,7 +683,7 @@ export function Users() {
                 placeholder="Search groups..."
                 value={groupFilter}
                 onChange={e => setGroupFilter(e.target.value)}
-                style={{ ...S.input, borderColor: groupFilter ? '#7aa2f7' : '#9ece6a' }}
+                style={{ ...S.input, borderColor: groupFilter ? 'var(--c-blue)' : 'var(--c-green)' }}
               />
               <label style={S.checkLabel}>
                 <input
@@ -709,7 +709,7 @@ export function Users() {
                   value={newGroupName}
                   onChange={e => setNewGroupName(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleCreateGroup()}
-                  style={{ ...S.input, minWidth: 200, borderColor: newGroupName ? '#7aa2f7' : '#9ece6a' }}
+                  style={{ ...S.input, minWidth: 200, borderColor: newGroupName ? 'var(--c-blue)' : 'var(--c-green)' }}
                 />
                 <input
                   type="text"
@@ -717,7 +717,7 @@ export function Users() {
                   value={newGroupGid}
                   onChange={e => setNewGroupGid(e.target.value.replace(/[^0-9]/g, ''))}
                   onKeyDown={e => e.key === 'Enter' && handleCreateGroup()}
-                  style={{ ...S.input, minWidth: 120, maxWidth: 140, borderColor: newGroupGid ? '#7aa2f7' : '#9ece6a' }}
+                  style={{ ...S.input, minWidth: 120, maxWidth: 140, borderColor: newGroupGid ? 'var(--c-blue)' : 'var(--c-green)' }}
                 />
                 <button onClick={handleCreateGroup} style={S.btnSuccess} disabled={!newGroupName.trim()}>
                   Create Group
@@ -786,7 +786,7 @@ export function Users() {
                       }
                     }}
                     placeholder="e.g. jdoe"
-                    style={{ ...S.inputFull, borderColor: newUsername ? '#7aa2f7' : '#9ece6a' }}
+                    style={{ ...S.inputFull, borderColor: newUsername ? 'var(--c-blue)' : 'var(--c-green)' }}
                     autoFocus
                   />
                 </div>
@@ -797,7 +797,7 @@ export function Users() {
                     value={newGecos}
                     onChange={e => setNewGecos(e.target.value)}
                     placeholder="e.g. John Doe"
-                    style={{ ...S.inputFull, borderColor: newGecos ? '#7aa2f7' : '#9ece6a' }}
+                    style={{ ...S.inputFull, borderColor: newGecos ? 'var(--c-blue)' : 'var(--c-green)' }}
                   />
                 </div>
                 <div style={S.fieldGroup}>
@@ -805,7 +805,7 @@ export function Users() {
                   <select
                     value={newShell}
                     onChange={e => setNewShell(e.target.value)}
-                    style={{ ...S.selectFull, borderColor: '#7aa2f7' }}
+                    style={{ ...S.selectFull, borderColor: 'var(--c-blue)' }}
                   >
                     {shells.length === 0 && <option value="">Loading...</option>}
                     {shells.map(sh => (
@@ -822,7 +822,7 @@ export function Users() {
                     value={newHome}
                     onChange={e => setNewHome(e.target.value)}
                     placeholder="/home/username"
-                    style={{ ...S.inputFull, borderColor: newHome ? '#7aa2f7' : '#9ece6a' }}
+                    style={{ ...S.inputFull, borderColor: newHome ? 'var(--c-blue)' : 'var(--c-green)' }}
                   />
                   <label style={{ ...S.checkLabel, marginTop: '0.35rem' }}>
                     <input type="checkbox" checked={newCreateHome} onChange={e => setNewCreateHome(e.target.checked)} />
@@ -841,10 +841,10 @@ export function Users() {
                     style={{
                       ...S.inputFull,
                       borderColor: !newPassword && !newPasswordConfirm
-                        ? '#9ece6a'
+                        ? 'var(--c-green)'
                         : newPassword && newPasswordConfirm && newPassword === newPasswordConfirm
-                          ? '#7aa2f7'
-                          : '#f7768e',
+                          ? 'var(--c-blue)'
+                          : 'var(--c-red)',
                     }}
                     autoComplete="new-password"
                   />
@@ -863,10 +863,10 @@ export function Users() {
                     style={{
                       ...S.inputFull,
                       borderColor: !newPassword && !newPasswordConfirm
-                        ? '#9ece6a'
+                        ? 'var(--c-green)'
                         : newPassword && newPasswordConfirm && newPassword === newPasswordConfirm
-                          ? '#7aa2f7'
-                          : '#f7768e',
+                          ? 'var(--c-blue)'
+                          : 'var(--c-red)',
                     }}
                     autoComplete="new-password"
                   />
@@ -878,7 +878,7 @@ export function Users() {
                   <button
                     type="button"
                     onClick={() => setNewGroupsOpen(!newGroupsOpen)}
-                    style={{ ...S.dropdownBtn, borderColor: newGroups.length > 0 ? '#7aa2f7' : '#9ece6a' }}
+                    style={{ ...S.dropdownBtn, borderColor: newGroups.length > 0 ? 'var(--c-blue)' : 'var(--c-green)' }}
                   >
                     <span style={S.dropdownBtnText}>
                       {newGroups.length === 0
@@ -922,11 +922,11 @@ export function Users() {
             <h3 style={S.modalTitle}>Edit User: {editUser.username}</h3>
             <div style={S.fieldGroup}>
               <label style={S.label}>Full Name</label>
-              <input type="text" value={editGecos} onChange={e => setEditGecos(e.target.value)} style={{ ...S.input, borderColor: editGecos ? '#7aa2f7' : '#9ece6a' }} />
+              <input type="text" value={editGecos} onChange={e => setEditGecos(e.target.value)} style={{ ...S.input, borderColor: editGecos ? 'var(--c-blue)' : 'var(--c-green)' }} />
             </div>
             <div style={S.fieldGroup}>
               <label style={S.label}>Shell</label>
-              <select value={editShell} onChange={e => setEditShell(e.target.value)} style={{ ...S.select, borderColor: '#7aa2f7' }}>
+              <select value={editShell} onChange={e => setEditShell(e.target.value)} style={{ ...S.select, borderColor: 'var(--c-blue)' }}>
                 {shells.map(sh => (<option key={sh} value={sh}>{sh}</option>))}
                 {!shells.includes(editShell) && <option value={editShell}>{editShell}</option>}
               </select>
@@ -936,7 +936,7 @@ export function Users() {
               <button
                 type="button"
                 onClick={() => setEditGroupsOpen(!editGroupsOpen)}
-                style={{ ...S.dropdownBtn, borderColor: editGroups.length > 0 ? '#7aa2f7' : '#9ece6a' }}
+                style={{ ...S.dropdownBtn, borderColor: editGroups.length > 0 ? 'var(--c-blue)' : 'var(--c-green)' }}
               >
                 <span style={S.dropdownBtnText}>
                   {editGroups.length === 0
@@ -976,11 +976,11 @@ export function Users() {
             <form autoComplete="off" onSubmit={e => { e.preventDefault(); handleSetPassword(); }}>
               <div style={S.fieldGroup}>
                 <label style={S.label}>New Password</label>
-                <input type="password" value={pwNew} onChange={e => setPwNew(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? '#9ece6a' : pwNew && pwConfirm && pwNew === pwConfirm ? '#7aa2f7' : '#f7768e' }} autoComplete="off" autoFocus />
+                <input type="password" value={pwNew} onChange={e => setPwNew(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? 'var(--c-green)' : pwNew && pwConfirm && pwNew === pwConfirm ? 'var(--c-blue)' : 'var(--c-red)' }} autoComplete="off" autoFocus />
               </div>
               <div style={S.fieldGroup}>
                 <label style={S.label}>Confirm Password</label>
-                <input type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? '#9ece6a' : pwNew && pwConfirm && pwNew === pwConfirm ? '#7aa2f7' : '#f7768e' }} autoComplete="off" />
+                <input type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)} style={{ ...S.input, borderColor: !pwNew && !pwConfirm ? 'var(--c-green)' : pwNew && pwConfirm && pwNew === pwConfirm ? 'var(--c-blue)' : 'var(--c-red)' }} autoComplete="off" />
               </div>
               <label style={S.checkLabel}>
                 <input type="checkbox" checked={pwForce} onChange={e => setPwForce(e.target.checked)} />
@@ -1025,7 +1025,7 @@ export function Users() {
               placeholder="Password"
               value={pwInput}
               onChange={e => setPwInput(e.target.value)}
-              style={{ ...S.modalInput, borderColor: pwInput ? '#7aa2f7' : '#9ece6a' }}
+              style={{ ...S.modalInput, borderColor: pwInput ? 'var(--c-blue)' : 'var(--c-green)' }}
               autoFocus
               autoComplete="current-password"
             />
@@ -1059,11 +1059,11 @@ const S: Record<string, React.CSSProperties> = {
   title: {
     margin: 0,
     fontSize: '1.4rem',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
   },
   successMsg: {
     background: 'rgba(158,206,106,0.15)',
-    color: '#9ece6a',
+    color: 'var(--c-green)',
     padding: '0.5rem 1rem',
     borderRadius: 8,
     fontSize: '0.85rem',
@@ -1071,7 +1071,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   errorMsg: {
     background: 'rgba(247,118,142,0.15)',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     padding: '0.5rem 1rem',
     borderRadius: 8,
     fontSize: '0.85rem',
@@ -1085,7 +1085,7 @@ const S: Record<string, React.CSSProperties> = {
   tab: {
     background: 'transparent',
     border: 'none',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '0.5rem 1rem',
     cursor: 'pointer',
     fontSize: '0.9rem',
@@ -1096,8 +1096,8 @@ const S: Record<string, React.CSSProperties> = {
     transition: 'color 0.15s',
   },
   tabActive: {
-    color: 'var(--accent)',
-    borderBottom: '2px solid var(--accent)',
+    color: 'var(--c-blue)',
+    borderBottom: '2px solid var(--c-blue)',
   },
   content: {
     flex: 1,
@@ -1111,9 +1111,9 @@ const S: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap' as const,
   },
   input: {
-    background: 'var(--bg-card)',
-    border: '1px solid #9ece6a',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--c-green)',
+    color: 'var(--text-1)',
     padding: '6px 12px',
     borderRadius: 6,
     fontSize: '0.85rem',
@@ -1121,9 +1121,9 @@ const S: Record<string, React.CSSProperties> = {
     minWidth: 200,
   },
   select: {
-    background: 'var(--bg-card)',
-    border: '1px solid #9ece6a',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--c-green)',
+    color: 'var(--text-1)',
     padding: '6px 12px',
     borderRadius: 6,
     fontSize: '0.85rem',
@@ -1131,9 +1131,9 @@ const S: Record<string, React.CSSProperties> = {
     width: '100%',
   },
   btn: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     padding: '6px 14px',
     borderRadius: 6,
     cursor: 'pointer',
@@ -1142,8 +1142,8 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnSuccess: {
     background: 'rgba(158,206,106,0.2)',
-    border: '1px solid #9ece6a',
-    color: '#9ece6a',
+    border: '1px solid var(--c-green)',
+    color: 'var(--c-green)',
     padding: '6px 14px',
     borderRadius: 6,
     cursor: 'pointer',
@@ -1152,26 +1152,26 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnDanger: {
     background: 'rgba(247,118,142,0.2)',
-    border: '1px solid #f7768e',
-    color: '#f7768e',
+    border: '1px solid var(--c-red)',
+    color: 'var(--c-red)',
     padding: '6px 14px',
     borderRadius: 6,
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
   btnCancel: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     padding: '6px 14px',
     borderRadius: 6,
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
   btnSmall: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     padding: '2px 8px',
     borderRadius: 4,
     cursor: 'pointer',
@@ -1179,8 +1179,8 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnSmallSuccess: {
     background: 'rgba(158,206,106,0.15)',
-    border: '1px solid #9ece6a',
-    color: '#9ece6a',
+    border: '1px solid var(--c-green)',
+    color: 'var(--c-green)',
     padding: '2px 8px',
     borderRadius: 4,
     cursor: 'pointer',
@@ -1188,8 +1188,8 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnSmallWarn: {
     background: 'rgba(224,175,104,0.15)',
-    border: '1px solid #e0af68',
-    color: '#e0af68',
+    border: '1px solid var(--c-yellow)',
+    color: 'var(--c-yellow)',
     padding: '2px 8px',
     borderRadius: 4,
     cursor: 'pointer',
@@ -1197,15 +1197,15 @@ const S: Record<string, React.CSSProperties> = {
   },
   btnSmallDanger: {
     background: 'rgba(247,118,142,0.15)',
-    border: '1px solid #f7768e',
-    color: '#f7768e',
+    border: '1px solid var(--c-red)',
+    color: 'var(--c-red)',
     padding: '2px 8px',
     borderRadius: 4,
     cursor: 'pointer',
     fontSize: '0.75rem',
   },
   count: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
     marginLeft: 'auto',
   },
@@ -1213,7 +1213,7 @@ const S: Record<string, React.CSSProperties> = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.35rem',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
     cursor: 'pointer',
   },
@@ -1231,22 +1231,22 @@ const S: Record<string, React.CSSProperties> = {
     textAlign: 'left' as const,
     padding: '8px 12px',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 600,
     position: 'sticky' as const,
     top: 0,
-    background: 'var(--bg-base)',
+    background: 'var(--bg-app)',
     zIndex: 1,
   },
   thSort: {
     textAlign: 'left' as const,
     padding: '8px 12px',
     borderBottom: '1px solid var(--border)',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontWeight: 600,
     position: 'sticky' as const,
     top: 0,
-    background: 'var(--bg-base)',
+    background: 'var(--bg-app)',
     zIndex: 1,
     cursor: 'pointer',
     userSelect: 'none' as const,
@@ -1257,17 +1257,17 @@ const S: Record<string, React.CSSProperties> = {
   },
   td: {
     padding: '6px 12px',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
   },
   tdMono: {
     padding: '6px 12px',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     fontFamily: 'monospace',
     fontSize: '0.8rem',
   },
   rootBadge: {
     background: 'rgba(247,118,142,0.2)',
-    color: '#f7768e',
+    color: 'var(--c-red)',
     fontSize: '0.65rem',
     padding: '1px 5px',
     borderRadius: 6,
@@ -1276,7 +1276,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   localBadge: {
     background: 'rgba(224,175,104,0.15)',
-    color: '#e0af68',
+    color: 'var(--c-yellow)',
     fontSize: '0.65rem',
     padding: '1px 5px',
     borderRadius: 6,
@@ -1285,7 +1285,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   ldapBadge: {
     background: 'rgba(158,206,106,0.15)',
-    color: '#9ece6a',
+    color: 'var(--c-green)',
     fontSize: '0.65rem',
     padding: '1px 5px',
     borderRadius: 6,
@@ -1299,14 +1299,14 @@ const S: Record<string, React.CSSProperties> = {
   },
   groupBadge: {
     background: 'rgba(122,162,247,0.15)',
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
     fontSize: '0.7rem',
     padding: '1px 6px',
     borderRadius: 8,
   },
   memberBadge: {
     background: 'rgba(158,206,106,0.15)',
-    color: '#9ece6a',
+    color: 'var(--c-green)',
     fontSize: '0.7rem',
     padding: '1px 6px',
     borderRadius: 8,
@@ -1322,22 +1322,22 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 6,
   },
   selCount: {
-    color: '#7aa2f7',
+    color: 'var(--c-blue)',
     fontSize: '0.85rem',
     fontWeight: 600,
     marginRight: '0.25rem',
   },
   muted: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
   },
   loadingText: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     textAlign: 'center' as const,
     padding: '2rem',
   },
   formCard: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
     borderRadius: 8,
     padding: '1rem',
@@ -1345,7 +1345,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   formTitle: {
     margin: '0 0 0.5rem 0',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     fontSize: '0.95rem',
   },
   formRow: {
@@ -1366,9 +1366,9 @@ const S: Record<string, React.CSSProperties> = {
     gap: '0.75rem 1rem',
   },
   inputFull: {
-    background: 'var(--bg-card)',
-    border: '1px solid #9ece6a',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--c-green)',
+    color: 'var(--text-1)',
     padding: '6px 12px',
     borderRadius: 6,
     fontSize: '0.85rem',
@@ -1377,9 +1377,9 @@ const S: Record<string, React.CSSProperties> = {
     boxSizing: 'border-box' as const,
   },
   selectFull: {
-    background: 'var(--bg-card)',
-    border: '1px solid #9ece6a',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--c-green)',
+    color: 'var(--text-1)',
     padding: '6px 12px',
     borderRadius: 6,
     fontSize: '0.85rem',
@@ -1395,9 +1395,9 @@ const S: Record<string, React.CSSProperties> = {
     gap: '0.4rem',
     padding: '6px 12px',
     borderRadius: 6,
-    border: '1px solid #9ece6a',
-    background: 'var(--bg-card)',
-    color: 'var(--text-primary)',
+    border: '1px solid var(--c-green)',
+    background: 'var(--bg-surface)',
+    color: 'var(--text-1)',
     fontSize: '0.85rem',
     cursor: 'pointer',
     textAlign: 'left' as const,
@@ -1408,15 +1408,15 @@ const S: Record<string, React.CSSProperties> = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
     whiteSpace: 'nowrap' as const,
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
   },
   dropdownList: {
     position: 'absolute' as const,
     top: '100%',
     left: 0,
     right: 0,
-    background: '#1a1b26',
-    border: '1px solid #292e42',
+    background: 'var(--bg-app)',
+    border: '1px solid var(--bg-surface)',
     borderRadius: 8,
     padding: '0.3rem 0',
     zIndex: 300,
@@ -1431,7 +1431,7 @@ const S: Record<string, React.CSSProperties> = {
     gap: '0.4rem',
     padding: '0.3rem 0.75rem',
     fontSize: '0.82rem',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     cursor: 'pointer',
   },
   fieldGroup: {
@@ -1439,7 +1439,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   label: {
     display: 'block',
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.8rem',
     marginBottom: '0.25rem',
     fontWeight: 600,
@@ -1454,7 +1454,7 @@ const S: Record<string, React.CSSProperties> = {
     zIndex: 1000,
   },
   modal: {
-    background: 'var(--bg-card)',
+    background: 'var(--bg-surface)',
     border: '1px solid var(--border)',
     borderRadius: 12,
     padding: '1.5rem',
@@ -1463,19 +1463,19 @@ const S: Record<string, React.CSSProperties> = {
   },
   modalTitle: {
     margin: '0 0 1rem 0',
-    color: 'var(--text-primary)',
+    color: 'var(--text-1)',
     fontSize: '1.05rem',
   },
   modalText: {
-    color: 'var(--text-secondary)',
+    color: 'var(--text-2)',
     fontSize: '0.85rem',
     margin: '0 0 1rem 0',
   },
   modalInput: {
     width: '100%',
-    background: 'var(--bg-base)',
-    border: '1px solid #9ece6a',
-    color: 'var(--text-primary)',
+    background: 'var(--bg-app)',
+    border: '1px solid var(--c-green)',
+    color: 'var(--text-1)',
     padding: '8px 12px',
     borderRadius: 6,
     fontSize: '0.9rem',
