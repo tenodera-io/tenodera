@@ -81,6 +81,24 @@ the `BridgeRegistry`.
 |---------|---------|-------------|
 | `TerminalPtyHandler` | `terminal.pty` | Interactive PTY (fork + openpty) |
 
+## Configuration
+
+The bridge reads `/etc/tenodera/bridge.env` at startup:
+
+```bash
+TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint (required)
+# TENODERA_BRIDGE_ACCEPT_INSECURE=1              # Allow self-signed TLS (dev only)
+
+# Optional: one or more roles for this host (comma or space separated).
+# Roles group hosts in the Management page of the panel.
+# role=web
+# role=db,backup
+```
+
+Roles can be changed at runtime from the panel's **Management** page (admin only)
+via the `host.action` / `set_role` handler — this rewrites the `role=` lines in
+`bridge.env` using `sudo tee` without restarting the bridge.
+
 ## Privilege Model
 
 The bridge runs as a non-root user (`tenodera-brdg`). Privileged operations

@@ -108,7 +108,15 @@ The bridge config lives at `/etc/tenodera/bridge.env` on each managed host:
 ```bash
 TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint
 # TENODERA_BRIDGE_ACCEPT_INSECURE=1              # Allow self-signed TLS (dev only)
+
+# Optional: one or more roles assigned to this host (comma or space separated).
+# Roles are used to group hosts in the Management page.
+# role=web
+# role=db,backup
 ```
+
+Roles can also be changed at runtime from the **Management** page (admin only) —
+no manual edit or service restart required.
 
 Edit and restart: `sudo systemctl restart tenodera-bridge`
 
