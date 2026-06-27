@@ -17,6 +17,8 @@ export function Logs() {
   const [lines, setLines] = useState(100);
   const [unit, setUnit] = useState('');
   const [debouncedUnit, setDebouncedUnit] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Debounce unit filter — wait 400ms after last keystroke
@@ -30,9 +32,16 @@ export function Logs() {
     if (debouncedUnit) opts.unit = debouncedUnit;
     if (su.active && su.password) opts.password = su.password;
 
+    setLoading(true);
+    setError('');
     request('journal.query', opts).then((results) => {
       const data = results[0] as { entries: LogEntry[] } | undefined;
       if (data?.entries) setEntries(data.entries);
+      else setEntries([]);
+    }).catch((e) => {
+      setError(e instanceof Error ? e.message : 'Failed to load logs');
+    }).finally(() => {
+      setLoading(false);
     });
   }, [request, lines, debouncedUnit, su]);
 
@@ -61,10 +70,11 @@ export function Logs() {
           <option value={100}>100 lines</option>
           <option value={500}>500 lines</option>
         </select>
-        <button onClick={fetchLogs} style={styles.btn}>
-          Refresh
+        <button onClick={fetchLogs} disabled={loading} style={styles.btn}>
+          {loading ? 'Loading…' : 'Refresh'}
         </button>
       </div>
+      {error && <p style={styles.error}>{error}</p>}
       <div style={styles.logContainer}>
         {entries.map((entry, i) => (
           <div key={i} style={styles.logLine}>
@@ -76,7 +86,7 @@ export function Logs() {
             <span>{decodeMessage(entry.MESSAGE)}</span>
           </div>
         ))}
-        {entries.length === 0 && <p>No log entries.</p>}
+        {entries.length === 0 && !loading && !error && <p style={{ color: 'var(--text-2)', padding: '0.5rem' }}>No log entries.</p>}
       </div>
     </div>
   );
@@ -188,5 +198,10 @@ const styles: Record<string, React.CSSProperties> = {
     marginRight: '0.5rem',
     fontSize: '0.8rem',
     minWidth: '4.5rem',
+  },
+  error: {
+    color: 'var(--c-red)',
+    fontSize: '0.85rem',
+    margin: '0.25rem 0 0.5rem',
   },
 };
