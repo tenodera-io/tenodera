@@ -31,8 +31,7 @@ export function Management({ hosts, activeHost, onSwitchHost }: ManagementProps)
           return { host, config: null };
         }
         try {
-          const opts = host.is_local ? {} : { host: host.id };
-          const [data] = await rawRequest('host.config', opts);
+          const [data] = await rawRequest('host.config', { host: host.id });
           const config = data as HostConfig;
           if (host.is_local && !config.roles.includes('Panel / Local')) {
             config.roles = ['Panel / Local', ...config.roles];
