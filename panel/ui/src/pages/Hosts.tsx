@@ -186,7 +186,7 @@ const S: Record<string, React.CSSProperties> = {
   hostLabel: { fontWeight: 700, fontSize: '0.9rem' },
   editBtn:   { background: 'transparent', border: 'none', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0.2rem', opacity: 0.55, lineHeight: 1 },
   editInput: { background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 4, color: 'var(--text-1)', fontSize: '0.9rem', padding: '0.2rem 0.4rem', outline: 'none', flex: 1, minWidth: 0 },
-  saveBtn:   { background: 'var(--c-blue)', border: 'none', borderRadius: 4, color: '#fff', fontSize: '0.8rem', padding: '0.2rem 0.6rem', cursor: 'pointer' },
+  saveBtn:   { background: 'var(--c-blue)', border: 'none', borderRadius: 4, color: 'var(--bg-app)', fontSize: '0.8rem', padding: '0.2rem 0.6rem', cursor: 'pointer' },
   cancelBtn: { background: 'transparent', border: 'none', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.85rem', padding: '0 0.2rem' },
   meta:      { fontSize: '0.75rem', color: 'var(--text-2)', marginTop: '0.15rem', display: 'flex', alignItems: 'center', gap: '0.35rem', flexWrap: 'wrap' },
   metaChip:  { opacity: 0.7 },

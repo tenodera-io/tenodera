@@ -998,7 +998,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   updateBadge: {
     background: 'var(--c-red)',
-    color: '#fff',
+    color: 'var(--bg-app)',
     borderRadius: 10,
     padding: '0 6px',
     fontSize: '0.7rem',

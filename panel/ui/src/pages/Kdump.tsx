@@ -253,7 +253,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     border: 'none',
     background: 'var(--c-blue)',
-    color: '#fff',
+    color: 'var(--bg-app)',
     cursor: 'pointer',
   },
   btnSmall: {
@@ -261,7 +261,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     border: 'none',
     background: 'var(--c-blue)',
-    color: '#fff',
+    color: 'var(--bg-app)',
     cursor: 'pointer',
     fontSize: '0.85rem',
   },
@@ -341,7 +341,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: '10px',
     fontSize: '0.75rem',
     background: 'var(--c-yellow)',
-    color: '#fff',
+    color: 'var(--bg-app)',
     fontWeight: 600,
   },
   dumpDetails: {

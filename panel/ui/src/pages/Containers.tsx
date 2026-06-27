@@ -862,7 +862,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   tabActive: {
     background: 'var(--c-blue)',
-    color: '#fff',
+    color: 'var(--bg-app)',
   },
   btn: {
     padding: '0.35rem 0.75rem',

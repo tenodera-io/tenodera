@@ -160,7 +160,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: '4px',
     border: 'none',
     background: 'var(--c-blue)',
-    color: '#fff',
+    color: 'var(--bg-app)',
     cursor: 'pointer',
   },
   logContainer: {

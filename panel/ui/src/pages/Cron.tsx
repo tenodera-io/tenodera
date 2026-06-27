@@ -229,5 +229,5 @@ const S: Record<string, React.CSSProperties> = {
   noSu:        { margin: '0.25rem 0.75rem', color: 'var(--c-yellow)', fontSize: '0.8rem' },
   modalActions:{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', padding: '0.75rem 1rem', borderTop: '1px solid var(--border)' },
   cancelBtn:   { padding: '0.4rem 1rem', borderRadius: 6, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.85rem' },
-  saveBtn:     { padding: '0.4rem 1.2rem', borderRadius: 6, border: 'none', background: 'var(--c-blue)', color: '#fff', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 },
+  saveBtn:     { padding: '0.4rem 1.2rem', borderRadius: 6, border: 'none', background: 'var(--c-blue)', color: 'var(--bg-app)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600 },
 };
