@@ -43,6 +43,9 @@ while [[ $# -gt 0 ]]; do
       rm -f /etc/systemd/system/tenodera-bridge.service
       systemctl daemon-reload 2>/dev/null || true
       rm -f "${INSTALL_DIR}/tenodera-bridge"
+      rm -f "${CONF_DIR}/bridge.env"
+      rmdir "${CONF_DIR}" 2>/dev/null || true
+      rm -f /var/log/tenodera_audit.log
       ok "tenodera-bridge removed."
       exit 0
       ;;
@@ -62,6 +65,7 @@ fi
 # ── Download & build (skipped if binary already installed) ─────────
 
 INSTALL_BIN="${INSTALL_DIR}/tenodera-bridge"
+WORK_DIR=""
 
 if [ -x "$INSTALL_BIN" ]; then
   info "tenodera-bridge already installed at ${INSTALL_BIN} — skipping build"
@@ -139,8 +143,10 @@ fi
 
 # ── Cleanup ───────────────────────────────────────────────────────
 
-info "Cleaning up build artifacts..."
-rm -rf "$WORK_DIR"
+if [ -n "$WORK_DIR" ]; then
+  info "Cleaning up build artifacts..."
+  rm -rf "$WORK_DIR"
+fi
 
 ok "tenodera-bridge installed and running!"
 echo ""

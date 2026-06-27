@@ -54,10 +54,11 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -f "${INSTALL_DIR}/tenodera-pam-helper"
   rm -f "${INSTALL_DIR}/tenodera-bridge"
 
-  # Remove UI assets, config, logs
+  # Remove UI assets, config, logs, PAM and sudoers rules
   rm -rf /usr/share/tenodera
   rm -rf /etc/tenodera
   rm -f /etc/logrotate.d/tenodera
+  rm -f /etc/pam.d/tenodera
   rm -f /var/log/tenodera*
 
   ok "Tenodera fully removed (panel + bridge)."
@@ -151,15 +152,36 @@ rm -rf "$WORK_DIR"
 
 ok "Tenodera installed successfully!"
 
-# ── Configure and start local bridge ─────────────────────────────────────────
-# The bridge connects to the local gateway and auto-registers this host.
+# ── TLS certificate ───────────────────────────────────────────────────────────
+# Gateway requires TLS to start. Generate a self-signed cert if none exists.
 
 CONF_DIR="/etc/tenodera"
+
+if [ ! -f "${CONF_DIR}/tls/cert.pem" ] || [ ! -f "${CONF_DIR}/tls/key.pem" ]; then
+  info "Generating self-signed TLS certificate (valid 10 years)..."
+  LOCAL_IP=$(hostname -I | awk '{print $1}')
+  mkdir -p "${CONF_DIR}/tls"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+    -keyout "${CONF_DIR}/tls/key.pem" \
+    -out    "${CONF_DIR}/tls/cert.pem" \
+    -subj   "/CN=${LOCAL_IP}" \
+    -addext "subjectAltName=IP:${LOCAL_IP},IP:127.0.0.1" \
+    2>/dev/null
+  chown root:tenodera-gw "${CONF_DIR}/tls/cert.pem" "${CONF_DIR}/tls/key.pem"
+  chmod 640 "${CONF_DIR}/tls/cert.pem" "${CONF_DIR}/tls/key.pem"
+  ok "Self-signed certificate created (${CONF_DIR}/tls/)"
+  systemctl restart tenodera-gateway 2>/dev/null || true
+fi
+
+# ── Configure and start local bridge ─────────────────────────────────────────
+# The bridge connects to the local gateway over HTTPS and auto-registers.
 
 if [ ! -f "${CONF_DIR}/bridge.env" ]; then
   info "Writing bridge config..."
   cat > "${CONF_DIR}/bridge.env" <<EOF
-TENODERA_GATEWAY_URL=http://127.0.0.1:9090
+TENODERA_GATEWAY_URL=https://127.0.0.1:9090
+# Self-signed cert on the local gateway — skip verification for loopback connection
+TENODERA_BRIDGE_ACCEPT_INSECURE=1
 EOF
   chmod 640 "${CONF_DIR}/bridge.env"
 fi

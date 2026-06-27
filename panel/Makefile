@@ -20,7 +20,7 @@ SYSTEMDDIR  ?= /etc/systemd/system
 GATEWAY_BIN    := target/release/tenodera-gateway
 PAM_HELPER_BIN := target/release/tenodera-pam-helper
 
-.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean tls-selfsigned show-pubkey package-deb package-rpm
+.PHONY: all deps deps-rust deps-node deps-system build build-backend build-frontend install uninstall clean tls-selfsigned package-deb package-rpm
 
 all: deps build install
 
@@ -131,24 +131,6 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	else \
 		sudo install -m 644 pam.d/tenodera /etc/pam.d/tenodera; \
 	fi
-	@echo "==> Installing sudoers rules..."
-	@printf '# Allow tenodera-gw to spawn tenodera-bridge as any local user.\n# Required so the bridge runs as the authenticated session user,\n# enabling sudo -S for administrative operations.\ntenodera-gw ALL=(ALL) NOPASSWD: %s\n\n# Allow admin users (sudo group) to update hosts config via the bridge.\n# The bridge runs as the session user and needs root to write the\n# gateway-owned config file.\n%%sudo ALL=(root) NOPASSWD: /usr/bin/tee %s\n' \
-		"$(BINDIR)/tenodera-bridge" "$(CONFDIR)/hosts.json" \
-		| sudo tee /etc/sudoers.d/tenodera-gw > /dev/null
-	sudo chmod 440 /etc/sudoers.d/tenodera-gw
-	@echo "==> Setting up SSH identity key..."
-	@if [ ! -f $(CONFDIR)/id_ed25519 ]; then \
-		sudo ssh-keygen -t ed25519 -f $(CONFDIR)/id_ed25519 -N "" -C "tenodera-gateway@$$(hostname)" > /dev/null; \
-		sudo chown root:tenodera-gw $(CONFDIR)/id_ed25519 $(CONFDIR)/id_ed25519.pub; \
-		sudo chmod 640 $(CONFDIR)/id_ed25519; \
-		sudo chmod 644 $(CONFDIR)/id_ed25519.pub; \
-		echo "    Generated: $(CONFDIR)/id_ed25519"; \
-		echo "    Public key:"; \
-		sudo cat $(CONFDIR)/id_ed25519.pub; \
-	else \
-		echo "    SSH key already exists — skipping (public key below):"; \
-		sudo cat $(CONFDIR)/id_ed25519.pub; \
-	fi
 	@echo "==> Setting up audit log..."
 	sudo touch /var/log/tenodera_audit.log
 	sudo chown root:root /var/log/tenodera_audit.log
@@ -210,7 +192,6 @@ uninstall:
 	-sudo rm -f /etc/pam.d/tenodera
 	-sudo rm -f /var/log/tenodera*
 	-sudo userdel tenodera-gw 2>/dev/null || true
-	-sudo rm -f /etc/sudoers.d/tenodera-gw
 	@echo "✓ Tenodera Panel fully removed"
 
 # ── TLS ───────────────────────────────────────────────────
@@ -234,13 +215,6 @@ tls-selfsigned:
 	@echo "  Gateway: https://$$(hostname -I | awk '{print $$1}'):9090"
 	@echo "  (Browser will warn about self-signed cert — this is expected)"
 
-show-pubkey:
-	@echo "==> Tenodera gateway SSH public key:"
-	@sudo cat $(CONFDIR)/id_ed25519.pub
-	@echo ""
-	@echo "Add this key to authorized_keys on each managed host:"
-	@echo "  echo \"\$$(sudo cat $(CONFDIR)/id_ed25519.pub)\" >> ~/.ssh/authorized_keys"
-
 # ── Packages ──────────────────────────────────────────────
 
 VERSION ?= $(shell . "$$HOME/.cargo/env" 2>/dev/null || true; cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])" 2>/dev/null || echo "0.1.0")
@@ -262,7 +236,7 @@ package-deb: build
 	@install -m 644 systemd/tenodera-gateway.service $(PKGDIR)/lib/systemd/system/
 	@install -m 644 logrotate/tenodera $(PKGDIR)/etc/logrotate.d/tenodera
 	@install -m 644 pam.d/tenodera $(PKGDIR)/etc/pam.d/tenodera
-	@printf 'Package: tenodera-gateway\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDepends: openssh-client\nDescription: Tenodera web administration panel gateway\n The gateway serves the Tenodera web UI and routes requests to bridge\n agents on managed hosts via SSH.\n' > $(PKGDIR)/DEBIAN/control
+	@printf 'Package: tenodera-gateway\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel gateway\n The gateway serves the Tenodera web UI and routes channel messages to\n bridge agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
 	@printf '#!/bin/sh\ngetent group tenodera-gw >/dev/null || groupadd -r tenodera-gw\ngetent passwd tenodera-gw >/dev/null || \\\n    useradd -r -s /sbin/nologin -M -d /nonexistent -g tenodera-gw \\\n    -c "Tenodera Gateway" tenodera-gw\nexit 0\n' > $(PKGDIR)/DEBIAN/preinst
 	@chmod 755 $(PKGDIR)/DEBIAN/preinst
 	@dpkg-deb --build $(PKGDIR) tenodera-gateway_$(VERSION)_amd64.deb
