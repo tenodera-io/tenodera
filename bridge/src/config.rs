@@ -35,6 +35,59 @@ impl BridgeConfig {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(url: &str) -> BridgeConfig {
+        BridgeConfig { gateway_url: url.to_string(), accept_insecure: false }
+    }
+
+    #[test]
+    fn https_becomes_wss() {
+        assert_eq!(
+            cfg("https://panel.example.com:9090").bridge_ws_url(),
+            "wss://panel.example.com:9090/api/bridge"
+        );
+    }
+
+    #[test]
+    fn http_becomes_ws() {
+        assert_eq!(
+            cfg("http://panel.example.com:9090").bridge_ws_url(),
+            "ws://panel.example.com:9090/api/bridge"
+        );
+    }
+
+    #[test]
+    fn trailing_slash_stripped() {
+        assert_eq!(
+            cfg("https://panel.example.com:9090/").bridge_ws_url(),
+            "wss://panel.example.com:9090/api/bridge"
+        );
+    }
+
+    #[test]
+    fn is_local_127() {
+        assert!(cfg("https://127.0.0.1:9090").is_local());
+    }
+
+    #[test]
+    fn is_local_localhost() {
+        assert!(cfg("http://localhost:9090").is_local());
+    }
+
+    #[test]
+    fn is_local_ipv6_loopback() {
+        assert!(cfg("http://[::1]:9090").is_local());
+    }
+
+    #[test]
+    fn is_local_remote_false() {
+        assert!(!cfg("https://192.168.56.10:9090").is_local());
+    }
+}
+
 fn load_env_file() {
     let path = "/etc/tenodera/bridge.env";
     let Ok(content) = std::fs::read_to_string(path) else { return };

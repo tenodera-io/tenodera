@@ -175,3 +175,85 @@ impl Router {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
+    use tenodera_protocol::message::Message;
+
+    fn make_router() -> (Router, mpsc::Receiver<Message>) {
+        let (tx, rx) = mpsc::channel(16);
+        (Router::new(tx), rx)
+    }
+
+    fn open_options(payload: &str) -> ChannelOpenOptions {
+        ChannelOpenOptions {
+            payload: payload.to_string(),
+            superuser: None,
+            extra: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn ping_returns_pong() {
+        let (mut router, _rx) = make_router();
+        let responses = router.handle(Message::Ping).await;
+        assert_eq!(responses.len(), 1);
+        assert!(matches!(responses[0], Message::Pong));
+    }
+
+    #[tokio::test]
+    async fn unknown_payload_closes_with_problem() {
+        let (mut router, _rx) = make_router();
+        let channel: ChannelId = "ch1".into();
+        let responses = router
+            .handle(Message::Open { channel, options: open_options("no.such.handler") })
+            .await;
+        assert_eq!(responses.len(), 1);
+        let Message::Close { problem, .. } = &responses[0] else {
+            panic!("expected Close, got {:?}", responses[0]);
+        };
+        assert!(problem.as_deref().unwrap_or("").contains("unknown-payload"));
+    }
+
+    #[tokio::test]
+    async fn close_on_unknown_channel_is_noop() {
+        let (mut router, _rx) = make_router();
+        let channel: ChannelId = "ch99".into();
+        let responses = router.handle(Message::Close { channel, problem: None }).await;
+        assert!(responses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn data_on_untracked_channel_is_noop() {
+        let (mut router, _rx) = make_router();
+        let channel: ChannelId = "ch2".into();
+        let responses = router
+            .handle(Message::Data { channel, data: serde_json::json!({"x": 1}) })
+            .await;
+        assert!(responses.is_empty());
+    }
+
+    #[tokio::test]
+    async fn register_defaults_covers_expected_payloads() {
+        let (tx, _rx) = mpsc::channel(16);
+        let mut router = Router::new(tx);
+        router.register_defaults();
+        let must_have = [
+            "system.info",
+            "systemd.units",
+            "metrics.stream",
+            "terminal.pty",
+            "packages.manage",
+            "dns.info",
+            "certs.list",
+        ];
+        for payload in must_have {
+            assert!(
+                router.handlers.contains_key(payload),
+                "handler missing: {payload}"
+            );
+        }
+    }
+}

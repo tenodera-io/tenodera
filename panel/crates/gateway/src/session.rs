@@ -197,6 +197,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn count_reflects_active_sessions() {
+        let store = SessionStore::new(900);
+        assert_eq!(store.count().await, 0);
+        store.create("u1".into(), Role::Admin).await;
+        store.create("u2".into(), Role::Readonly).await;
+        assert_eq!(store.count().await, 2);
+    }
+
+    #[test]
+    fn role_serializes_to_lowercase() {
+        assert_eq!(
+            serde_json::to_string(&Role::Admin).unwrap(),
+            r#""admin""#
+        );
+        assert_eq!(
+            serde_json::to_string(&Role::Readonly).unwrap(),
+            r#""readonly""#
+        );
+    }
+
+    #[test]
+    fn role_deserializes_from_lowercase() {
+        let admin: Role = serde_json::from_str(r#""admin""#).unwrap();
+        assert_eq!(admin, Role::Admin);
+        let ro: Role = serde_json::from_str(r#""readonly""#).unwrap();
+        assert_eq!(ro, Role::Readonly);
+    }
+
+    #[tokio::test]
     async fn touch_extends_idle_timeout() {
         let store = SessionStore::new_with_max_lifetime(1, 3600);
         let s = store.create("user".into(), Role::Admin).await;
