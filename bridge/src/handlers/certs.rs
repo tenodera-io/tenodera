@@ -50,8 +50,10 @@ impl ChannelHandler for CertsManageHandler {
         let password = data.get("password").and_then(|v| v.as_str()).unwrap_or("");
 
         let result = match action {
+            "parse"        => parse_pem_input(data).await,
             "trust_add"    => trust_add(data, password).await,
             "trust_remove" => trust_remove(data, password).await,
+            "verify_host"  => verify_host(data).await,
             _ => json!({ "error": format!("unknown action: {action}") }),
         };
 
@@ -381,10 +383,13 @@ async fn trust_add(data: &Value, password: &str) -> Value {
             sudo_action(password, &["update-ca-trust"]).await
         }
         Distro::Arch => {
-            let dest = format!("/etc/ca-certificates/trust-source/anchors/{safe_name}.crt");
-            let write = sudo_stdin_write(password, &["tee", &dest], pem).await;
+            // Write to temp, then trust anchor --store (handles saving + update atomically)
+            let tmp = format!("/tmp/tenodera-trust-{}.crt", std::process::id());
+            let write = sudo_stdin_write(password, &["tee", &tmp], pem).await;
             if write.get("error").is_some() { return write; }
-            sudo_action(password, &["trust", "extract-compat"]).await
+            let result = sudo_action(password, &["trust", "anchor", "--store", &tmp]).await;
+            let _ = sudo_action(password, &["rm", "-f", &tmp]).await;
+            result
         }
         Distro::Unknown => {
             json!({ "error": "unsupported distro — cannot determine trust store path" })
@@ -417,9 +422,129 @@ async fn trust_remove(data: &Value, password: &str) -> Value {
     match detect_distro().await {
         Distro::Debian  => sudo_action(password, &["update-ca-certificates", "--fresh"]).await,
         Distro::Fedora  => sudo_action(password, &["update-ca-trust"]).await,
-        Distro::Arch    => sudo_action(password, &["trust", "extract-compat"]).await,
+        Distro::Arch    => sudo_action(password, &["trust", "extract-compat"]).await, // best-effort after rm
         Distro::Unknown => json!({ "ok": true, "output": "removed file (update trust manually)" }),
     }
+}
+
+// ── parse / verify ─────────────────────────────────────────────────────────────
+
+async fn parse_pem_input(data: &Value) -> Value {
+    let raw = match data.get("pem").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.trim().to_string(),
+        _ => return json!({ "error": "missing certificate data" }),
+    };
+
+    if !which("openssl").await {
+        return json!({ "error": "openssl not found" });
+    }
+
+    // Detect DER (binary) vs PEM (text starting with -----BEGIN)
+    let pem = if raw.starts_with("-----BEGIN") {
+        raw.clone()
+    } else {
+        // Treat as base64-encoded DER — convert to PEM
+        let tmp_der = format!("/tmp/tenodera-import-{}.der", std::process::id());
+        let tmp_pem = format!("/tmp/tenodera-import-{}.pem", std::process::id());
+
+        // Decode base64 and write DER
+        use base64::Engine;
+        let der_bytes = match base64::engine::general_purpose::STANDARD.decode(raw.replace(['\n', '\r', ' '], "")) {
+            Ok(b) => b,
+            Err(_) => return json!({ "error": "not valid PEM or base64-encoded DER" }),
+        };
+        if fs::write(&tmp_der, &der_bytes).await.is_err() {
+            return json!({ "error": "failed to write temp file" });
+        }
+        let out = run_cmd(&["openssl", "x509", "-inform", "DER", "-in", &tmp_der, "-out", &tmp_pem]).await;
+        let _ = fs::remove_file(&tmp_der).await;
+        if out.contains("error") && !out.is_empty() {
+            let _ = fs::remove_file(&tmp_pem).await;
+            return json!({ "error": format!("DER conversion failed: {out}") });
+        }
+        let pem_content = fs::read_to_string(&tmp_pem).await.unwrap_or_default();
+        let _ = fs::remove_file(&tmp_pem).await;
+        pem_content
+    };
+
+    if pem.is_empty() {
+        return json!({ "error": "empty certificate after conversion" });
+    }
+
+    // Write pem to temp and parse
+    let tmp = format!("/tmp/tenodera-parse-{}.pem", std::process::id());
+    if fs::write(&tmp, &pem).await.is_err() {
+        return json!({ "error": "failed to write temp file" });
+    }
+
+    let result = parse_cert(&tmp, "import").await;
+    let _ = fs::remove_file(&tmp).await;
+
+    match result {
+        Some(mut info) => {
+            info["pem"] = json!(pem); // return converted PEM for trust_add
+            json!({ "ok": true, "cert": info })
+        }
+        None => json!({ "error": "failed to parse certificate — not a valid X.509 cert" }),
+    }
+}
+
+async fn verify_host(data: &Value) -> Value {
+    let host_raw = match data.get("host").and_then(|v| v.as_str()) {
+        Some(h) if !h.is_empty() => h,
+        _ => return json!({ "error": "missing host" }),
+    };
+
+    // Strip protocol prefix if present
+    let host = host_raw
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_end_matches('/');
+
+    // Split host:port
+    let (hostname, port) = if let Some((h, p)) = host.rsplit_once(':') {
+        (h, p.to_string())
+    } else {
+        (host, "443".to_string())
+    };
+
+    // Basic hostname safety check
+    if hostname.is_empty() || hostname.contains(['/', '\\', '\n', '\r']) {
+        return json!({ "error": "invalid hostname" });
+    }
+
+    let connect = format!("{hostname}:{port}");
+
+    // Use openssl s_client for structured output
+    let out = tokio::process::Command::new("sh")
+        .args(["-c", &format!(
+            "echo | openssl s_client -connect {connect} -verify_return_error -brief 2>&1 | head -30"
+        )])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await;
+
+    let output = match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string()
+            + &String::from_utf8_lossy(&o.stderr),
+        Err(e) => return json!({ "error": e.to_string() }),
+    };
+
+    // Parse result
+    let trusted = output.contains("Verification: OK")
+        || output.contains("verify return:1")
+        || output.contains("SSL handshake has read");
+    let failed  = output.contains("verify error")
+        || output.contains("certificate verify failed")
+        || output.contains("Verification error");
+
+    json!({
+        "ok": trusted && !failed,
+        "trusted": trusted && !failed,
+        "output": output.trim(),
+        "host": host,
+    })
 }
 
 // ── self-signed generation ─────────────────────────────────────────────────────

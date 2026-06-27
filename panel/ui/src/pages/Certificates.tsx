@@ -5,16 +5,17 @@ import { useSuperuser } from '../api/SuperuserContext.tsx';
 export function Certificates() {
   const { request } = useTransport();
   const su = useSuperuser();
-  const [tab, setTab] = useState<'certs' | 'letsencrypt' | 'selfsigned'>('certs');
+  const [tab, setTab] = useState<'certs' | 'trust' | 'letsencrypt' | 'selfsigned'>('certs');
 
   return (
     <div style={S.page}>
       <h2 style={S.title}>Certificates</h2>
       <div style={S.tabBar}>
         {([
-          ['certs', 'Certificates'],
+          ['certs',       'Certificates'],
+          ['trust',       'Trust Store'],
           ['letsencrypt', "Let's Encrypt"],
-          ['selfsigned', 'Self-Signed'],
+          ['selfsigned',  'Self-Signed'],
         ] as [typeof tab, string][]).map(([id, label]) => (
           <button
             key={id}
@@ -27,6 +28,7 @@ export function Certificates() {
       </div>
 
       {tab === 'certs'        && <CertsTab su={su} request={request} />}
+      {tab === 'trust'        && <TrustStoreTab su={su} request={request} />}
       {tab === 'letsencrypt'  && <LetsEncryptTab su={su} request={request} />}
       {tab === 'selfsigned'   && <SelfSignedTab su={su} request={request} />}
     </div>
@@ -229,6 +231,213 @@ function CertsTab({ su, request }: TabProps) {
       {pwAction && (
         <div style={S.pwBar}>
           <span style={S.muted}>Password required:</span>
+          <input type="password" value={pw} onChange={e => setPw(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') confirmPw(); if (e.key === 'Escape') { setPwAction(null); setPw(''); } }}
+            autoFocus style={S.pwInput} placeholder="sudo password…" />
+          <button style={S.saveBtn} onClick={confirmPw} disabled={!pw}>Confirm</button>
+          <button style={S.cancelBtn} onClick={() => { setPwAction(null); setPw(''); }}>Cancel</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Trust Store tab ────────────────────────────────────────────────────────────
+
+interface ParsedCert {
+  cn: string; issuer_cn: string; issuer_org: string;
+  not_before: string; not_after: string; days_remaining: number;
+  sans: string[]; is_ca: boolean; pem: string;
+}
+
+function TrustStoreTab({ su, request }: TabProps) {
+  const [rawInput, setRawInput]   = useState('');
+  const [certName, setCertName]   = useState('');
+  const [parsed, setParsed]       = useState<ParsedCert | null>(null);
+  const [parseErr, setParseErr]   = useState('');
+  const [parsing, setParsing]     = useState(false);
+  const [msg, setMsg]             = useState('');
+  const [pw, setPw]               = useState('');
+  const [pwAction, setPwAction]   = useState<null | string>(null);
+
+  // Verify section
+  const [verifyHost, setVerifyHost] = useState('');
+  const [verifying, setVerifying]   = useState(false);
+  const [verifyResult, setVerifyResult] = useState<{ ok: boolean; trusted: boolean; output: string; host: string } | null>(null);
+
+  const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 6000); };
+
+  const handleParse = async () => {
+    if (!rawInput.trim()) return;
+    setParsing(true); setParsed(null); setParseErr('');
+    try {
+      const [r] = await request('certs.manage', { action: 'parse', pem: rawInput.trim() });
+      const res = r as { ok?: boolean; cert?: ParsedCert; error?: string };
+      if (res.ok && res.cert) {
+        setParsed(res.cert);
+        if (!certName) setCertName(res.cert.cn.replace(/[^a-z0-9._-]/gi, '_') || 'imported');
+      } else {
+        setParseErr(res.error ?? 'Parse failed');
+      }
+    } catch (e) { setParseErr(String(e)); }
+    finally { setParsing(false); }
+  };
+
+  const execTrust = async (password: string) => {
+    if (!parsed) return;
+    try {
+      const [r] = await request('certs.manage', {
+        action: 'trust_add', pem: parsed.pem,
+        name: certName || 'imported', password,
+      });
+      const res = r as { ok?: boolean; error?: string; output?: string };
+      if (res.ok) { flash('✓ Certificate added to trust store'); setParsed(null); setRawInput(''); setCertName(''); }
+      else flash(res.error ?? 'Failed');
+    } catch (e) { flash(String(e)); }
+  };
+
+  const handleTrust = () => {
+    if (su.active) { execTrust(su.password); return; }
+    setPwAction('trust'); setPw('');
+  };
+
+  const confirmPw = () => {
+    if (!pw || !pwAction) return;
+    setPwAction(null); setPw('');
+    execTrust(pw);
+  };
+
+  const handleVerify = async () => {
+    if (!verifyHost.trim()) return;
+    setVerifying(true); setVerifyResult(null);
+    try {
+      const [r] = await request('certs.manage', { action: 'verify_host', host: verifyHost.trim() });
+      setVerifyResult(r as typeof verifyResult);
+    } catch (e) { flash(String(e)); }
+    finally { setVerifying(false); }
+  };
+
+  return (
+    <div style={S.section}>
+      {/* Import & trust */}
+      <div style={S.card}>
+        <div style={S.cardTitle}>Import certificate</div>
+        <p style={S.hint}>
+          Wklej certyfikat w formacie PEM (<code>-----BEGIN CERTIFICATE-----</code>) lub base64-encoded DER.
+          Obsługiwane: certyfikaty CA, certyfikaty firmowe, self-signed.
+        </p>
+
+        <textarea
+          style={{ ...S.textarea, height: 140 }}
+          placeholder={"-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----"}
+          value={rawInput}
+          onChange={e => { setRawInput(e.target.value); setParsed(null); setParseErr(''); }}
+          spellCheck={false}
+        />
+
+        <div style={S.btnRow}>
+          <button style={S.btnAccent} onClick={handleParse} disabled={parsing || !rawInput.trim()}>
+            {parsing ? 'Parsing…' : 'Parse & Preview'}
+          </button>
+          {rawInput && <button style={S.cancelBtn} onClick={() => { setRawInput(''); setParsed(null); setParseErr(''); }}>Clear</button>}
+        </div>
+
+        {parseErr && <p style={{ color: '#f7768e', fontSize: '0.85rem', marginTop: '0.5rem' }}>{parseErr}</p>}
+      </div>
+
+      {/* Preview & confirm */}
+      {parsed && (
+        <div style={S.card}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <div style={S.cardTitle}>Certificate preview</div>
+            <ExpiryBadge days={parsed.days_remaining} />
+            {parsed.is_ca && <span style={{ ...S.badge, color: '#bb9af7', background: '#bb9af722' }}>CA</span>}
+          </div>
+
+          <div style={S.detailGrid}>
+            <Detail label="Common Name"  value={parsed.cn || '—'} />
+            <Detail label="Issuer CN"    value={parsed.issuer_cn || '—'} />
+            <Detail label="Issuer Org"   value={parsed.issuer_org || '—'} />
+            <Detail label="Valid from"   value={parsed.not_before} mono />
+            <Detail label="Valid until"  value={parsed.not_after}  mono />
+            <Detail label="Days left"    value={String(parsed.days_remaining)} />
+          </div>
+
+          {parsed.sans.length > 0 && (
+            <div style={{ marginTop: '0.5rem' }}>
+              <div style={S.detailLabel}>Subject Alternative Names</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
+                {parsed.sans.map(s => <span key={s} style={S.sanChip}>{s}</span>)}
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+            <input
+              style={{ ...S.input, width: 220 }}
+              placeholder="Nazwa w trust store"
+              value={certName}
+              onChange={e => setCertName(e.target.value)}
+              spellCheck={false}
+            />
+            <button style={S.saveBtn} onClick={handleTrust} disabled={!certName.trim()}>
+              Dodaj do trust store
+            </button>
+            <span style={S.hint}>
+              {/* distro hint shown inline */}
+              Debian: <code>/usr/local/share/ca-certificates/</code> &nbsp;·&nbsp;
+              Fedora: <code>/etc/pki/ca-trust/source/anchors/</code> &nbsp;·&nbsp;
+              Arch: <code>trust anchor --store</code>
+            </span>
+          </div>
+
+          {msg && <p style={{ color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e', fontSize: '0.85rem', marginTop: '0.5rem' }}>{msg}</p>}
+        </div>
+      )}
+
+      {msg && !parsed && <p style={{ color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e', fontSize: '0.85rem' }}>{msg}</p>}
+
+      {/* Verify trust */}
+      <div style={S.card}>
+        <div style={S.cardTitle}>Weryfikacja zaufania</div>
+        <p style={S.hint}>
+          Sprawdź czy certyfikat hosta jest uznawany przez system jako zaufany (openssl s_client).
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+          <input
+            style={{ ...S.input, flex: 1, minWidth: 200, fontFamily: 'monospace' }}
+            placeholder="example.com lub example.com:8443"
+            value={verifyHost}
+            onChange={e => setVerifyHost(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleVerify()}
+            spellCheck={false}
+          />
+          <button style={S.btnAccent} onClick={handleVerify} disabled={verifying || !verifyHost.trim()}>
+            {verifying ? 'Sprawdzam…' : 'Test'}
+          </button>
+        </div>
+
+        {verifyResult && (
+          <div style={{ marginTop: '0.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+              <span style={{
+                ...S.badge,
+                color: verifyResult.trusted ? '#9ece6a' : '#f7768e',
+                background: (verifyResult.trusted ? '#9ece6a' : '#f7768e') + '22',
+              }}>
+                {verifyResult.trusted ? '✓ Zaufany' : '✗ Niezaufany / błąd'}
+              </span>
+              <span style={S.muted}>{verifyResult.host}</span>
+            </div>
+            <pre style={{ ...S.codeBlock, maxHeight: 200 }}>{verifyResult.output}</pre>
+          </div>
+        )}
+      </div>
+
+      {/* Password prompt */}
+      {pwAction && (
+        <div style={S.pwBar}>
+          <span style={S.muted}>Wymagane hasło sudo:</span>
           <input type="password" value={pw} onChange={e => setPw(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') confirmPw(); if (e.key === 'Escape') { setPwAction(null); setPw(''); } }}
             autoFocus style={S.pwInput} placeholder="sudo password…" />
