@@ -1,22 +1,25 @@
 # tenodera-gateway
 
 HTTP/WebSocket server with PAM authentication, session management,
-TLS support, and SSH-based remote host management.
+TLS support, and reverse-WebSocket bridge registry.
 
 ## Role in Architecture
 
 The gateway is the central server accessible from the browser. It handles:
 
 1. **Login** -- PAM authentication via `tenodera-pam-helper` subprocess, sudo privilege check
-2. **WebSocket** -- channel-multiplexed transport to bridge processes
+2. **WebSocket** -- channel-multiplexed transport to bridge connections
 3. **UI serving** -- static React SPA
 4. **TLS** -- optional encryption (rustls)
-5. **Multi-host** -- routing channels to local or remote bridge via SSH
+5. **Multi-host** -- `BridgeRegistry` routes channels to the correct bridge by `host` field
 
 ```
-Browser --> HTTPS/WSS --> Gateway (:9090) --> stdin/stdout --> Bridge (localhost)
-                                          --> SSH --> Bridge (remote host)
+Browser --> HTTPS/WSS --> Gateway (:9090) <-- outbound WS -- tenodera-bridge (each host)
 ```
+
+Bridges connect outbound to `GET /api/bridge`. The gateway auto-registers each host
+on first connect using the hostname from the `Hello` handshake (Zabbix-style). Multiple
+user WebSocket sessions share the same bridge connection via `BridgeRegistry`.
 
 ## Modules
 
@@ -24,9 +27,11 @@ Browser --> HTTPS/WSS --> Gateway (:9090) --> stdin/stdout --> Bridge (localhost
 |--------|-------------|
 | `main.rs` | Axum server setup, routing, shared state, core dump prevention |
 | `auth.rs` | Login (PAM + sudo check), logout (Bearer auth required) |
-| `ws.rs` | WebSocket upgrade, Origin validation, channel routing, session polling |
+| `ws.rs` | WebSocket upgrade, Origin validation, channel routing via BridgeRegistry |
+| `bridge_ws.rs` | `GET /api/bridge` endpoint — Hello/HelloAck handshake, bridge auto-registration |
+| `bridge_registry.rs` | In-memory registry of active bridge WebSocket connections |
 | `session.rs` | In-memory session store with idle timeout, max lifetime, and reaper |
-| `bridge_transport.rs` | Bridge spawning (local + remote via SSH with host key verification) |
+| `bridge_transport.rs` | Declared but unused — dead code from a previous SSH-based architecture |
 | `pam.rs` | PAM authentication via `tenodera-pam-helper` subprocess, sudo privilege check via `sudo -l -U` |
 | `config.rs` | Configuration from environment variables |
 | `tls.rs` | TLS acceptor setup (tokio-rustls) |
@@ -41,43 +46,37 @@ Browser --> HTTPS/WSS --> Gateway (:9090) --> stdin/stdout --> Bridge (localhost
 |----------|--------|-------------|
 | `/api/auth/login` | POST | Login (PAM auth + sudo check, rate-limited per IP) |
 | `/api/auth/logout` | POST | Logout (requires `Authorization: Bearer <session_id>`) |
-| `/api/ws` | GET | WebSocket upgrade (`?session_id=...`, Origin validated) |
-| `/api/health` | GET | Health check |
+| `/api/ws` | GET | WebSocket upgrade for browser sessions (`?session_id=...`, Origin validated) |
+| `/api/bridge` | GET | WebSocket upgrade for bridge connections (Hello/HelloAck handshake) |
+| `/api/hosts` | GET | List all registered hosts with status |
+| `/api/hosts/{id}` | DELETE | Remove a host from the registry |
+| `/api/hosts/{id}` | PATCH | Update host metadata (e.g. name) |
+| `/api/health` | GET | Health check: `{ status, sessions, uptime_secs, version }` |
+| `/api/health/ready` | GET | Readiness probe (200 OK \| 503) |
 | `/*` | GET | UI file serving (SPA fallback) |
 
 ## WebSocket Channel Routing
 
-When a client opens a channel:
+When a browser client opens a channel:
 
-- **No `host` field** -- routed to the local bridge (spawned at WS connect)
-- **With `host` field** -- looked up in `hosts.json`, remote bridge spawned
-  via SSH on first use, then reused for the session
+- **No `host` field** -- returns a `host-required` error; all channels must specify a target host
+- **With `host` field** -- host ID looked up in `BridgeRegistry`; message forwarded to the
+  appropriate bridge connection. The `host` field is stripped before forwarding.
 
-The gateway injects `_user` from the authenticated session into every
-message before forwarding to the bridge. The `host` field is stripped.
+The gateway injects `_user` and `_role` from the authenticated session into every
+channel's `ChannelOpenOptions` before forwarding to the bridge. Handlers use `_role`
+to enforce admin-only operations via `require_admin()`.
 
-A background task polls for session existence every 5 seconds. When a
-session is invalidated (logout or reaper), the WebSocket is terminated
-with a close frame.
-
-## Remote Bridge Spawning
-
-```
-sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<tempfile> user@host tenodera-bridge
-```
-
-- SSH host key verified against fingerprint confirmed during host enrollment
-- Known hosts stored in a per-connection tempfile (kept alive for session duration)
-- Password passed via `SSHPASS` environment variable (not visible in process list)
-- Bridge communicates over SSH stdin/stdout using newline-delimited JSON
-- One remote bridge per host per WebSocket session
+A background task polls for session existence every 5 seconds. When a session is
+invalidated (logout or reaper), the WebSocket is terminated with a close frame.
 
 ## Security
 
 ### Authentication & Authorization
 
 - PAM authentication via `tenodera-pam-helper` subprocess with login rate limiting (per-IP sliding window)
-- Sudo privilege check at login (`sudo -l -U <user>`) -- users without sudo are rejected
+- Sudo privilege check at login (`sudo -l -U <user>`): sudo/wheel/admin users get `admin` role;
+  non-sudo users are granted `readonly` role and can log in with restricted access
 - Authenticated logout requires `Authorization: Bearer <session_id>` matching the body
 
 ### Session Security
@@ -90,7 +89,6 @@ sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<tempfile> use
 ### Transport Security
 
 - TLS required by default (`TENODERA_ALLOW_UNENCRYPTED=false`)
-- SSH host key verification with `StrictHostKeyChecking=yes`
 - CSRF Origin check on POST/PUT/DELETE/PATCH requests
 - WebSocket Origin validation against Host header (prevents CSWSH)
 
@@ -110,6 +108,5 @@ sshpass -e ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=<tempfile> use
 - `serde` + `serde_json` -- JSON
 - `uuid` -- session ID generation
 - `zeroize` -- password memory safety
-- `tempfile` -- SSH known hosts per-connection
 - `tracing` + `tracing-subscriber` -- structured logging
 - `tenodera-protocol` -- shared message types

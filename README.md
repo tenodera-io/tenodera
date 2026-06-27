@@ -34,7 +34,10 @@ Each bridge connects outbound to the gateway over a persistent WebSocket.
 | **Log Files** | Browse `/var/log` with keyword search, context lines, date/time range |
 | **Cron Jobs** | List all crontab sources (/etc/crontab, cron.d, user crontabs), view entries, edit raw crontab content |
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
+| **DNS** | `/etc/resolv.conf` and `/etc/hosts` editing, DNS lookup tool, systemd-resolved configuration |
+| **Certificates** | TLS certificate scanning, trust store management, self-signed generation, Let's Encrypt |
 | **Multi-host** | Manage multiple servers from one panel via reverse-WebSocket bridge |
+| **Management** | Host role assignment, host restart, host removal — admin-only panel |
 | **Access control** | Role-based: Admin (sudo/wheel users) get full access; non-sudo users get read-only access |
 
 ## Install
@@ -255,8 +258,8 @@ no inbound ports required on managed hosts.
 - **Gateway** authenticates users via PAM, serves the React UI, and routes
   channel-multiplexed JSON between browser sessions and the appropriate bridge.
 - **Bridge** is a lightweight systemd service deployed on each managed host.
-  It connects outbound to the gateway, handles 24 operation types (system info,
-  services, packages, terminal, cron, …), and reconnects automatically with
+  It connects outbound to the gateway, handles 39 operation types (system info,
+  services, packages, terminal, DNS, certificates, …), and reconnects automatically with
   exponential backoff on disconnect.
 - **Protocol** is a shared Rust crate defining the message types used by
   both gateway and bridge.
@@ -274,7 +277,7 @@ panel/                   Central server (gateway + UI)
   Makefile               Build & install
 
 bridge/                  Standalone bridge binary (deployed to managed hosts)
-  src/handlers/          24 handler modules
+  src/handlers/          28 handler modules (39 registered handlers)
   Makefile               Build & install
 
 protocol/                Shared message types (Rust library crate)
@@ -342,8 +345,8 @@ protocol/                Shared message types (Rust library crate)
 ### Kernel Dump
 ![Kernel Dump](src/kdump.webp)
 
-### Virtual Machines
-![Virtual Machines](src/virtual_machines.webp)
+### Containers
+![Containers](src/virtual_machines.webp)
 
 </details>
 
