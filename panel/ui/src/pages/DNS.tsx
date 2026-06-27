@@ -139,7 +139,7 @@ function ResolverTab({ info, su, request, onReload }: {
       {/* Status row */}
       <div style={S.statusRow}>
         <span style={S.sectionLabel}>systemd-resolved</span>
-        <span style={{ ...S.badge, color: info.resolved_active ? 'var(--c-green)' : 'var(--text-3)', background: (info.resolved_active ? 'var(--c-green)' : 'var(--text-3)')  }}>
+        <span style={{ ...S.badge, color: 'var(--badge-fg)', background: info.resolved_active ? 'var(--c-green)' : 'var(--text-3)' }}>
           {info.resolved_active ? 'active' : 'inactive'}
         </span>
         {info.resolved_active && (
@@ -505,7 +505,7 @@ function ResolvedTab({ su, request }: {
       <div style={S.card}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <span style={S.cardTitle}>systemd-resolved</span>
-          <span style={{ ...S.badge, color: info.active ? 'var(--c-green)' : 'var(--text-3)', background: (info.active ? 'var(--c-green)' : 'var(--text-3)')  }}>
+          <span style={{ ...S.badge, color: 'var(--badge-fg)', background: info.active ? 'var(--c-green)' : 'var(--text-3)' }}>
             {info.active ? 'active' : 'inactive'}
           </span>
           {info.active && (
@@ -677,7 +677,7 @@ function ProtoBadge({ label, value }: { label: string; value: string }) {
   const on = value === 'yes' || value === 'resolve' || value === 'opportunistic' || value === 'allow-downgrade';
   const color = on ? 'var(--c-green)' : (value === 'no' ? 'var(--text-3)' : 'var(--c-yellow)');
   return (
-    <span style={{ ...S.badge, color, background: color , fontSize: '0.75rem' }}>
+    <span style={{ ...S.badge, color: 'var(--badge-fg)', background: color, fontSize: '0.75rem' }}>
       {label}: {value}
     </span>
   );

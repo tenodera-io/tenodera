@@ -606,7 +606,7 @@ function StatusBadge({ status }: { status: string }) {
     status === 'inactive' ? 'var(--text-3)' : 'var(--c-yellow)';
 
   return (
-    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color , color }}>
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color, color: 'var(--badge-fg)' }}>
       {status}
     </span>
   );
@@ -619,7 +619,7 @@ function EnabledBadge({ status }: { status: string }) {
     status === 'static'   ? 'var(--c-blue)' : 'var(--text-3)';
 
   return (
-    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color , color }}>
+    <span style={{ display: 'inline-block', padding: '2px 8px', borderRadius: '4px', fontSize: '0.8rem', background: color, color: 'var(--badge-fg)' }}>
       {status}
     </span>
   );

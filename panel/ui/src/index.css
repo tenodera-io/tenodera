@@ -37,6 +37,7 @@
   --danger: var(--c-red);
   --success: var(--c-green);
   --warning: var(--c-yellow);
+  --badge-fg: #11111b;
   font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 
@@ -71,6 +72,7 @@
   --danger: var(--c-red);
   --success: var(--c-green);
   --warning: var(--c-yellow);
+  --badge-fg: #11111b;
 }
 
 /* ── Tokyo Night Light ─────────────────────────────────── */
@@ -104,6 +106,7 @@
   --danger: var(--c-red);
   --success: var(--c-green);
   --warning: var(--c-yellow);
+  --badge-fg: #1e1e2e;
 }
 
 /* ── Catppuccin Latte (light) ──────────────────────────── */
@@ -137,6 +140,7 @@
   --danger: var(--c-red);
   --success: var(--c-green);
   --warning: var(--c-yellow);
+  --badge-fg: #1e1e2e;
 }
 
 body {

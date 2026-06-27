@@ -1139,7 +1139,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     fontSize: '0.7rem',
     fontWeight: 600,
-    color: 'var(--bg-app)',
+    color: 'var(--badge-fg)',
     textTransform: 'uppercase' as const,
   },
   badgeOutline: {

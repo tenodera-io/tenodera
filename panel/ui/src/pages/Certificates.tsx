@@ -580,8 +580,8 @@ function TrustStoreTab({ su, request }: TabProps) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
               <span style={{
                 ...S.badge,
-                color: verifyResult.trusted ? 'var(--c-green)' : 'var(--c-red)',
-                background: (verifyResult.trusted ? 'var(--c-green)' : 'var(--c-red)') ,
+                color: 'var(--badge-fg)',
+                background: verifyResult.trusted ? 'var(--c-green)' : 'var(--c-red)',
               }}>
                 {verifyResult.trusted ? '✓ Trusted' : '✗ Not trusted / error'}
               </span>
@@ -898,7 +898,7 @@ type TabProps = {
 function ExpiryBadge({ days }: { days: number }) {
   const color = days < 0 ? 'var(--c-red)' : days < 30 ? 'var(--c-red)' : days < 90 ? 'var(--c-yellow)' : 'var(--c-green)';
   const label = days < 0 ? 'EXPIRED' : `${days}d`;
-  return <span style={{ ...S.badge, color, background: color  }}>{label}</span>;
+  return <span style={{ ...S.badge, color: 'var(--badge-fg)', background: color }}>{label}</span>;
 }
 
 function SourceBadge({ source }: { source: string }) {
@@ -907,7 +907,7 @@ function SourceBadge({ source }: { source: string }) {
     nginx: 'var(--c-yellow)', apache: 'var(--c-yellow)', private: 'var(--c-purple)',
   };
   const color = colors[source] ?? 'var(--text-3)';
-  return <span style={{ ...S.badge, color, background: color , fontSize: '0.75rem' }}>{source}</span>;
+  return <span style={{ ...S.badge, color: 'var(--badge-fg)', background: color, fontSize: '0.75rem' }}>{source}</span>;
 }
 
 function Detail({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
