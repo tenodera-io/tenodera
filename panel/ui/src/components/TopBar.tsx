@@ -134,19 +134,25 @@ export function TopBar({
               <Row label="Privileges" value={suActive ? 'Administrative' : 'Limited'}
                 valueStyle={{ color: suActive ? 'var(--c-green)' : 'var(--text-2)' }} />
               <hr style={S.hr} />
-              <div style={{ padding: '0.3rem 0.9rem 0.2rem', fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Theme</div>
-              {THEMES.map(t => (
-                <button key={t.name} onClick={() => setTheme(t.name)} style={{
-                  width: '100%', padding: '0.3rem 0.9rem',
-                  border: 'none', background: theme === t.name ? 'color-mix(in srgb, var(--c-blue) 15%, transparent)' : 'transparent',
-                  color: theme === t.name ? 'var(--c-blue)' : 'var(--text-2)',
-                  fontSize: '0.78rem', textAlign: 'left', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: '0.5rem',
-                }}>
-                  {t.dark ? '🌙' : '☀️'} {t.label}
-                  {theme === t.name && <span style={{ marginLeft: 'auto', fontSize: '0.7rem' }}>✓</span>}
-                </button>
-              ))}
+              <div style={{ padding: '0.3rem 0.9rem 0.4rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Theme</span>
+                <select
+                  value={theme}
+                  onChange={e => setTheme(e.target.value as typeof theme)}
+                  style={{
+                    background: 'var(--bg-input)', color: 'var(--text-1)',
+                    border: '1px solid var(--border-2)', borderRadius: 4,
+                    fontSize: '0.75rem', padding: '0.2rem 0.4rem', cursor: 'pointer',
+                    flex: 1,
+                  }}
+                >
+                  {THEMES.map(t => (
+                    <option key={t.name} value={t.name}>
+                      {t.dark ? '🌙' : '☀️'} {t.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <hr style={S.hr} />
               <button onClick={onLogout} style={S.logoutBtn}>Log Out</button>
             </div>
