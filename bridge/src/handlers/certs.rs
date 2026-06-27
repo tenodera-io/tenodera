@@ -141,8 +141,35 @@ const CERT_DIRS: &[(&str, &str)] = &[
     ("/etc/nginx/certs", "nginx"),
     ("/etc/apache2/ssl", "apache"),
     ("/etc/httpd/conf/ssl", "apache"),
-    ("/etc/ssl/private", "private"),
 ];
+
+async fn scan_dir_recursive(dir: &str, skip_subdirs: &[&str], source: &str, out: &mut Vec<Value>) {
+    let p = Path::new(dir);
+    if !p.exists() { return; }
+    let mut stack = vec![p.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let mut rd = match fs::read_dir(&current).await {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        while let Ok(Some(entry)) = rd.next_entry().await {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !skip_subdirs.contains(&name) {
+                    stack.push(path);
+                }
+            } else {
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if matches!(ext, "pem" | "crt" | "cer") {
+                    if let Some(info) = parse_cert(&path.to_string_lossy(), source).await {
+                        out.push(info);
+                    }
+                }
+            }
+        }
+    }
+}
 
 async fn scan_all_certs() -> Value {
     if !which("openssl").await {
@@ -166,6 +193,9 @@ async fn scan_all_certs() -> Value {
         }
     }
 
+    // /etc/ssl/ — recursive, skip /etc/ssl/certs/ (system bundle)
+    scan_dir_recursive("/etc/ssl", &["certs"], "ssl", &mut certs).await;
+
     // Flat cert directories
     for (dir, source) in CERT_DIRS {
         let p = Path::new(dir);
@@ -175,6 +205,8 @@ async fn scan_all_certs() -> Value {
                 let path = entry.path();
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                 if !matches!(ext, "pem" | "crt" | "cer") { continue; }
+                // Skip if already covered by /etc/ssl scan
+                if path.to_str().map(|p| p.starts_with("/etc/ssl/")).unwrap_or(false) { continue; }
                 if let Some(info) = parse_cert(&path.to_string_lossy(), source).await {
                     certs.push(info);
                 }
