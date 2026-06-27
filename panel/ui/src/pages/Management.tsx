@@ -210,7 +210,8 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
 
   const toast = useToast();
   const [activeAction, setActiveAction] = useState<CardAction>(null);
-  const [roleInput, setRoleInput] = useState('');
+  const [roleTags, setRoleTags] = useState<string[]>([]);
+  const [roleTagInput, setRoleTagInput] = useState('');
   const [busy, setBusy] = useState(false);
 
   const currentRoles = (config?.roles ?? []).filter(r => r !== 'Panel / Local');
@@ -219,9 +220,15 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
 
   const startAction = (a: CardAction) => {
     setActiveAction(a);
-    if (a === 'role') setRoleInput(currentRoles.join(', '));
+    if (a === 'role') { setRoleTags([...currentRoles]); setRoleTagInput(''); }
   };
   const cancel = () => { setActiveAction(null); };
+
+  const commitTagInput = () => {
+    const val = roleTagInput.trim().replace(/,/g, '').trim();
+    if (val && !roleTags.includes(val)) setRoleTags(prev => [...prev, val]);
+    setRoleTagInput('');
+  };
 
   const confirmRemove = async () => {
     setBusy(true);
@@ -244,9 +251,11 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
   };
 
   const confirmRoleChange = async () => {
+    const pending = roleTagInput.trim().replace(/,/g, '').trim();
+    const allTags = pending && !roleTags.includes(pending) ? [...roleTags, pending] : roleTags;
     setBusy(true);
     try {
-      await onRoleChange(roleInput.trim());
+      await onRoleChange(allTags.join(','));
       toast.success('Role updated.');
     } catch (e) {
       toast.error(`Role change failed: ${e}`);
@@ -325,16 +334,40 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
 
       {activeAction === 'role' && (
         <div style={S.confirm} onClick={stop}>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Roles (comma-separated):</div>
-          <input
-            style={S.input}
-            placeholder="e.g. database, web"
-            value={roleInput}
-            onChange={e => setRoleInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') confirmRoleChange(); if (e.key === 'Escape') cancel(); }}
-            autoFocus
-            onClick={stop}
-          />
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>Roles:</div>
+          <div style={S.tagBox} onClick={stop}>
+            {roleTags.map(tag => (
+              <span key={tag} style={S.tag}>
+                {tag}
+                <button
+                  style={S.tagRemove}
+                  onClick={() => setRoleTags(prev => prev.filter(t => t !== tag))}
+                >×</button>
+              </span>
+            ))}
+            <input
+              style={S.tagInput}
+              placeholder="Add role…"
+              value={roleTagInput}
+              onChange={e => {
+                const v = e.target.value;
+                if (v.endsWith(',')) {
+                  const val = v.slice(0, -1).trim();
+                  if (val && !roleTags.includes(val)) setRoleTags(prev => [...prev, val]);
+                  setRoleTagInput('');
+                } else {
+                  setRoleTagInput(v);
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') { e.preventDefault(); commitTagInput(); }
+                if (e.key === 'Escape') cancel();
+                if (e.key === 'Backspace' && roleTagInput === '' && roleTags.length > 0)
+                  setRoleTags(prev => prev.slice(0, -1));
+              }}
+              autoFocus
+            />
+          </div>
           <div style={S.confirmBtns}>
             <button style={S.btnPrimary} onClick={confirmRoleChange} disabled={busy}>{busy ? '…' : 'Save'}</button>
             <button style={S.btnGhost} onClick={cancel}>Cancel</button>
@@ -430,5 +463,8 @@ const S: Record<string, React.CSSProperties> = {
   btnDanger:     { padding: '0.22rem 0.65rem', fontSize: '0.76rem', borderRadius: 4, border: 'none', background: '#f7768e', color: '#1a1b26', cursor: 'pointer', fontWeight: 600 },
   btnWarn:       { padding: '0.22rem 0.65rem', fontSize: '0.76rem', borderRadius: 4, border: 'none', background: '#e0af68', color: '#1a1b26', cursor: 'pointer', fontWeight: 600 },
   btnGhost:      { padding: '0.22rem 0.65rem', fontSize: '0.76rem', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-secondary)', cursor: 'pointer' },
-  input:         { padding: '0.28rem 0.5rem', fontSize: '0.8rem', borderRadius: 4, border: '1px solid #414868', background: 'var(--bg-primary)', color: 'var(--text-primary)', width: '100%', boxSizing: 'border-box' },
+  tagBox:        { display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center', background: 'var(--bg-primary)', border: '1px solid #414868', borderRadius: 4, padding: '0.25rem 0.4rem', minHeight: 30 },
+  tag:           { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: '#7aa2f722', border: '1px solid #7aa2f744', borderRadius: 3, padding: '0.1rem 0.35rem', fontSize: '0.75rem', color: '#7aa2f7' },
+  tagRemove:     { background: 'none', border: 'none', color: '#7aa2f7', cursor: 'pointer', fontSize: '0.8rem', padding: 0, lineHeight: 1 },
+  tagInput:      { border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-primary)', fontSize: '0.8rem', minWidth: 80, flex: 1 },
 };
