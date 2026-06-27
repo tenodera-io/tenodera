@@ -2,8 +2,9 @@
 # Tenodera Bridge — remote host installer
 #
 # Usage:
-#   Install:   sudo bash install-bridge.sh --gateway https://gw:9090
-#   Uninstall: sudo bash install-bridge.sh --uninstall
+#   Install (local):  sudo bash install-bridge.sh
+#   Install (remote): sudo bash install-bridge.sh --gateway https://gw:9090
+#   Uninstall:        sudo bash install-bridge.sh --uninstall
 #
 # The bridge connects outbound to the gateway — no tokens, no SSH keys, no inbound ports needed.
 # The host is registered automatically on first connection (identified by hostname).
@@ -58,8 +59,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Default to local gateway if --gateway not provided
 if [ -z "$GATEWAY_URL" ]; then
-  fail "Usage: sudo bash install-bridge.sh --gateway https://gw:9090"
+  GATEWAY_URL="https://127.0.0.1:9090"
+  ACCEPT_INSECURE="1"
+  info "No --gateway specified — using local gateway: ${GATEWAY_URL}"
 fi
 
 # ── Download & build (skipped if binary already installed) ─────────
