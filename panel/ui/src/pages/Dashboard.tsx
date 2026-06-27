@@ -129,10 +129,14 @@ export function Dashboard() {
   const mountedRef = useRef(true);
   const prevRequestRef = useRef(request);
 
+  const [refreshTick, setRefreshTick] = useState(0);
+
   const changeInterval = useCallback((ms: number) => {
     setIntervalMs(ms);
     sessionStorage.setItem(INTERVAL_STORAGE_KEY, String(ms));
   }, []);
+
+  const manualRefresh = useCallback(() => setRefreshTick(t => t + 1), []);
 
   // ── One-shot static data (loaded once per host) ──
   useEffect(() => {
@@ -229,7 +233,7 @@ export function Dashboard() {
       clearTimeout(kickTimer);
       clearInterval(timer);
     };
-  }, [request, intervalMs]);
+  }, [request, intervalMs, refreshTick]);
 
   /* memory breakdown for pie */
   const memTotal = snapshot?.memory?.memtotal ?? 0;
@@ -281,7 +285,7 @@ export function Dashboard() {
       <div style={styles.headerRow}>
         <h2 style={{ margin: 0 }}>Dashboard</h2>
         <div style={styles.intervalBar}>
-          <span style={styles.intervalLabel}>Refresh</span>
+          <span style={styles.intervalLabel}>Auto-refresh</span>
           <select
             value={intervalMs}
             onChange={e => changeInterval(Number(e.target.value))}
@@ -291,6 +295,7 @@ export function Dashboard() {
               <option key={opt.ms} value={opt.ms}>{opt.label}</option>
             ))}
           </select>
+          <button onClick={manualRefresh} style={styles.refreshBtn}>↺</button>
         </div>
       </div>
 
@@ -878,6 +883,16 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontWeight: 500,
     outline: 'none',
+  },
+  refreshBtn: {
+    background: 'var(--bg-surface)',
+    border: '1px solid var(--bg-surface)',
+    color: 'var(--text-2)',
+    padding: '0.25rem 0.55rem',
+    borderRadius: 5,
+    fontSize: '0.85rem',
+    cursor: 'pointer',
+    lineHeight: 1,
   },
   grid3: {
     display: 'grid',
