@@ -13,6 +13,21 @@ interface Props {
   onLogout: () => void;
 }
 
+interface GatewayHealth {
+  version: string;
+  uptime_secs: number;
+  sessions: number;
+}
+
+function fmtUptime(secs: number): string {
+  if (secs < 60) return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  const h = Math.floor(secs / 3600) % 24;
+  const d = Math.floor(secs / 86400);
+  if (d > 0) return `${d}d ${h}h`;
+  return `${h}h ${Math.floor(secs / 60) % 60}m`;
+}
+
 export function TopBar({
   hostname, activeHost, remoteStatus, connState,
   suActive, user, onSuperuserClick, onLogout,
@@ -20,8 +35,22 @@ export function TopBar({
   const role = useRole();
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [sessionOpen, setSessionOpen] = React.useState(false);
+  const [health, setHealth] = React.useState<GatewayHealth | null>(null);
   const helpRef = React.useRef<HTMLDivElement>(null);
   const sessionRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const fetchHealth = () => {
+      const sessionId = sessionStorage.getItem('session_id') ?? '';
+      fetch('/api/health', { headers: { 'Authorization': `Bearer ${sessionId}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => d && setHealth(d))
+        .catch(() => {});
+    };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 60_000);
+    return () => clearInterval(interval);
+  }, []);
 
   React.useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -74,9 +103,9 @@ export function TopBar({
           {helpOpen && (
             <div style={S.dropdown}>
               <div style={S.dropdownTitle}>Tenodera</div>
-              <Row label="Version" value="0.1.0" />
-              <Row label="Backend" value="Rust + Axum" />
-              <Row label="Frontend" value="React 19" />
+              <Row label="Version"  value={health?.version ?? '…'} />
+              <Row label="Uptime"   value={health ? fmtUptime(health.uptime_secs) : '…'} />
+              <Row label="Sessions" value={health ? String(health.sessions) : '…'} />
               <hr style={S.hr} />
               <Row label="Status" value={connLabel} valueStyle={{ color: connColor }} />
               <Row label="Superuser" value={suActive ? 'Active' : 'Inactive'}
