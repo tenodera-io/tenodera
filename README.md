@@ -55,18 +55,25 @@ systemd services, and starts the panel on port 9090.
 
 ### Bridge (managed hosts)
 
-Run on each host you want to manage — no pre-registration in the UI required:
+On the **same host as the panel** (no arguments needed — defaults to local gateway):
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
+  | sudo bash
+```
+
+On **remote hosts** you want to manage:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
   | sudo bash -s -- --gateway https://<your-panel-host>:9090
 ```
 
-For plaintext HTTP (dev/LAN only):
+If the panel uses a self-signed certificate, add `--accept-insecure`:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
-  | sudo bash -s -- --gateway http://<your-panel-host>:9090 --accept-insecure
+  | sudo bash -s -- --gateway https://<your-panel-host>:9090 --accept-insecure
 ```
 
 The installer builds the bridge binary, writes `/etc/tenodera/bridge.env`, installs a systemd
@@ -212,6 +219,8 @@ Run the bridge installer on each host you want to manage:
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
   | sudo bash -s -- --gateway https://<panel-host>:9090
 ```
+
+On the panel host itself, `--gateway` can be omitted — it defaults to `https://127.0.0.1:9090`.
 
 The bridge connects outbound to the gateway and registers itself by hostname — no UI
 pre-registration, no tokens, no SSH keys, no open ports on the managed host.
