@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useContext } from 'react';
+import { useEffect, useState, useCallback, useContext, useRef } from 'react';
 import { request as rawRequest } from '../api/transport.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { useToast } from '../contexts/ToastContext.tsx';
@@ -29,8 +29,10 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const fetchGen = useRef(0);
 
   const fetchAll = useCallback(async () => {
+    const gen = ++fetchGen.current;
     setLoading(true);
     const settled = await Promise.allSettled(
       hosts.map(async (host): Promise<HostWithConfig> => {
@@ -49,7 +51,8 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
         }
       }),
     );
-    setResults(settled.map(r => r.status === 'fulfilled' ? r.value : { host: hosts[0], config: null }));
+    if (gen !== fetchGen.current) return; // stale — a newer fetch is already running
+    setResults(settled.map((r, i) => r.status === 'fulfilled' ? r.value : { host: hosts[i], config: null }));
     setLoading(false);
   }, [hosts]);
 

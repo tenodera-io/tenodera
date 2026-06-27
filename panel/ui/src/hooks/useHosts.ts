@@ -42,9 +42,12 @@ export function useHosts(_connected: boolean): UseHostsResult {
         pendingHostId.current = null;
       } else {
         setActiveHost((prev) => {
-          // Auto-select the local host on first load if nothing is selected
           if (!prev) return list.find((h) => h.is_local) ?? list[0] ?? null;
-          return list.find((h) => h.id === prev.id) ?? prev;
+          // Update active host with fresh data; fall back to local if it was removed
+          return list.find((h) => h.id === prev.id)
+            ?? list.find((h) => h.is_local)
+            ?? list[0]
+            ?? null;
         });
       }
     } catch { /* best-effort */ }
@@ -56,10 +59,10 @@ export function useHosts(_connected: boolean): UseHostsResult {
     else sessionStorage.removeItem('active_host_id');
   }, []);
 
-  // Refresh hosts list every 15s
+  // Refresh hosts list every 8s for quicker reconnect detection
   useEffect(() => {
     loadHosts();
-    const interval = setInterval(loadHosts, 15_000);
+    const interval = setInterval(loadHosts, 8_000);
     return () => clearInterval(interval);
   }, [loadHosts]);
 
