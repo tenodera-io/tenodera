@@ -564,7 +564,7 @@ function TrustStoreTab({ su, request }: TabProps) {
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <input
             style={{ ...S.input, flex: 1, minWidth: 200, fontFamily: 'monospace' }}
-            placeholder="example.com lub example.com:8443"
+            placeholder="example.com or example.com:8443"
             value={verifyHost}
             onChange={e => setVerifyHost(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleVerify()}
