@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { login } from '../api/auth.ts';
 
 import { UserRole } from '../api/auth.ts';
@@ -13,6 +13,10 @@ export function Login({ onLogin }: LoginProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [tried, setTried] = useState(false);
+
+  React.useEffect(() => {
+    document.documentElement.setAttribute('data-theme', 'catppuccin-mocha');
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
