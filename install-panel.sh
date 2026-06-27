@@ -152,36 +152,19 @@ rm -rf "$WORK_DIR"
 
 ok "Tenodera installed successfully!"
 
-# ── TLS certificate ───────────────────────────────────────────────────────────
-# Gateway requires TLS to start. Generate a self-signed cert if none exists.
-
 CONF_DIR="/etc/tenodera"
 
-if [ ! -f "${CONF_DIR}/tls/cert.pem" ] || [ ! -f "${CONF_DIR}/tls/key.pem" ]; then
-  info "Generating self-signed TLS certificate (valid 10 years)..."
-  LOCAL_IP=$(hostname -I | awk '{print $1}')
-  mkdir -p "${CONF_DIR}/tls"
-  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-    -keyout "${CONF_DIR}/tls/key.pem" \
-    -out    "${CONF_DIR}/tls/cert.pem" \
-    -subj   "/CN=${LOCAL_IP}" \
-    -addext "subjectAltName=IP:${LOCAL_IP},IP:127.0.0.1" \
-    2>/dev/null
-  chown root:tenodera-gw "${CONF_DIR}/tls/cert.pem" "${CONF_DIR}/tls/key.pem"
-  chmod 640 "${CONF_DIR}/tls/cert.pem" "${CONF_DIR}/tls/key.pem"
-  ok "Self-signed certificate created (${CONF_DIR}/tls/)"
-  systemctl restart tenodera-gateway 2>/dev/null || true
-fi
-
 # ── Configure and start local bridge ─────────────────────────────────────────
-# The bridge connects to the local gateway over HTTPS and auto-registers.
+# The bridge connects to the local gateway over plain HTTP and auto-registers.
+# To enable HTTPS: generate a cert (cd panel && sudo make tls-selfsigned),
+# then update /etc/tenodera/gateway.env and /etc/tenodera/bridge.env.
 
 if [ ! -f "${CONF_DIR}/bridge.env" ]; then
   info "Writing bridge config..."
   cat > "${CONF_DIR}/bridge.env" <<EOF
-TENODERA_GATEWAY_URL=https://127.0.0.1:9090
-# Self-signed cert on the local gateway — skip verification for loopback connection
-TENODERA_BRIDGE_ACCEPT_INSECURE=1
+TENODERA_GATEWAY_URL=http://127.0.0.1:9090
+# Uncomment if you switch gateway to HTTPS with a self-signed cert:
+# TENODERA_BRIDGE_ACCEPT_INSECURE=1
 EOF
   chmod 640 "${CONF_DIR}/bridge.env"
 fi
@@ -195,7 +178,7 @@ else
 fi
 
 echo ""
-echo "  Panel:     https://$(hostname -I | awk '{print $1}'):9090"
+echo "  Panel:     http://$(hostname -I | awk '{print $1}'):9090"
 echo "  Service:   systemctl status tenodera-gateway"
 echo "  Logs:      journalctl -u tenodera-gateway -f"
 echo "  Config:    /etc/tenodera/gateway.env"
@@ -204,5 +187,5 @@ echo "  Log in with any PAM user that has sudo privileges."
 echo "  This host will appear in the UI as soon as the bridge connects (a few seconds)."
 echo ""
 echo "  Install bridge on remote managed hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash -s -- --gateway https://HOST:9090"
+echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash -s -- --gateway http://HOST:9090"
 echo ""

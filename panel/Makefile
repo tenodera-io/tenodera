@@ -114,7 +114,7 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		echo "    $(CONFDIR)/hosts.json already exists — skipping"; \
 	fi
 	@if [ ! -f $(CONFDIR)/gateway.env ]; then \
-		printf '# Tenodera Gateway Configuration\n# See: systemctl cat tenodera-gateway\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to bridge binary\nTENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS certificate and key — required for production.\n# Generate a self-signed cert for testing: make tls-selfsigned\nTENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\nTENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# Allow unencrypted HTTP — for development only, never in production.\n#TENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
+		printf '# Tenodera Gateway Configuration\n# See: systemctl cat tenodera-gateway\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to bridge binary\nTENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS — optional. Uncomment and set cert/key paths to enable HTTPS.\n# Generate a self-signed cert: sudo make tls-selfsigned\n#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\n#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# HTTP mode (plain, no TLS) — enabled by default.\n# Comment out after configuring TLS above to switch to HTTPS.\nTENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
 			| sudo tee $(CONFDIR)/gateway.env > /dev/null; \
 		sudo chown root:tenodera-gw $(CONFDIR)/gateway.env; \
 		sudo chmod 640 $(CONFDIR)/gateway.env; \
@@ -152,15 +152,8 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	@echo "  Login with any PAM user (system credentials)."
 	@echo "  Configuration: $(CONFDIR)/gateway.env"
 	@echo ""
-	@if [ ! -f $(CONFDIR)/tls/cert.pem ] || [ ! -f $(CONFDIR)/tls/key.pem ]; then \
-		echo "  ⚠  TLS not configured — gateway will not start without a certificate."; \
-		echo "     Generate a self-signed cert for testing:"; \
-		echo "       sudo make tls-selfsigned"; \
-		echo "     Or set your own cert in $(CONFDIR)/gateway.env and restart:"; \
-		echo "       sudo systemctl restart tenodera-gateway"; \
-	else \
-		echo "  Gateway: https://$$(hostname -I | awk '{print $$1}'):9090"; \
-	fi
+	@echo "  Panel:  http://$$(hostname -I | awk '{print $$1}'):9090"
+	@echo "  Running in HTTP mode. To enable HTTPS: sudo make tls-selfsigned, then update $(CONFDIR)/gateway.env."
 
 $(GATEWAY_BIN):
 	$(MAKE) build-backend
@@ -210,9 +203,15 @@ tls-selfsigned:
 	@echo "  Cert: $(CONFDIR)/tls/cert.pem"
 	@echo "  Key:  $(CONFDIR)/tls/key.pem"
 	@echo ""
-	@echo "  Restarting gateway..."
-	sudo systemctl restart tenodera-gateway
-	@echo "  Gateway: https://$$(hostname -I | awk '{print $$1}'):9090"
+	@echo "  To enable HTTPS, edit $(CONFDIR)/gateway.env:"
+	@echo "    1. Uncomment TENODERA_TLS_CERT and TENODERA_TLS_KEY"
+	@echo "    2. Comment out TENODERA_ALLOW_UNENCRYPTED=1"
+	@echo "    3. sudo systemctl restart tenodera-gateway"
+	@echo "    4. Update /etc/tenodera/bridge.env: change http:// → https://"
+	@echo "       and set TENODERA_BRIDGE_ACCEPT_INSECURE=1"
+	@echo "    5. sudo systemctl restart tenodera-bridge"
+	@echo ""
+	@echo "  Panel will then be at: https://$$(hostname -I | awk '{print $$1}'):9090"
 	@echo "  (Browser will warn about self-signed cert — this is expected)"
 
 # ── Packages ──────────────────────────────────────────────
