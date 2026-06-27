@@ -124,6 +124,14 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		sudo chmod 640 $(CONFDIR)/gateway.env; \
 		echo "    $(CONFDIR)/gateway.env already exists — skipping (preserving your config)"; \
 	fi
+	@if [ ! -f $(CONFDIR)/bridge.env ]; then \
+		printf 'TENODERA_GATEWAY_URL=http://127.0.0.1:9090\n# Uncomment if you switch gateway to HTTPS with a self-signed cert:\n# TENODERA_BRIDGE_ACCEPT_INSECURE=1\n' \
+			| sudo tee $(CONFDIR)/bridge.env > /dev/null; \
+		sudo chmod 640 $(CONFDIR)/bridge.env; \
+		echo "    Created $(CONFDIR)/bridge.env (http://127.0.0.1:9090)"; \
+	else \
+		echo "    $(CONFDIR)/bridge.env already exists — skipping (preserving your config)"; \
+	fi
 	@echo "==> Installing PAM service config..."
 	@if [ -f /etc/pam.d/common-auth ]; then \
 		printf '#%%PAM-1.0\n# Tenodera gateway authentication\nauth    include common-auth\naccount include common-account\n' \
