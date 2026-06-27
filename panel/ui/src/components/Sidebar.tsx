@@ -1,4 +1,6 @@
 import { useNavigate, NavLink } from 'react-router-dom';
+import { useContext } from 'react';
+import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import type { HostEntry, HostStatus } from '../hooks/useHosts.ts';
 import type { ConnectionState } from '../api/transport.ts';
 
@@ -45,6 +47,7 @@ export function Sidebar({
   onSwitchHost, onOpenManageHosts,
 }: Props) {
   const navigate = useNavigate();
+  const su = useContext(SuperuserContext);
   const [hostSelectorOpen, setHostSelectorOpen] = React.useState(false);
   const hostSelectorRef = React.useRef<HTMLDivElement>(null);
 
@@ -132,6 +135,28 @@ export function Sidebar({
             </ul>
           </li>
         ))}
+
+        {/* Management — visible only when superuser is active */}
+        {su.active && (
+          <li>
+            <div style={S.sectionDivider} />
+            <div style={S.sectionLabel}>Admin</div>
+            <ul style={S.sectionList}>
+              <li>
+                <NavLink
+                  to="/management"
+                  style={({ isActive }) => ({
+                    ...S.navLink,
+                    background: isActive ? 'var(--bg-card)' : 'transparent',
+                    borderLeft: isActive ? '3px solid #bb9af7' : '3px solid transparent',
+                  })}
+                >
+                  <span style={S.navIcon}>🗂️</span>Management
+                </NavLink>
+              </li>
+            </ul>
+          </li>
+        )}
       </ul>
     </nav>
   );
