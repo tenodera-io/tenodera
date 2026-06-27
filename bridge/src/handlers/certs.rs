@@ -804,11 +804,16 @@ async fn cert_save(data: &Value, password: &str) -> Value {
         .map(|c| if c.is_alphanumeric() || "-_.".contains(c) { c } else { '_' })
         .collect();
 
-    // Ensure /etc/ssl/private exists
-    let _ = sudo_action(password, &["mkdir", "-p", "/etc/ssl/private"]).await;
+    let subdir = data.get("subdir").and_then(|v| v.as_bool()).unwrap_or(false);
 
-    let cert_path = format!("/etc/ssl/{safe_name}.crt");
-    let key_path  = format!("/etc/ssl/private/{safe_name}.key");
+    let (cert_path, key_path) = if subdir {
+        let dir = format!("/etc/ssl/{safe_name}");
+        let mk = sudo_action(password, &["mkdir", "-p", &dir]).await;
+        if mk.get("error").is_some() { return mk; }
+        (format!("{dir}/{safe_name}.crt"), format!("{dir}/{safe_name}.key"))
+    } else {
+        (format!("/etc/ssl/{safe_name}.crt"), format!("/etc/ssl/{safe_name}.key"))
+    };
 
     let write_cert = sudo_stdin_write(password, &["tee", &cert_path], &cert_pem).await;
     if write_cert.get("error").is_some() { return write_cert; }

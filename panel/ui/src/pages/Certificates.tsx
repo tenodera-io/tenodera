@@ -67,6 +67,7 @@ function CertsTab({ su, request }: TabProps) {
   const [importName, setImportName] = useState('');
   const [importCert, setImportCert] = useState('');
   const [importKey, setImportKey]   = useState('');
+  const [importSubdir, setImportSubdir] = useState(false);
   const [checking, setChecking]     = useState(false);
   const [checkErr, setCheckErr]     = useState('');
   const [checked, setChecked]       = useState<CheckedCert | null>(null);
@@ -137,6 +138,7 @@ function CertsTab({ su, request }: TabProps) {
         name: importName.trim(),
         cert: importCert.trim(),
         key: importKey.trim(),
+        subdir: importSubdir,
         password,
       });
       const res = r as { ok?: boolean; cert_path?: string; key_path?: string; error?: string };
@@ -171,8 +173,15 @@ function CertsTab({ su, request }: TabProps) {
 
   const resetImport = () => {
     setShowImport(false); setImportName(''); setImportCert('');
-    setImportKey(''); setChecked(null); setCheckErr('');
+    setImportKey(''); setImportSubdir(false); setChecked(null); setCheckErr('');
   };
+
+  const importPaths = (() => {
+    const n = importName.trim() || '…';
+    return importSubdir
+      ? { cert: `/etc/ssl/${n}/${n}.crt`, key: `/etc/ssl/${n}/${n}.key` }
+      : { cert: `/etc/ssl/${n}.crt`,      key: `/etc/ssl/${n}.key` };
+  })();
 
   return (
     <div style={S.section}>
@@ -198,7 +207,10 @@ function CertsTab({ su, request }: TabProps) {
               onChange={e => setImportName(e.target.value)}
               spellCheck={false}
             />
-            <span style={S.hint}>Files will be saved as <code>/etc/ssl/&lt;name&gt;.crt</code> and <code>/etc/ssl/private/&lt;name&gt;.key</code></span>
+            <span style={S.hint}>
+              Pliki zostaną zapisane jako{' '}
+              <code>{importPaths.cert}</code> i <code>{importPaths.key}</code>
+            </span>
           </div>
 
           <div style={{ marginBottom: '0.6rem' }}>
@@ -221,6 +233,17 @@ function CertsTab({ su, request }: TabProps) {
               onChange={e => { setImportKey(e.target.value); setChecked(null); setCheckErr(''); }}
               spellCheck={false}
             />
+          </div>
+
+          <div style={{ marginBottom: '0.6rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.85rem', cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={importSubdir}
+                onChange={e => setImportSubdir(e.target.checked)}
+              />
+              Utwórz podkatalog <code>/etc/ssl/{importName.trim() || '&lt;name&gt;'}/</code>
+            </label>
           </div>
 
           <div style={S.btnRow}>
@@ -270,7 +293,7 @@ function CertsTab({ su, request }: TabProps) {
               disabled={saving || !importName.trim()}
               onClick={handleSave}
             >
-              {saving ? 'Saving…' : `Save to /etc/ssl/${importName.trim() || '…'}`}
+              {saving ? 'Saving…' : `Zapisz → ${importPaths.cert}`}
             </button>
             <button style={S.cancelBtn} onClick={() => { setChecked(null); setCheckErr(''); }}>Back</button>
             {!importName.trim() && (
