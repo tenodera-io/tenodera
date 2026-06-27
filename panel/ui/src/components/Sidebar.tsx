@@ -17,7 +17,7 @@ const NAV_SECTIONS = [
     items: [
       { path: '/', label: 'Dashboard', icon: '📊' },
       { path: '/services', label: 'Services', icon: '⚙️' },
-      { path: '/containers', label: 'Virtual machines', icon: '📦' },
+      { path: '/containers', label: 'Containers', icon: '🐳' },
       { path: '/storage', label: 'Storage', icon: '💾' },
       { path: '/networking', label: 'Networking', icon: '🌐' },
       { path: '/packages', label: 'Packages', icon: '📦' },
@@ -35,6 +35,7 @@ const NAV_SECTIONS = [
       { path: '/terminal', label: 'Terminal', icon: '🖥️' },
       { path: '/files', label: 'Files', icon: '📁' },
       { path: '/kdump', label: 'Kernel Dump', icon: '💥' },
+      { path: '/bulk-hosts', label: 'Bulk Add Hosts', icon: '➕' },
     ],
   },
 ];

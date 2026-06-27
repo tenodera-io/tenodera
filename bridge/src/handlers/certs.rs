@@ -156,7 +156,8 @@ async fn scan_dir_recursive(dir: &str, skip_subdirs: &[&str], source: &str, out:
         };
         while let Ok(Some(entry)) = rd.next_entry().await {
             let path = entry.path();
-            if path.is_dir() {
+            let is_dir = entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false);
+            if is_dir {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if !skip_subdirs.contains(&name) {
                     stack.push(path);
@@ -323,8 +324,12 @@ fn extract_field(line: &str, field: &str) -> String {
 }
 
 fn parse_openssl_date(s: &str) -> Option<DateTime<Utc>> {
-    // "Jan  1 00:00:00 2024 GMT"
-    NaiveDateTime::parse_from_str(s.trim(), "%b %e %H:%M:%S %Y %Z")
+    // "Jan  1 00:00:00 2024 GMT" — strip timezone suffix, parse as UTC
+    let s = s.trim()
+        .trim_end_matches(" GMT")
+        .trim_end_matches(" UTC")
+        .trim();
+    NaiveDateTime::parse_from_str(s, "%b %e %H:%M:%S %Y")
         .ok()
         .map(|dt| DateTime::from_naive_utc_and_offset(dt, Utc))
 }
@@ -380,7 +385,7 @@ async fn trust_add(data: &Value, password: &str) -> Value {
             let dest = format!("/etc/pki/ca-trust/source/anchors/{safe_name}.crt");
             let write = sudo_stdin_write(password, &["tee", &dest], pem).await;
             if write.get("error").is_some() { return write; }
-            sudo_action(password, &["update-ca-trust"]).await
+            sudo_action(password, &["update-ca-trust", "extract"]).await
         }
         Distro::Arch => {
             // Write to temp, then trust anchor --store (handles saving + update atomically)

@@ -24,5 +24,4 @@ pub mod storage_snapshot;
 pub mod certs;
 pub mod cron;
 pub mod dns;
-pub mod system_time;
 pub mod systemd_timers;

@@ -28,6 +28,7 @@ const Users       = lazy(() => import('./Users.tsx').then(m => ({ default: m.Use
 const Cron        = lazy(() => import('./Cron.tsx').then(m => ({ default: m.Cron })));
 const DNS          = lazy(() => import('./DNS.tsx').then(m => ({ default: m.DNS })));
 const Certificates = lazy(() => import('./Certificates.tsx').then(m => ({ default: m.Certificates })));
+const BulkHosts    = lazy(() => import('./BulkHosts.tsx').then(m => ({ default: m.BulkHosts })));
 
 interface ShellProps {
   sessionId: string;
@@ -151,6 +152,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/cron" element={<Cron />} />
                       <Route path="/dns" element={<DNS />} />
                       <Route path="/certificates" element={<Certificates />} />
+                      <Route path="/bulk-hosts" element={<BulkHosts />} />
                       <Route path="/files" element={<Files user={user} />} />
                       <Route path="/kdump" element={<Kdump />} />
                       <Route path="/log-files" element={<LogFiles />} />

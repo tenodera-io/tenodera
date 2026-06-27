@@ -60,7 +60,7 @@ export function DNS() {
       ) : activeTab === 'resolver' ? (
         <ResolverTab info={info} su={su} request={request} onReload={reload} />
       ) : activeTab === 'hosts' ? (
-        <HostsTab info={info} su={su} request={request} onReload={reload} />
+        <EtcHostsTab info={info} su={su} request={request} onReload={reload} />
       ) : activeTab === 'lookup' ? (
         <LookupTab request={request} />
       ) : (
@@ -229,7 +229,7 @@ function ResolverTab({ info, su, request, onReload }: {
 
 // ── Hosts tab ──────────────────────────────────────────────────────────────────
 
-function HostsTab({ info, su, request, onReload }: {
+function EtcHostsTab({ info, su, request, onReload }: {
   info: DnsInfo | null;
   su: ReturnType<typeof useSuperuser>;
   request: ReturnType<typeof useTransport>['request'];
