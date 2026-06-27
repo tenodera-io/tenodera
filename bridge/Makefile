@@ -6,10 +6,11 @@
 #   make uninstall — remove binary and service
 #   make clean     — remove build artifacts
 
-PREFIX  ?= /usr/local
-BINDIR  ?= $(PREFIX)/bin
-CONFDIR ?= /etc/tenodera
-SYSTEMDDIR ?= /etc/systemd/system
+PREFIX      ?= /usr/local
+BINDIR      ?= $(PREFIX)/bin
+CONFDIR     ?= /etc/tenodera
+SYSTEMDDIR  ?= /etc/systemd/system
+GATEWAY_URL ?= http://127.0.0.1:9090
 
 BRIDGE_BIN := target/release/tenodera-bridge
 
@@ -62,11 +63,20 @@ install: $(BRIDGE_BIN)
 	@echo "==> Installing systemd service..."
 	sudo cp systemd/tenodera-bridge.service $(SYSTEMDDIR)/
 	sudo systemctl daemon-reload
+	@if [ ! -f $(CONFDIR)/bridge.env ]; then \
+		printf 'TENODERA_GATEWAY_URL=$(GATEWAY_URL)\n# Uncomment if gateway uses a self-signed TLS cert:\n# TENODERA_BRIDGE_ACCEPT_INSECURE=1\n' \
+			| sudo tee $(CONFDIR)/bridge.env > /dev/null; \
+		sudo chmod 640 $(CONFDIR)/bridge.env; \
+		echo "    Created $(CONFDIR)/bridge.env ($(GATEWAY_URL))"; \
+	else \
+		echo "    $(CONFDIR)/bridge.env already exists — skipping (preserving your config)"; \
+	fi
+	sudo systemctl enable --now tenodera-bridge
 	@echo ""
-	@echo "Done. tenodera-bridge installed at $(BINDIR)/tenodera-bridge"
-	@echo ""
-	@echo "To start the bridge, configure /etc/tenodera/bridge.env and run:"
-	@echo "  sudo systemctl enable --now tenodera-bridge"
+	@echo "✓ tenodera-bridge installed and running"
+	@echo "  Config:  $(CONFDIR)/bridge.env"
+	@echo "  Logs:    journalctl -u tenodera-bridge -f"
+	@echo "  Gateway: $(GATEWAY_URL)"
 
 # ── Uninstall ─────────────────────────────────────────────
 
