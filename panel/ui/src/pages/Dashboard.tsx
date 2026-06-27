@@ -13,6 +13,8 @@ interface SystemInfo {
   os: Record<string, string>;
   uptime_secs?: number;
   boot_time?: string;
+  host_time?: string;
+  host_tz?: string;
 }
 
 interface SnapshotMetrics {
@@ -305,6 +307,12 @@ export function Dashboard() {
               )}
               {info.boot_time && (
                 <Stat label="Up since" value={info.boot_time} />
+              )}
+              {info.host_time && (
+                <Stat
+                  label="Host time"
+                  value={info.host_tz ? `${info.host_time} ${info.host_tz}` : info.host_time}
+                />
               )}
             </>
           ) : (

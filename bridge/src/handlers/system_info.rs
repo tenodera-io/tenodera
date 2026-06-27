@@ -15,12 +15,15 @@ impl ChannelHandler for SystemInfoHandler {
         let hostname = get_hostname();
         let os_release = get_os_release();
         let (uptime_secs, boot_time) = get_uptime();
+        let (host_time, host_tz) = get_host_time();
 
         let info = serde_json::json!({
             "hostname": hostname,
             "os": os_release,
             "uptime_secs": uptime_secs,
             "boot_time": boot_time,
+            "host_time": host_time,
+            "host_tz": host_tz,
         });
 
         vec![
@@ -70,6 +73,28 @@ fn get_uptime() -> (u64, String) {
         .unwrap_or_default();
 
     (uptime_secs, boot_time)
+}
+
+fn get_host_time() -> (String, String) {
+    // Current local time: "2026-06-27 14:35:02"
+    let time = std::process::Command::new("date")
+        .arg("+%Y-%m-%d %H:%M:%S")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    // Timezone abbreviation: "CEST", "UTC", "CET", etc.
+    let tz = std::process::Command::new("date")
+        .arg("+%Z")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
+
+    (time, tz)
 }
 
 fn get_os_release() -> serde_json::Value {
