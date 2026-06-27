@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useContext } from 'react';
 import { request as rawRequest } from '../api/transport.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
+import { useToast } from '../contexts/ToastContext.tsx';
 import type { HostEntry } from '../hooks/useHosts.ts';
 
 interface ManagementProps {
@@ -207,10 +208,10 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
   const online = host.online || host.is_local;
   const displayName = config?.hostname || host.name;
 
+  const toast = useToast();
   const [activeAction, setActiveAction] = useState<CardAction>(null);
   const [roleInput, setRoleInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [actionMsg, setActionMsg] = useState('');
 
   const currentRoles = (config?.roles ?? []).filter(r => r !== 'Panel / Local');
 
@@ -218,32 +219,38 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
 
   const startAction = (a: CardAction) => {
     setActiveAction(a);
-    setActionMsg('');
     if (a === 'role') setRoleInput(currentRoles.join(', '));
   };
-  const cancel = () => { setActiveAction(null); setActionMsg(''); };
+  const cancel = () => { setActiveAction(null); };
 
   const confirmRemove = async () => {
     setBusy(true);
-    try { await onRemove(); } finally { setBusy(false); setActiveAction(null); }
+    try {
+      await onRemove();
+      toast.success(`${displayName} removed.`);
+    } catch (e) {
+      toast.error(`Remove failed: ${e}`);
+    } finally { setBusy(false); setActiveAction(null); }
   };
 
   const confirmRestart = async () => {
     setBusy(true);
     try {
       await onRestart();
-      setActionMsg('Reboot initiated. Host will go offline shortly.');
-    } catch (e) { setActionMsg(`Error: ${e}`); }
-    finally { setBusy(false); setActiveAction(null); }
+      toast.warn(`Reboot initiated — ${displayName} will go offline shortly.`);
+    } catch (e) {
+      toast.error(`Restart failed: ${e}`);
+    } finally { setBusy(false); setActiveAction(null); }
   };
 
   const confirmRoleChange = async () => {
     setBusy(true);
     try {
       await onRoleChange(roleInput.trim());
-      setActionMsg('Role updated.');
-    } catch (e) { setActionMsg(`Error: ${e}`); }
-    finally { setBusy(false); setActiveAction(null); }
+      toast.success('Role updated.');
+    } catch (e) {
+      toast.error(`Role change failed: ${e}`);
+    } finally { setBusy(false); setActiveAction(null); }
   };
 
   // Border priority: active > selected > online/offline
@@ -333,10 +340,6 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
             <button style={S.btnGhost} onClick={cancel}>Cancel</button>
           </div>
         </div>
-      )}
-
-      {actionMsg && (
-        <div style={{ fontSize: '0.75rem', color: '#9ece6a', marginTop: '0.35rem' }}>{actionMsg}</div>
       )}
 
       {/* Action buttons */}

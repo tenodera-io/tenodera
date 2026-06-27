@@ -4,6 +4,7 @@ import { connect, disconnect, onConnectionChange, request, type ConnectionState 
 import { HostTransportProvider } from '../api/HostTransportContext.tsx';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { RoleContext } from '../contexts/RoleContext.ts';
+import { ToastProvider } from '../contexts/ToastContext.tsx';
 import { useHosts } from '../hooks/useHosts.ts';
 import { useSuperuser } from '../hooks/useSuperuser.ts';
 import { TopBar } from '../components/TopBar.tsx';
@@ -92,6 +93,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
   return (
     <RoleContext.Provider value={role}>
     <SuperuserContext.Provider value={suCtx}>
+    <ToastProvider>
       <div style={S.wrapper}>
         <TopBar
           hostname={hostname}
@@ -188,6 +190,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
           </div>
         )}
       </div>
+    </ToastProvider>
     </SuperuserContext.Provider>
     </RoleContext.Provider>
   );
