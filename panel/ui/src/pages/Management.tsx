@@ -62,9 +62,26 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // stable — reads hostsRef.current at call time
 
-  // Re-fetch when hosts list changes (new host added, host goes offline/online).
-  // fetchAll is stable so this only fires on hosts change, not on every render.
-  useEffect(() => { fetchAll(); }, [fetchAll, hosts]);
+  // Initial fetch on mount (fetchAll is stable so this runs exactly once).
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Re-fetch only when the set of *online* hosts actually changes —
+  // not on every 8s poll. Skips the first run to avoid double-fetch on mount.
+  const prevOnlineRef = useRef<Set<string>>(new Set());
+  const isFirstOnlineCheck = useRef(true);
+  useEffect(() => {
+    const online = new Set(hosts.filter(h => h.online || h.is_local).map(h => h.id));
+    if (isFirstOnlineCheck.current) {
+      isFirstOnlineCheck.current = false;
+      prevOnlineRef.current = online;
+      return;
+    }
+    const prev = prevOnlineRef.current;
+    const changed =
+      online.size !== prev.size || [...online].some(id => !prev.has(id)) || [...prev].some(id => !online.has(id));
+    prevOnlineRef.current = online;
+    if (changed) fetchAll();
+  }, [hosts, fetchAll]);
 
   const handleRemove = async (host: HostEntry) => {
     const sessionId = sessionStorage.getItem('session_id') ?? '';
