@@ -52,16 +52,31 @@ interface LECert {
 
 // ── Certificates tab ───────────────────────────────────────────────────────────
 
+interface CheckedCert extends CertEntry {
+  // cert info returned from cert_check, same shape as CertEntry
+}
+
 function CertsTab({ su, request }: TabProps) {
   const [certs, setCerts] = useState<CertEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CertEntry | null>(null);
-  const [showTrust, setShowTrust] = useState(false);
-  const [trustPem, setTrustPem] = useState('');
-  const [trustName, setTrustName] = useState('');
   const [msg, setMsg] = useState('');
-  const [pw, setPw] = useState('');
-  const [pwAction, setPwAction] = useState<null | { action: string; extra?: object }>(null);
+
+  // Import form
+  const [showImport, setShowImport] = useState(false);
+  const [importName, setImportName] = useState('');
+  const [importCert, setImportCert] = useState('');
+  const [importKey, setImportKey]   = useState('');
+  const [checking, setChecking]     = useState(false);
+  const [checkErr, setCheckErr]     = useState('');
+  const [checked, setChecked]       = useState<CheckedCert | null>(null);
+  const [saving, setSaving]         = useState(false);
+
+  // Password prompt
+  const [pw, setPw]         = useState('');
+  const [pwPending, setPwPending] = useState(false);
+  const [pwTarget, setPwTarget]   = useState<'remove' | 'save' | null>(null);
+  const [pwExtra, setPwExtra]     = useState<object>({});
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 6000); };
 
@@ -76,73 +91,197 @@ function CertsTab({ su, request }: TabProps) {
 
   useEffect(() => { reload(); }, [reload]);
 
-  const execAction = async (action: string, password: string, extra?: object) => {
+  // ── trust remove ──────────────────────────────────────────────────────────────
+
+  const execRemove = async (path: string, password: string) => {
     try {
-      const [r] = await request('certs.manage', { action, password, ...extra });
+      const [r] = await request('certs.manage', { action: 'trust_remove', path, password });
       const res = r as { ok?: boolean; error?: string };
-      if (res?.ok) { flash('✓ Done'); reload(); setShowTrust(false); }
+      if (res?.ok) { flash('✓ Removed'); reload(); }
       else flash(res?.error ?? 'Failed');
     } catch (e) { flash(String(e)); }
   };
 
-  const handleAction = (action: string, extra?: object) => {
-    if (su.active) { execAction(action, su.password, extra); return; }
-    setPwAction({ action, extra }); setPw('');
+  const handleRemove = (path: string) => {
+    if (su.active) { execRemove(path, su.password); return; }
+    setPwTarget('remove'); setPwExtra({ path }); setPwPending(true); setPw('');
   };
 
+  // ── import: check ─────────────────────────────────────────────────────────────
+
+  const handleCheck = async () => {
+    if (!importCert.trim() || !importKey.trim()) return;
+    setChecking(true); setCheckErr(''); setChecked(null);
+    try {
+      const [r] = await request('certs.manage', {
+        action: 'cert_check', cert: importCert.trim(), key: importKey.trim(),
+      });
+      const res = r as { ok?: boolean; cert?: CheckedCert; error?: string };
+      if (res.ok && res.cert) {
+        setChecked(res.cert);
+        if (!importName) setImportName(res.cert.cn.replace(/[^a-z0-9._-]/gi, '_') || 'imported');
+      } else {
+        setCheckErr(res.error ?? 'Verification failed');
+      }
+    } catch (e) { setCheckErr(String(e)); }
+    finally { setChecking(false); }
+  };
+
+  // ── import: save ──────────────────────────────────────────────────────────────
+
+  const execSave = async (password: string) => {
+    setSaving(true);
+    try {
+      const [r] = await request('certs.manage', {
+        action: 'cert_save',
+        name: importName.trim(),
+        cert: importCert.trim(),
+        key: importKey.trim(),
+        password,
+      });
+      const res = r as { ok?: boolean; cert_path?: string; key_path?: string; error?: string };
+      if (res.ok) {
+        flash(`✓ Saved: ${res.cert_path}  +  ${res.key_path}`);
+        setShowImport(false); setImportName(''); setImportCert(''); setImportKey('');
+        setChecked(null); setCheckErr('');
+        reload();
+      } else {
+        flash(res.error ?? 'Save failed');
+      }
+    } catch (e) { flash(String(e)); }
+    finally { setSaving(false); }
+  };
+
+  const handleSave = () => {
+    if (!importName.trim()) return;
+    if (su.active) { execSave(su.password); return; }
+    setPwTarget('save'); setPwExtra({}); setPwPending(true); setPw('');
+  };
+
+  // ── password confirm ──────────────────────────────────────────────────────────
+
   const confirmPw = () => {
-    if (!pw || !pwAction) return;
-    const { action, extra } = pwAction;
-    setPwAction(null); setPw('');
-    execAction(action, pw, extra);
+    if (!pw || !pwTarget) return;
+    const target = pwTarget;
+    const extra  = pwExtra as { path?: string };
+    setPwPending(false); setPwTarget(null); setPwExtra({}); setPw('');
+    if (target === 'remove') execRemove(extra.path ?? '', pw);
+    if (target === 'save')   execSave(pw);
+  };
+
+  const resetImport = () => {
+    setShowImport(false); setImportName(''); setImportCert('');
+    setImportKey(''); setChecked(null); setCheckErr('');
   };
 
   return (
     <div style={S.section}>
       <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
         <button style={S.btn} onClick={reload}>↺ Refresh</button>
-        <button style={S.btnAccent} onClick={() => { setShowTrust(!showTrust); }}>+ Add to trust store</button>
+        <button style={S.btnAccent} onClick={() => { setShowImport(v => !v); setChecked(null); setCheckErr(''); }}>
+          {showImport ? '✕ Cancel import' : '+ Import Certificate'}
+        </button>
         {msg && <span style={{ fontSize: '0.82rem', color: msg.startsWith('✓') ? '#9ece6a' : '#f7768e' }}>{msg}</span>}
       </div>
 
-      {/* Trust store form */}
-      {showTrust && (
+      {/* Import form */}
+      {showImport && (
         <div style={S.card}>
-          <div style={S.cardTitle}>Add certificate to system trust store</div>
-          <p style={S.hint}>Paste the PEM-encoded certificate. The distro is auto-detected (Debian: update-ca-certificates, Fedora: update-ca-trust, Arch: trust extract-compat).</p>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', flexWrap: 'wrap' }}>
+          <div style={S.cardTitle}>Import certificate & key</div>
+
+          <div style={{ marginBottom: '0.6rem' }}>
+            <label style={S.fieldLabel}>Certificate name</label>
             <input
-              style={{ ...S.input, flex: 1, minWidth: 200 }}
-              placeholder="Certificate name (e.g. my-root-ca)"
-              value={trustName}
-              onChange={e => setTrustName(e.target.value)}
+              style={{ ...S.input, width: '100%', boxSizing: 'border-box' }}
+              placeholder="e.g. moja_domena.pl"
+              value={importName}
+              onChange={e => setImportName(e.target.value)}
+              spellCheck={false}
+            />
+            <span style={S.hint}>Files will be saved as <code>/etc/ssl/&lt;name&gt;.crt</code> and <code>/etc/ssl/private/&lt;name&gt;.key</code></span>
+          </div>
+
+          <div style={{ marginBottom: '0.6rem' }}>
+            <label style={S.fieldLabel}>Certificate chain (PEM)</label>
+            <textarea
+              style={{ ...S.textarea, height: 160 }}
+              placeholder={"-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n\n# Paste full chain: leaf cert first, then intermediate CA(s)"}
+              value={importCert}
+              onChange={e => { setImportCert(e.target.value); setChecked(null); setCheckErr(''); }}
+              spellCheck={false}
             />
           </div>
-          <textarea
-            style={{ ...S.textarea, height: 160 }}
-            placeholder="-----BEGIN CERTIFICATE-----&#10;...&#10;-----END CERTIFICATE-----"
-            value={trustPem}
-            onChange={e => setTrustPem(e.target.value)}
-            spellCheck={false}
-          />
+
+          <div style={{ marginBottom: '0.75rem' }}>
+            <label style={S.fieldLabel}>Private key (PEM)</label>
+            <textarea
+              style={{ ...S.textarea, height: 130 }}
+              placeholder={"-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"}
+              value={importKey}
+              onChange={e => { setImportKey(e.target.value); setChecked(null); setCheckErr(''); }}
+              spellCheck={false}
+            />
+          </div>
+
           <div style={S.btnRow}>
             <button
-              style={S.saveBtn}
-              disabled={!trustPem.trim() || !trustName.trim()}
-              onClick={() => handleAction('trust_add', { pem: trustPem, name: trustName })}
+              style={S.btnAccent}
+              disabled={checking || !importCert.trim() || !importKey.trim()}
+              onClick={handleCheck}
             >
-              Add & Update
+              {checking ? '⟳ Checking…' : '✓ Check / Verify'}
             </button>
-            <button style={S.cancelBtn} onClick={() => setShowTrust(false)}>Cancel</button>
+            <button style={S.cancelBtn} onClick={resetImport}>Cancel</button>
+          </div>
+
+          {checkErr && (
+            <p style={{ color: '#f7768e', fontSize: '0.85rem', marginTop: '0.6rem' }}>✗ {checkErr}</p>
+          )}
+        </div>
+      )}
+
+      {/* Check result — preview + save */}
+      {checked && (
+        <div style={{ ...S.card, borderColor: '#9ece6a44' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem' }}>
+            <span style={{ color: '#9ece6a', fontWeight: 700, fontSize: '0.9rem' }}>✓ Certificate and key match</span>
+            <ExpiryBadge days={checked.days_remaining} />
+            {checked.is_ca && <span style={{ ...S.badge, color: '#bb9af7', background: '#bb9af722' }}>CA</span>}
+          </div>
+          <div style={S.detailGrid}>
+            <Detail label="Common Name" value={checked.cn || '—'} />
+            <Detail label="Issuer CN"   value={checked.issuer_cn || '—'} />
+            <Detail label="Issuer Org"  value={checked.issuer_org || '—'} />
+            <Detail label="Valid from"  value={checked.not_before} mono />
+            <Detail label="Valid until" value={checked.not_after}  mono />
+            <Detail label="Days left"   value={String(checked.days_remaining)} />
+          </div>
+          {checked.sans.length > 0 && (
+            <div style={{ marginTop: '0.5rem' }}>
+              <div style={S.detailLabel}>Subject Alternative Names</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.25rem' }}>
+                {checked.sans.map(s => <span key={s} style={S.sanChip}>{s}</span>)}
+              </div>
+            </div>
+          )}
+          <div style={{ ...S.btnRow, marginTop: '1rem', alignItems: 'center' }}>
+            <button
+              style={S.saveBtn}
+              disabled={saving || !importName.trim()}
+              onClick={handleSave}
+            >
+              {saving ? 'Saving…' : `Save to /etc/ssl/${importName.trim() || '…'}`}
+            </button>
+            <button style={S.cancelBtn} onClick={() => { setChecked(null); setCheckErr(''); }}>Back</button>
+            {!importName.trim() && (
+              <span style={{ fontSize: '0.8rem', color: '#e0af68' }}>Set a name first</span>
+            )}
           </div>
         </div>
       )}
 
       {loading && <p style={S.muted}>Scanning certificates…</p>}
-
-      {!loading && certs.length === 0 && (
-        <p style={S.muted}>No certificates found in standard paths.</p>
-      )}
+      {!loading && certs.length === 0 && <p style={S.muted}>No certificates found in standard paths.</p>}
 
       {certs.length > 0 && (
         <div style={S.card}>
@@ -172,20 +311,14 @@ function CertsTab({ su, request }: TabProps) {
                     <div style={{ fontSize: '0.85rem' }}>{cert.issuer_cn || '—'}</div>
                     {cert.issuer_org && <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{cert.issuer_org}</div>}
                   </td>
-                  <td style={S.td}>
-                    <SourceBadge source={cert.source} />
-                  </td>
-                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.82rem' }}>
-                    {cert.not_after}
-                  </td>
-                  <td style={S.td}>
-                    <ExpiryBadge days={cert.days_remaining} />
-                  </td>
+                  <td style={S.td}><SourceBadge source={cert.source} /></td>
+                  <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.82rem' }}>{cert.not_after}</td>
+                  <td style={S.td}><ExpiryBadge days={cert.days_remaining} /></td>
                   <td style={S.td}>
                     {cert.source === 'trusted' && (
                       <button
                         style={{ ...S.dangerBtn, fontSize: '0.75rem' }}
-                        onClick={e => { e.stopPropagation(); handleAction('trust_remove', { path: cert.path }); }}
+                        onClick={e => { e.stopPropagation(); handleRemove(cert.path); }}
                       >
                         Remove
                       </button>
@@ -206,14 +339,14 @@ function CertsTab({ su, request }: TabProps) {
             <ExpiryBadge days={selected.days_remaining} />
           </div>
           <div style={S.detailGrid}>
-            <Detail label="Path" value={selected.path} mono />
-            <Detail label="Common Name" value={selected.cn} />
-            <Detail label="Issuer CN" value={selected.issuer_cn || '—'} />
-            <Detail label="Issuer Org" value={selected.issuer_org || '—'} />
-            <Detail label="Not Before" value={selected.not_before} mono />
-            <Detail label="Not After" value={selected.not_after} mono />
+            <Detail label="Path"          value={selected.path} mono />
+            <Detail label="Common Name"   value={selected.cn} />
+            <Detail label="Issuer CN"     value={selected.issuer_cn || '—'} />
+            <Detail label="Issuer Org"    value={selected.issuer_org || '—'} />
+            <Detail label="Not Before"    value={selected.not_before} mono />
+            <Detail label="Not After"     value={selected.not_after} mono />
             <Detail label="Days remaining" value={String(selected.days_remaining)} />
-            <Detail label="CA cert" value={selected.is_ca ? 'Yes' : 'No'} />
+            <Detail label="CA cert"       value={selected.is_ca ? 'Yes' : 'No'} />
           </div>
           {selected.sans.length > 0 && (
             <div style={{ marginTop: '0.5rem' }}>
@@ -228,14 +361,16 @@ function CertsTab({ su, request }: TabProps) {
       )}
 
       {/* Password prompt */}
-      {pwAction && (
+      {pwPending && (
         <div style={S.pwBar}>
-          <span style={S.muted}>Password required:</span>
+          <span style={S.muted}>
+            {pwTarget === 'save' ? 'Hasło sudo do zapisu pliku:' : 'Hasło sudo:'}
+          </span>
           <input type="password" value={pw} onChange={e => setPw(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') confirmPw(); if (e.key === 'Escape') { setPwAction(null); setPw(''); } }}
+            onKeyDown={e => { if (e.key === 'Enter') confirmPw(); if (e.key === 'Escape') { setPwPending(false); setPw(''); } }}
             autoFocus style={S.pwInput} placeholder="sudo password…" />
           <button style={S.saveBtn} onClick={confirmPw} disabled={!pw}>Confirm</button>
-          <button style={S.cancelBtn} onClick={() => { setPwAction(null); setPw(''); }}>Cancel</button>
+          <button style={S.cancelBtn} onClick={() => { setPwPending(false); setPw(''); }}>Cancel</button>
         </div>
       )}
     </div>
@@ -811,6 +946,7 @@ const S: Record<string, React.CSSProperties> = {
   detailLabel: { fontSize: '0.72rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.03em', marginBottom: '0.15rem' },
   sanChip: { fontFamily: 'monospace', fontSize: '0.8rem', background: '#7aa2f722', color: '#7aa2f7', border: '1px solid #7aa2f733', borderRadius: 4, padding: '0.15rem 0.5rem' },
   versionBadge: { fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.15rem 0.5rem' },
+  fieldLabel: { display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase' as const, letterSpacing: '0.03em', marginBottom: '0.3rem' },
   confGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' },
   confInput: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem', outline: 'none', width: '100%', boxSizing: 'border-box' },
   confSelect: { padding: '0.35rem 0.55rem', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '0.85rem', cursor: 'pointer', width: '100%', boxSizing: 'border-box' },

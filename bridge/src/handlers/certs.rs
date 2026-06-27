@@ -54,6 +54,8 @@ impl ChannelHandler for CertsManageHandler {
             "trust_add"    => trust_add(data, password).await,
             "trust_remove" => trust_remove(data, password).await,
             "verify_host"  => verify_host(data).await,
+            "cert_check"   => cert_check(data).await,
+            "cert_save"    => cert_save(data, password).await,
             _ => json!({ "error": format!("unknown action: {action}") }),
         };
 
@@ -708,6 +710,122 @@ fn certbot_entry_to_json(m: &std::collections::HashMap<&str, String>) -> Value {
         "days_remaining": days,
         "cert_path": m.get("cert_path").map(|s| s.as_str()).unwrap_or(""),
         "key_path": m.get("key_path").map(|s| s.as_str()).unwrap_or(""),
+    })
+}
+
+// ── cert import (check + save) ─────────────────────────────────────────────────
+
+async fn cert_check(data: &Value) -> Value {
+    let cert_pem = match data.get("cert").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return json!({ "error": "missing certificate" }),
+    };
+    let key_pem = match data.get("key").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return json!({ "error": "missing private key" }),
+    };
+
+    if !which("openssl").await {
+        return json!({ "error": "openssl not found" });
+    }
+
+    let pid = std::process::id();
+    let cert_tmp = format!("/tmp/tenodera-certchk-{pid}.crt");
+    let key_tmp  = format!("/tmp/tenodera-certchk-{pid}.key");
+
+    if fs::write(&cert_tmp, &cert_pem).await.is_err() {
+        return json!({ "error": "failed to write temp cert file" });
+    }
+    if fs::write(&key_tmp, &key_pem).await.is_err() {
+        let _ = fs::remove_file(&cert_tmp).await;
+        return json!({ "error": "failed to write temp key file" });
+    }
+
+    // Extract modulus hash from cert (leaf = first cert in chain)
+    let cert_mod_out = tokio::process::Command::new("sh")
+        .args(["-c", &format!("openssl x509 -noout -modulus -in {cert_tmp} 2>&1 | openssl md5")])
+        .output().await;
+
+    // Extract modulus hash from key (auto-detect RSA/EC)
+    let key_mod_out = tokio::process::Command::new("sh")
+        .args(["-c", &format!(
+            "openssl rsa -noout -modulus -in {key_tmp} 2>&1 | openssl md5 || \
+             openssl ec  -noout -pubout  -in {key_tmp} 2>&1 | openssl md5"
+        )])
+        .output().await;
+
+    let cert_mod = cert_mod_out
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    let key_mod = key_mod_out
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+
+    // Parse cert info while files still exist
+    let cert_info = parse_cert(&cert_tmp, "import").await;
+
+    let _ = fs::remove_file(&cert_tmp).await;
+    let _ = fs::remove_file(&key_tmp).await;
+
+    if cert_mod.is_empty() || cert_mod.contains("unable to") || cert_mod.contains("error") {
+        return json!({ "error": format!("invalid certificate: {cert_mod}") });
+    }
+    if key_mod.is_empty() || key_mod.contains("unable to") || key_mod.contains("error") {
+        return json!({ "error": format!("invalid private key: {key_mod}") });
+    }
+    if cert_mod != key_mod {
+        return json!({
+            "ok": false,
+            "error": "certificate and private key do NOT match (modulus mismatch)"
+        });
+    }
+
+    match cert_info {
+        Some(info) => json!({ "ok": true, "cert": info }),
+        None => json!({ "error": "certificate is valid but could not extract details" }),
+    }
+}
+
+async fn cert_save(data: &Value, password: &str) -> Value {
+    let name = match data.get("name").and_then(|v| v.as_str()) {
+        Some(n) if !n.trim().is_empty() => n.trim(),
+        _ => return json!({ "error": "missing name" }),
+    };
+    let cert_pem = match data.get("cert").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return json!({ "error": "missing certificate" }),
+    };
+    let key_pem = match data.get("key").and_then(|v| v.as_str()) {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => return json!({ "error": "missing private key" }),
+    };
+
+    let safe_name: String = name.chars()
+        .map(|c| if c.is_alphanumeric() || "-_.".contains(c) { c } else { '_' })
+        .collect();
+
+    // Ensure /etc/ssl/private exists
+    let _ = sudo_action(password, &["mkdir", "-p", "/etc/ssl/private"]).await;
+
+    let cert_path = format!("/etc/ssl/{safe_name}.crt");
+    let key_path  = format!("/etc/ssl/private/{safe_name}.key");
+
+    let write_cert = sudo_stdin_write(password, &["tee", &cert_path], &cert_pem).await;
+    if write_cert.get("error").is_some() { return write_cert; }
+
+    let write_key = sudo_stdin_write(password, &["tee", &key_path], &key_pem).await;
+    if write_key.get("error").is_some() {
+        let _ = sudo_action(password, &["rm", "-f", &cert_path]).await;
+        return write_key;
+    }
+
+    let chmod = sudo_action(password, &["chmod", "600", &key_path]).await;
+    if chmod.get("error").is_some() { return chmod; }
+
+    json!({
+        "ok": true,
+        "cert_path": cert_path,
+        "key_path": key_path,
     })
 }
 
