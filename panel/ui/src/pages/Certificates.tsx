@@ -208,8 +208,8 @@ function CertsTab({ su, request }: TabProps) {
               spellCheck={false}
             />
             <span style={S.hint}>
-              Pliki zostaną zapisane jako{' '}
-              <code>{importPaths.cert}</code> i <code>{importPaths.key}</code>
+              Files will be saved as{' '}
+              <code>{importPaths.cert}</code> and <code>{importPaths.key}</code>
             </span>
           </div>
 
@@ -242,7 +242,7 @@ function CertsTab({ su, request }: TabProps) {
                 checked={importSubdir}
                 onChange={e => setImportSubdir(e.target.checked)}
               />
-              Utwórz podkatalog <code>/etc/ssl/{importName.trim() || '&lt;name&gt;'}/</code>
+              Use subdirectory <code>/etc/ssl/{importName.trim() || '&lt;name&gt;'}/</code>
             </label>
           </div>
 
@@ -293,7 +293,7 @@ function CertsTab({ su, request }: TabProps) {
               disabled={saving || !importName.trim()}
               onClick={handleSave}
             >
-              {saving ? 'Saving…' : `Zapisz → ${importPaths.cert}`}
+              {saving ? 'Saving…' : `Save → ${importPaths.cert}`}
             </button>
             <button style={S.cancelBtn} onClick={() => { setChecked(null); setCheckErr(''); }}>Back</button>
             {!importName.trim() && (
@@ -387,7 +387,7 @@ function CertsTab({ su, request }: TabProps) {
       {pwPending && (
         <div style={S.pwBar}>
           <span style={S.muted}>
-            {pwTarget === 'save' ? 'Hasło sudo do zapisu pliku:' : 'Hasło sudo:'}
+            {pwTarget === 'save' ? 'sudo password to save file:' : 'sudo password:'}
           </span>
           <input type="password" value={pw} onChange={e => setPw(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') confirmPw(); if (e.key === 'Escape') { setPwPending(false); setPw(''); } }}
@@ -481,8 +481,8 @@ function TrustStoreTab({ su, request }: TabProps) {
       <div style={S.card}>
         <div style={S.cardTitle}>Import certificate</div>
         <p style={S.hint}>
-          Wklej certyfikat w formacie PEM (<code>-----BEGIN CERTIFICATE-----</code>) lub base64-encoded DER.
-          Obsługiwane: certyfikaty CA, certyfikaty firmowe, self-signed.
+          Paste a PEM certificate (<code>-----BEGIN CERTIFICATE-----</code>) or base64-encoded DER.
+          Supported: CA certificates, company-issued certificates, self-signed.
         </p>
 
         <textarea
@@ -533,13 +533,13 @@ function TrustStoreTab({ su, request }: TabProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
             <input
               style={{ ...S.input, width: 220 }}
-              placeholder="Nazwa w trust store"
+              placeholder="Trust store name"
               value={certName}
               onChange={e => setCertName(e.target.value)}
               spellCheck={false}
             />
             <button style={S.saveBtn} onClick={handleTrust} disabled={!certName.trim()}>
-              Dodaj do trust store
+              Add to trust store
             </button>
             <span style={S.hint}>
               {/* distro hint shown inline */}
@@ -557,9 +557,9 @@ function TrustStoreTab({ su, request }: TabProps) {
 
       {/* Verify trust */}
       <div style={S.card}>
-        <div style={S.cardTitle}>Weryfikacja zaufania</div>
+        <div style={S.cardTitle}>Trust verification</div>
         <p style={S.hint}>
-          Sprawdź czy certyfikat hosta jest uznawany przez system jako zaufany (openssl s_client).
+          Check whether a host's certificate is trusted by the system (openssl s_client).
         </p>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <input
@@ -571,7 +571,7 @@ function TrustStoreTab({ su, request }: TabProps) {
             spellCheck={false}
           />
           <button style={S.btnAccent} onClick={handleVerify} disabled={verifying || !verifyHost.trim()}>
-            {verifying ? 'Sprawdzam…' : 'Test'}
+            {verifying ? 'Checking…' : 'Test'}
           </button>
         </div>
 
@@ -583,7 +583,7 @@ function TrustStoreTab({ su, request }: TabProps) {
                 color: verifyResult.trusted ? '#9ece6a' : '#f7768e',
                 background: (verifyResult.trusted ? '#9ece6a' : '#f7768e') + '22',
               }}>
-                {verifyResult.trusted ? '✓ Zaufany' : '✗ Niezaufany / błąd'}
+                {verifyResult.trusted ? '✓ Trusted' : '✗ Not trusted / error'}
               </span>
               <span style={S.muted}>{verifyResult.host}</span>
             </div>
@@ -595,7 +595,7 @@ function TrustStoreTab({ su, request }: TabProps) {
       {/* Password prompt */}
       {pwAction && (
         <div style={S.pwBar}>
-          <span style={S.muted}>Wymagane hasło sudo:</span>
+          <span style={S.muted}>sudo password required:</span>
           <input type="password" value={pw} onChange={e => setPw(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter') confirmPw(); if (e.key === 'Escape') { setPwAction(null); setPw(''); } }}
             autoFocus style={S.pwInput} placeholder="sudo password…" />
