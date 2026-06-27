@@ -127,7 +127,6 @@ export function TopBar({
             <div style={S.dropdown}>
               <div style={S.dropdownTitle}>Session</div>
               <Row label="User" value={user} />
-              <Row label="Host" value={hostname} />
               <Row label="Role" value={role === 'admin' ? 'Admin' : 'Read-only'}
                 valueStyle={{ color: role === 'admin' ? '#9ece6a' : '#e0af68' }} />
               <Row label="Privileges" value={suActive ? 'Administrative' : 'Limited'}
