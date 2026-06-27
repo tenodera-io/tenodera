@@ -30,12 +30,17 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const fetchGen = useRef(0);
+  // Keep a ref so fetchAll doesn't need hosts in its dep array (avoids cascade
+  // where every hosts poll recreates the function and restarts the fetch).
+  const hostsRef = useRef<HostEntry[]>(hosts);
+  hostsRef.current = hosts;
 
   const fetchAll = useCallback(async () => {
     const gen = ++fetchGen.current;
     setLoading(true);
+    const snapshot = hostsRef.current;
     const settled = await Promise.allSettled(
-      hosts.map(async (host): Promise<HostWithConfig> => {
+      snapshot.map(async (host): Promise<HostWithConfig> => {
         if (!host.online && !host.is_local) {
           return { host, config: null };
         }
@@ -52,11 +57,14 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
       }),
     );
     if (gen !== fetchGen.current) return; // stale — a newer fetch is already running
-    setResults(settled.map((r, i) => r.status === 'fulfilled' ? r.value : { host: hosts[i], config: null }));
+    setResults(settled.map((r, i) => r.status === 'fulfilled' ? r.value : { host: snapshot[i], config: null }));
     setLoading(false);
-  }, [hosts]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // stable — reads hostsRef.current at call time
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  // Re-fetch when hosts list changes (new host added, host goes offline/online).
+  // fetchAll is stable so this only fires on hosts change, not on every render.
+  useEffect(() => { fetchAll(); }, [fetchAll, hosts]);
 
   const handleRemove = async (host: HostEntry) => {
     const sessionId = sessionStorage.getItem('session_id') ?? '';
