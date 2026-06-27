@@ -47,6 +47,7 @@ impl Router {
         self.register(Arc::new(system_info::SystemInfoHandler));
         self.register(Arc::new(system_pubkey::SystemPubkeyHandler));
         self.register(Arc::new(host_config::HostConfigHandler));
+        self.register(Arc::new(host_config::HostActionHandler));
         self.register(Arc::new(systemd_units::SystemdUnitsHandler));
         self.register(Arc::new(systemd_units::SystemdManageHandler));
         self.register(Arc::new(file_list::FileListHandler));

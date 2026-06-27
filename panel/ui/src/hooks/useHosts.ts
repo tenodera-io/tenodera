@@ -6,6 +6,7 @@ export interface HostEntry {
   added_at: string;
   online: boolean;
   is_local: boolean;
+  remote_ip?: string;
 }
 
 export type HostStatus = 'unknown' | 'ok' | 'error';

@@ -37,7 +37,6 @@ const NAV_SECTIONS = [
       { path: '/terminal', label: 'Terminal', icon: '🖥️' },
       { path: '/files', label: 'Files', icon: '📁' },
       { path: '/kdump', label: 'Kernel Dump', icon: '💥' },
-      { path: '/bulk-hosts', label: 'Bulk Add Hosts', icon: '➕' },
     ],
   },
 ];
