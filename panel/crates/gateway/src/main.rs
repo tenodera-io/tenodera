@@ -1,7 +1,6 @@
 mod audit;
 mod auth;
 mod bridge_registry;
-mod bridge_transport;
 mod bridge_ws;
 mod config;
 mod hosts_config;

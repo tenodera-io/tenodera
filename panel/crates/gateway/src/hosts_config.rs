@@ -49,10 +49,6 @@ pub async fn save(config: &HostsConfig) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn find_host(host_id: &str) -> Option<HostEntry> {
-    load().await.hosts.into_iter().find(|h| h.id == host_id)
-}
-
 pub async fn update_last_seen(host_id: &str) {
     let mut config = load().await;
     if let Some(h) = config.hosts.iter_mut().find(|h| h.id == host_id) {
