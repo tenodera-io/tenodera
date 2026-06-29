@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tenodera Panel — installer (gateway + UI + local bridge)
 # Usage:
-#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-panel.sh -o /tmp/install-panel.sh && sudo bash /tmp/install-panel.sh
-#   Uninstall: sudo bash install-panel.sh --uninstall
+#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh | sudo bash
+#   Uninstall: sudo bash tenodera-panel.sh --uninstall
 #
 # Install:
 #   1. Downloads panel/, protocol/, and bridge/ source from GitHub
@@ -30,7 +30,7 @@ fail()  { echo -e "${RED}ERROR:${NC} $*" >&2; exit 1; }
 # ── Preflight checks ──────────────────────────────────────
 
 if [ "$(id -u)" -ne 0 ]; then
-  fail "This script must be run as root (use: sudo bash install-panel.sh)"
+  fail "This script must be run as root (use: sudo bash tenodera-panel.sh)"
 fi
 
 # ── Uninstall ─────────────────────────────────────────────
@@ -187,5 +187,5 @@ echo "  Log in with any PAM user that has sudo privileges."
 echo "  This host will appear in the UI as soon as the bridge connects (a few seconds)."
 echo ""
 echo "  Install bridge on remote managed hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh | sudo bash -s -- --gateway http://HOST:9090"
+echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh | sudo bash -s -- --gateway http://HOST:9090"
 echo ""

@@ -30,6 +30,51 @@ use crate::config::GatewayConfig;
 use crate::rate_limit::LoginRateLimiter;
 use crate::session::SessionStore;
 
+/// Drop privileges from root to the tenodera-gw system account.
+///
+/// Called after TLS cert/key files are read and the TCP socket is bound —
+/// the two operations that may require root access. After this point the
+/// process runs as the unprivileged tenodera-gw user for the rest of its
+/// lifetime.  A no-op when already running as a non-root user (e.g. during
+/// development or when systemd's User= is still set).
+#[cfg(target_os = "linux")]
+fn drop_privileges() -> anyhow::Result<()> {
+    if unsafe { libc::geteuid() } != 0 {
+        return Ok(());
+    }
+
+    let username = std::ffi::CString::new("tenodera-gw").unwrap();
+    let pw = unsafe { libc::getpwnam(username.as_ptr()) };
+    if pw.is_null() {
+        anyhow::bail!(
+            "user 'tenodera-gw' not found — create it before starting the service \
+             (useradd -r -s /sbin/nologin -M tenodera-gw)"
+        );
+    }
+
+    let uid = unsafe { (*pw).pw_uid };
+    let gid = unsafe { (*pw).pw_gid };
+
+    // setgid before setuid; then clear supplementary groups.
+    if unsafe { libc::setgid(gid) } != 0 {
+        anyhow::bail!("setgid({gid}) failed: {}", std::io::Error::last_os_error());
+    }
+    if unsafe { libc::setgroups(0, std::ptr::null()) } != 0 {
+        anyhow::bail!("setgroups() failed: {}", std::io::Error::last_os_error());
+    }
+    if unsafe { libc::setuid(uid) } != 0 {
+        anyhow::bail!("setuid({uid}) failed: {}", std::io::Error::last_os_error());
+    }
+
+    tracing::info!(uid, gid, "dropped privileges to tenodera-gw");
+    Ok(())
+}
+
+#[cfg(not(target_os = "linux"))]
+fn drop_privileges() -> anyhow::Result<()> {
+    Ok(())
+}
+
 /// Shared application state passed to all handlers.
 pub struct AppState {
     pub config: GatewayConfig,
@@ -113,6 +158,9 @@ async fn main() -> anyhow::Result<()> {
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
+
+    // TLS cert/key read and socket bound — safe to drop root now.
+    drop_privileges()?;
 
     // Check if TLS is configured
     match tls_acceptor {

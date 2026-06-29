@@ -45,8 +45,7 @@ Each bridge connects outbound to the gateway over a persistent WebSocket.
 ### Panel (gateway + UI + local bridge)
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-panel.sh -o /tmp/install-panel.sh
-sudo bash /tmp/install-panel.sh
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh | sudo bash
 ```
 
 This downloads the source, installs all build dependencies (Rust, Node.js,
@@ -58,21 +57,21 @@ systemd services, and starts the panel on port 9090.
 On the **same host as the panel** (no arguments needed — defaults to local gateway):
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
   | sudo bash
 ```
 
 On **remote hosts** you want to manage:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
-  | sudo bash -s -- --gateway https://<your-panel-host>:9090
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+  | sudo bash -s -- --gateway http://<your-panel-host>:9090
 ```
 
-If the panel uses a self-signed certificate, add `--accept-insecure`:
+If the panel uses HTTPS with a self-signed certificate, add `--accept-insecure`:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
   | sudo bash -s -- --gateway https://<your-panel-host>:9090 --accept-insecure
 ```
 
@@ -100,10 +99,10 @@ cd bridge && sudo make all
 
 ```bash
 # Panel (removes gateway, bridge, UI, config, services):
-sudo bash install-panel.sh --uninstall
+sudo bash tenodera-panel.sh --uninstall
 
 # Bridge only (on managed hosts):
-sudo bash install-bridge.sh --uninstall
+sudo bash tenodera-bridge.sh --uninstall
 ```
 
 Or from source: `cd panel && sudo make uninstall` / `cd bridge && sudo make uninstall`.
@@ -113,8 +112,8 @@ Or from source: `cd panel && sudo make uninstall` / `cd bridge && sudo make unin
 The bridge config lives at `/etc/tenodera/bridge.env` on each managed host:
 
 ```bash
-TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint
-# TENODERA_BRIDGE_ACCEPT_INSECURE=1              # Allow self-signed TLS (dev only)
+TENODERA_GATEWAY_URL=http://<panel-host>:9090    # Gateway WebSocket endpoint (http:// or https://)
+# TENODERA_BRIDGE_ACCEPT_INSECURE=1              # Uncomment when gateway uses a self-signed TLS cert
 
 # Optional: one or more roles assigned to this host (comma or space separated).
 # Roles are used to group hosts in the Management page.
@@ -182,16 +181,13 @@ user, then restarts the gateway automatically.
 To use your own certificate, set in `gateway.env`:
 
 ```
-TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
-TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+TENODERA_TLS_CERT=/etc/ssl/your-domain/cert.pem
+TENODERA_TLS_KEY=/etc/ssl/your-domain/key.pem
 ```
 
-Ensure both files are readable by the `tenodera-gw` group:
-
-```bash
-sudo chown root:tenodera-gw /etc/tenodera/tls/cert.pem /etc/tenodera/tls/key.pem
-sudo chmod 640 /etc/tenodera/tls/cert.pem /etc/tenodera/tls/key.pem
-```
+The gateway starts as root, reads the cert and key, then drops to the unprivileged
+`tenodera-gw` user — the same pattern as nginx and Zabbix. No permission changes
+to your existing certificates are required.
 
 ### Plaintext HTTP (development only)
 
@@ -216,11 +212,11 @@ operations.
 Run the bridge installer on each host you want to manage:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/install-bridge.sh \
-  | sudo bash -s -- --gateway https://<panel-host>:9090
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+  | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
-On the panel host itself, `--gateway` can be omitted — it defaults to `https://127.0.0.1:9090`.
+On the panel host itself, `--gateway` can be omitted — it defaults to `http://127.0.0.1:9090`.
 
 The bridge connects outbound to the gateway and registers itself by hostname — no UI
 pre-registration, no tokens, no SSH keys, no open ports on the managed host.

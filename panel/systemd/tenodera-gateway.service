@@ -6,39 +6,30 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=tenodera-gw
-Group=tenodera-gw
 ExecStart=/usr/local/bin/tenodera-gateway
 EnvironmentFile=-/etc/tenodera/gateway.env
 
-# Security hardening
+# The gateway starts as root so it can read TLS cert/key files from their
+# standard system location (e.g. /etc/ssl/...) regardless of permissions,
+# then immediately drops privileges to the tenodera-gw user via setuid(2)
+# after the socket is bound and certs are loaded — same pattern as nginx,
+# Zabbix, and Apache.
 #
-# The gateway runs as the unprivileged tenodera-gw user.
-# tenodera-pam-helper and tenodera-bridge are setuid root (4750/4755) so they
-# can escalate for PAM auth and PTY user switching respectively.
-#
-# NoNewPrivileges is intentionally NOT set: it would prevent the setuid
-# pam-helper and bridge from gaining root, breaking authentication and PTY.
+# NoNewPrivileges is intentionally NOT set: child processes (tenodera-pam-helper,
+# tenodera-bridge) are setuid root and must be able to gain root for PAM auth
+# and PTY user switching.
 #
 # The following systemd security directives are intentionally NOT used
 # because they break setuid child processes (pam-helper, bridge):
 #
-#   PrivateTmp=yes            — creates a user namespace for mount isolation;
-#                               inside user namespaces the kernel drops setuid
+#   PrivateTmp=yes            — user namespace mount isolation drops setuid
 #   RestrictNamespaces=yes    — implies NoNewPrivileges
 #   LockPersonality=yes       — implies NoNewPrivileges
 #   ProtectKernelTunables=yes — implies NoNewPrivileges on this systemd version
 #   ProtectKernelModules=yes  — implies NoNewPrivileges on this systemd version
-#   CapabilityBoundingSet=    — empty bounding set is inherited by child processes;
-#                               setuid children (pam-helper, sudo, bridge) get
-#                               euid=0 but no capabilities, breaking setgid/setuid
-#   MemoryDenyWriteExecute    — PAM modules (pam_sss.so) may need W+X
+#   CapabilityBoundingSet=    — empty set inherited by children; breaks setuid helpers
+#   MemoryDenyWriteExecute    — PAM modules (pam_sss.so, pam_ldap.so) may need W+X
 #   ProtectSystem=strict      — bridge child processes write to /usr, /var, /run
-#
-# Security is provided by running as the unprivileged tenodera-gw user.
-# As a non-root user with no file capabilities, the gateway process already
-# has an empty permitted/effective capability set — no further restriction needed.
-# pam-helper and bridge are intentionally setuid root
 RestrictSUIDSGID=no
 ProtectControlGroups=yes
 
