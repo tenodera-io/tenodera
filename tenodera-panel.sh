@@ -24,8 +24,18 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 info()  { echo -e "${BLUE}==>${NC} $*"; }
-ok()    { echo -e "${GREEN}==>${NC} $*"; }
+ok()    { echo -e "${GREEN}✓${NC}  $*"; }
 fail()  { echo -e "${RED}ERROR:${NC} $*" >&2; exit 1; }
+step()  { echo -e "\n${BLUE}[$1]${NC} $2"; }
+
+# Strip per-crate cargo progress lines; warnings, errors, and "Finished" pass through.
+cargo_quiet() {
+  grep -Ev \
+    "^   (Compiling|Fresh|Checking|Blocking|Running) |\
+^    (Updating|Downloaded?) |\
+^     Locking |\
+^      Adding "
+}
 
 # ── Preflight checks ──────────────────────────────────────
 
@@ -116,17 +126,19 @@ fi
 
 # ── Build & Install Panel ─────────────────────────────────
 
-info "Building and installing Tenodera Panel (this may take several minutes)..."
+step "1/2" "Building Tenodera Panel"
+echo "       system deps  →  Rust backend (~2-4 min)  →  frontend (~30 sec)  →  install"
 
 cd "$PANEL_DIR"
-make all 2>&1
+make all 2>&1 | cargo_quiet
 
 # ── Build & Install Bridge ────────────────────────────────
 
-info "Building and installing local bridge..."
+step "2/2" "Building local bridge"
+echo "       system deps  →  Rust bridge (~2-4 min)  →  install"
 
 cd "$BRIDGE_DIR"
-make all 2>&1
+make all 2>&1 | cargo_quiet
 
 # ── Verify ────────────────────────────────────────────────
 

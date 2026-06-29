@@ -21,8 +21,17 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 info()  { echo -e "${BLUE}==>${NC} $*"; }
-ok()    { echo -e "${GREEN}==>${NC} $*"; }
+ok()    { echo -e "${GREEN}✓${NC}  $*"; }
 fail()  { echo -e "${RED}ERROR:${NC} $*" >&2; exit 1; }
+
+# Strip per-crate cargo progress lines; warnings, errors, and "Finished" pass through.
+cargo_quiet() {
+  grep -Ev \
+    "^   (Compiling|Fresh|Checking|Blocking|Running) |\
+^    (Updating|Downloaded?) |\
+^     Locking |\
+^      Adding "
+}
 
 # ── Preflight ──────────────────────────────────────────────────────
 
@@ -98,9 +107,10 @@ else
   [ ! -d "$BRIDGE_DIR" ] || [ ! -d "$EXTRACTED/protocol" ] && \
     fail "Source directories not found"
 
-  info "Building and installing tenodera-bridge (this may take a few minutes)..."
+  info "Building tenodera-bridge"
+  echo "     system deps  →  Rust compilation (~2-4 min)  →  install"
   cd "$BRIDGE_DIR"
-  make all 2>&1
+  make all 2>&1 | cargo_quiet
 
   info "Cleaning up build artifacts..."
   rm -rf "$WORK_DIR"
