@@ -256,38 +256,55 @@ impl ChannelHandler for TerminalPtyHandler {
     }
 }
 
-/// Detect the current user's login shell from /etc/passwd.
+/// Detect the login shell of the current effective user via NSS (getpwuid_r).
+/// Works for local users and LDAP/SSSD users alike.
 fn get_user_shell() -> Option<String> {
-    let uid = nix::unistd::getuid();
-    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
-    for line in passwd.lines() {
-        let fields: Vec<&str> = line.split(':').collect();
-        if fields.len() >= 7
-            && let Ok(entry_uid) = fields[2].parse::<u32>()
-                && entry_uid == uid.as_raw() {
-                    let shell = fields[6].trim();
-                    if !shell.is_empty() {
-                        return Some(shell.to_string());
-                    }
-                }
+    let uid = unsafe { libc::geteuid() };
+    let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+    let mut buf = vec![0u8; 4096];
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+    let ret = unsafe {
+        libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr().cast::<libc::c_char>(), buf.len(), &mut result)
+    };
+    if ret != 0 || result.is_null() {
+        return None;
     }
-    None
+    let shell = unsafe { std::ffi::CStr::from_ptr((*result).pw_shell) }
+        .to_string_lossy()
+        .into_owned();
+    if shell.is_empty() { None } else { Some(shell) }
 }
 
-/// Look up a user in /etc/passwd. Returns (uid, gid, home, shell).
+/// Look up a user via NSS (getpwnam_r). Returns (uid, gid, home, shell).
+/// Works for local users and LDAP/SSSD users — unlike reading /etc/passwd directly.
 fn lookup_user(username: &str) -> Option<(u32, u32, String, String)> {
-    let passwd = std::fs::read_to_string("/etc/passwd").ok()?;
-    for line in passwd.lines() {
-        let fields: Vec<&str> = line.split(':').collect();
-        if fields.len() >= 7 && fields[0] == username {
-            let uid = fields[2].parse::<u32>().ok()?;
-            let gid = fields[3].parse::<u32>().ok()?;
-            let home = fields[5].to_string();
-            let shell = fields[6].trim().to_string();
-            return Some((uid, gid, home, shell));
-        }
+    let cname = std::ffi::CString::new(username).ok()?;
+    let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+    let mut buf = vec![0u8; 4096];
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+    let ret = unsafe {
+        libc::getpwnam_r(
+            cname.as_ptr(),
+            &mut pwd,
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            &mut result,
+        )
+    };
+    if ret != 0 || result.is_null() {
+        return None;
     }
-    None
+    unsafe {
+        let uid = (*result).pw_uid;
+        let gid = (*result).pw_gid;
+        let home = std::ffi::CStr::from_ptr((*result).pw_dir)
+            .to_string_lossy()
+            .into_owned();
+        let shell = std::ffi::CStr::from_ptr((*result).pw_shell)
+            .to_string_lossy()
+            .into_owned();
+        Some((uid, gid, home, shell))
+    }
 }
 
 /// Open a PTY and spawn the shell using `std::process::Command` with `pre_exec`.

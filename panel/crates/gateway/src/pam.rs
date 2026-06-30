@@ -156,40 +156,85 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
 
 /// Verify that the user belongs to an administrative group.
 ///
-/// Checks membership in the `sudo` (Debian/Ubuntu), `wheel` (RHEL/Fedora/Arch),
-/// or `admin` (older Debian/Ubuntu) groups by reading /etc/group directly.
-/// This requires no privilege escalation and works regardless of whether
-/// setuid binaries are functional in the current process environment.
+/// Uses getpwnam_r + getgrouplist + getgrgid_r — the full NSS stack — so it
+/// correctly resolves group membership for LDAP/FreeIPA/SSSD users as well as
+/// local accounts.  Reading /etc/group directly would miss LDAP group entries.
 ///
-/// Returns `Ok(())` if the user is in an admin group, `Err(message)` otherwise.
+/// Returns `Ok(())` if the user is in sudo/wheel/admin, `Err(message)` otherwise.
 pub async fn verify_sudo(user: &str) -> Result<(), String> {
-    const ADMIN_GROUPS: &[&str] = &["sudo", "wheel", "admin"];
-
-    let group_contents = tokio::fs::read_to_string("/etc/group")
+    let user = user.to_string();
+    tokio::task::spawn_blocking(move || verify_sudo_blocking(&user))
         .await
         .map_err(|e| {
-            tracing::error!(error = %e, "failed to read /etc/group");
+            tracing::error!(error = %e, "verify_sudo task panicked");
             "unable to verify user privileges".to_string()
-        })?;
+        })?
+}
 
-    for line in group_contents.lines() {
-        // /etc/group format: groupname:password:gid:member1,member2,...
-        let mut fields = line.splitn(4, ':');
-        let group_name = match fields.next() { Some(n) => n, None => continue };
-        let _ = fields.next(); // password
-        let _ = fields.next(); // gid
-        let members_field = fields.next().unwrap_or("");
+fn verify_sudo_blocking(user: &str) -> Result<(), String> {
+    use std::ffi::{CStr, CString};
+    const ADMIN_GROUPS: &[&str] = &["sudo", "wheel", "admin"];
 
-        if !ADMIN_GROUPS.contains(&group_name) {
+    let cname = CString::new(user).map_err(|_| "invalid username".to_string())?;
+
+    // Resolve primary GID via NSS (handles LDAP/SSSD users).
+    let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+    let mut buf = vec![0u8; 4096];
+    let mut pw_ptr: *mut libc::passwd = std::ptr::null_mut();
+    let ret = unsafe {
+        libc::getpwnam_r(
+            cname.as_ptr(),
+            &mut pwd,
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            &mut pw_ptr,
+        )
+    };
+    if ret != 0 || pw_ptr.is_null() {
+        tracing::warn!(user, "verify_sudo: user not found in NSS");
+        return Err("user not found".to_string());
+    }
+    let primary_gid = unsafe { (*pw_ptr).pw_gid };
+
+    // Collect all group GIDs — including supplementary groups from LDAP.
+    let mut ngroups: libc::c_int = 64;
+    let mut groups: Vec<libc::gid_t> = vec![0; ngroups as usize];
+    let ret = unsafe {
+        libc::getgrouplist(cname.as_ptr(), primary_gid, groups.as_mut_ptr(), &mut ngroups)
+    };
+    if ret == -1 {
+        // ngroups now holds the required count; resize and retry.
+        groups.resize(ngroups as usize, 0);
+        unsafe {
+            libc::getgrouplist(cname.as_ptr(), primary_gid, groups.as_mut_ptr(), &mut ngroups);
+        }
+    }
+    groups.truncate(ngroups as usize);
+
+    // Resolve each GID to a group name via NSS and check against admin list.
+    let mut gr_buf = vec![0u8; 4096];
+    for &gid in &groups {
+        let mut gr = unsafe { std::mem::zeroed::<libc::group>() };
+        let mut gr_ptr: *mut libc::group = std::ptr::null_mut();
+        let ret = unsafe {
+            libc::getgrgid_r(
+                gid,
+                &mut gr,
+                gr_buf.as_mut_ptr().cast::<libc::c_char>(),
+                gr_buf.len(),
+                &mut gr_ptr,
+            )
+        };
+        if ret != 0 || gr_ptr.is_null() {
             continue;
         }
-
-        if members_field.split(',').any(|m| m.trim() == user) {
-            tracing::info!(user = %user, group = %group_name, "admin group membership verified");
+        let gr_name = unsafe { CStr::from_ptr((*gr_ptr).gr_name) }.to_string_lossy();
+        if ADMIN_GROUPS.contains(&gr_name.as_ref()) {
+            tracing::info!(user, group = %gr_name, "admin group membership verified");
             return Ok(());
         }
     }
 
-    tracing::warn!(user = %user, "user is not in any admin group (sudo/wheel/admin)");
+    tracing::warn!(user, "user is not in any admin group (sudo/wheel/admin)");
     Err("user does not have sudo privileges".to_string())
 }
