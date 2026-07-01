@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Tenodera Panel — installer (gateway + UI + local agent)
 # Usage:
-#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh | sudo bash
-#   Uninstall: sudo bash tenodera-panel.sh --uninstall
+#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh | sudo bash
+#   Uninstall: sudo bash tenodera.sh --uninstall
 #
 # Install:
 #   1. Downloads panel/, protocol/, and agent/ source from GitHub
@@ -40,7 +40,7 @@ cargo_quiet() {
 # ── Preflight checks ──────────────────────────────────────
 
 if [ "$(id -u)" -ne 0 ]; then
-  fail "This script must be run as root (use: sudo bash tenodera-panel.sh)"
+  fail "This script must be run as root (use: sudo bash tenodera.sh)"
 fi
 
 # ── Uninstall ─────────────────────────────────────────────
@@ -82,7 +82,7 @@ fi
 
 REPO="ultherego/Tenodera"
 BRANCH="main"
-WORK_DIR="/tmp/tenodera-panel-install"
+WORK_DIR="/tmp/tenodera-install"
 
 command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
   fail "curl or wget is required"

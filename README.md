@@ -45,7 +45,7 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 ### Panel (gateway + UI + local agent)
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh | sudo bash
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh | sudo bash
 ```
 
 This downloads the source, installs all build dependencies (Rust, Node.js,
@@ -99,7 +99,7 @@ cd agent && sudo make all
 
 ```bash
 # Panel (removes gateway, agent, UI, config, services):
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh \
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh \
   | sudo bash -s -- --uninstall
 
 # Agent only (on managed hosts):
