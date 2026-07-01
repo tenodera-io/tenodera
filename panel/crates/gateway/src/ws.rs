@@ -14,11 +14,11 @@ use tenodera_protocol::message;
 
 use crate::AppState;
 use crate::audit;
-use crate::bridge_registry::session_prefix;
+use crate::agent_registry::session_prefix;
 use crate::security_headers::origin_matches_host;
 
 const MAX_CHANNELS_PER_SESSION: usize = 512;
-const MAX_REMOTE_BRIDGES: usize = 50;
+const MAX_REMOTE_AGENTS: usize = 50;
 const AUTH_TIMEOUT_SECS: u64 = 10;
 
 pub async fn ws_upgrade(
@@ -51,21 +51,21 @@ pub async fn ws_upgrade(
     Ok(ws.on_upgrade(move |socket| handle_socket(state, socket)))
 }
 
-fn spawn_bridge_forwarder(
+fn spawn_agent_forwarder(
     label: String,
-    mut from_bridge: mpsc::Receiver<message::Message>,
+    mut from_agent: mpsc::Receiver<message::Message>,
     sink: Arc<Mutex<futures::stream::SplitSink<WebSocket, Message>>>,
     close_notify: mpsc::UnboundedSender<ChannelId>,
 ) {
     tokio::spawn(async move {
-        while let Some(msg) = from_bridge.recv().await {
+        while let Some(msg) = from_agent.recv().await {
             let close_channel = match &msg {
                 message::Message::Close { channel, .. } => Some(channel.clone()),
                 _ => None,
             };
 
             if let Ok(json) = serde_json::to_string(&msg) {
-                tracing::trace!(bridge = %label, raw = %json, "bridge → WS client");
+                tracing::trace!(agent = %label, raw = %json, "agent → WS client");
                 let mut s = sink.lock().await;
                 if s.send(Message::Text(json.into())).await.is_err() {
                     break;
@@ -76,7 +76,7 @@ fn spawn_bridge_forwarder(
                 let _ = close_notify.send(ch);
             }
         }
-        tracing::debug!(bridge = %label, "bridge->ws forwarder ended");
+        tracing::debug!(agent = %label, "agent->ws forwarder ended");
     });
 }
 
@@ -171,15 +171,15 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
     let (close_tx, mut close_rx) = mpsc::unbounded_channel::<ChannelId>();
 
-    // channel_id → sender for that bridge
+    // channel_id → sender for that agent
     let mut channel_routes: HashMap<ChannelId, mpsc::Sender<message::Message>> = HashMap::new();
-    // host_id → proxy sender for the remote bridge session
+    // host_id → proxy sender for the remote agent session
     let mut remote_senders: HashMap<String, mpsc::Sender<message::Message>> = HashMap::new();
 
     let mut session_check = tokio::time::interval(std::time::Duration::from_secs(5));
     session_check.tick().await;
 
-    // Session prefix for channel ID namespacing on remote bridges
+    // Session prefix for channel ID namespacing on remote agents
     let s_prefix = session_prefix(&session_id);
 
     loop {
@@ -216,20 +216,20 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                     if let Some(sender) = remote_senders.get(hid) {
                                         sender.clone()
                                     } else {
-                                        if remote_senders.len() >= MAX_REMOTE_BRIDGES {
+                                        if remote_senders.len() >= MAX_REMOTE_AGENTS {
                                             let close = message::Message::Close {
                                                 channel: channel.clone(),
-                                                problem: Some("remote-bridge-limit-exceeded".into()),
+                                                problem: Some("remote-agent-limit-exceeded".into()),
                                             };
                                             let mut s = sink.lock().await;
                                             let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
                                             continue;
                                         }
 
-                                        match state.bridge_registry.connect_session(hid, &s_prefix).await {
+                                        match state.agent_registry.connect_session(hid, &s_prefix).await {
                                             Some((proxy_tx, from_rx)) => {
-                                                audit::log(&user, "bridge_connect", hid, true, "remote bridge connected via registry");
-                                                spawn_bridge_forwarder(
+                                                audit::log(&user, "agent_connect", hid, true, "remote agent connected via registry");
+                                                spawn_agent_forwarder(
                                                     format!("remote:{hid}"),
                                                     from_rx,
                                                     sink.clone(),
@@ -239,8 +239,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                                 proxy_tx
                                             }
                                             None => {
-                                                audit::log(&user, "bridge_connect", hid, false, "host offline");
-                                                tracing::warn!(host = %hid, "bridge not connected");
+                                                audit::log(&user, "agent_connect", hid, false, "host offline");
+                                                tracing::warn!(host = %hid, "agent not connected");
                                                 let close = message::Message::Close {
                                                     channel: channel.clone(),
                                                     problem: Some("host-offline".into()),
@@ -252,7 +252,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                         }
                                     }
                                 } else {
-                                    // No host specified — local bridge no longer supported
+                                    // No host specified — local agent no longer supported
                                     let close = message::Message::Close {
                                         channel: channel.clone(),
                                         problem: Some("host-required".into()),

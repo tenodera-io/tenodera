@@ -1,7 +1,7 @@
-# Tenodera Bridge — Makefile
+# Tenodera Agent — Makefile
 #
 # Usage:
-#   make build     — compile bridge binary
+#   make build     — compile agent binary
 #   make install   — install binary + systemd service
 #   make uninstall — remove binary and service
 #   make clean     — remove build artifacts
@@ -12,7 +12,7 @@ CONFDIR     ?= /etc/tenodera
 SYSTEMDDIR  ?= /etc/systemd/system
 GATEWAY_URL ?= http://127.0.0.1:9090
 
-BRIDGE_BIN := target/release/tenodera-bridge
+AGENT_BIN := target/release/tenodera-agent
 
 .PHONY: all deps build install uninstall clean package-deb package-rpm
 
@@ -42,17 +42,17 @@ deps:
 # ── Build ─────────────────────────────────────────────────
 
 build:
-	@echo "==> Building tenodera-bridge..."
+	@echo "==> Building tenodera-agent..."
 	. "$$HOME/.cargo/env" 2>/dev/null || true; cargo build --release
 
-$(BRIDGE_BIN):
+$(AGENT_BIN):
 	$(MAKE) build
 
 # ── Install ───────────────────────────────────────────────
 
-install: $(BRIDGE_BIN)
-	@echo "==> Installing tenodera-bridge to $(BINDIR) (setuid root)..."
-	sudo install -m 4755 -o root -g root $(BRIDGE_BIN) $(BINDIR)/tenodera-bridge
+install: $(AGENT_BIN)
+	@echo "==> Installing tenodera-agent to $(BINDIR) (setuid root)..."
+	sudo install -m 4755 -o root -g root $(AGENT_BIN) $(BINDIR)/tenodera-agent
 	@echo "==> Setting up directories..."
 	sudo mkdir -p $(CONFDIR)
 	sudo chmod 755 $(CONFDIR)
@@ -61,33 +61,33 @@ install: $(BRIDGE_BIN)
 	sudo chown root:root /var/log/tenodera_audit.log
 	sudo chmod 622 /var/log/tenodera_audit.log
 	@echo "==> Installing systemd service..."
-	sudo cp systemd/tenodera-bridge.service $(SYSTEMDDIR)/
+	sudo cp systemd/tenodera-agent.service $(SYSTEMDDIR)/
 	sudo systemctl daemon-reload
-	@if [ ! -f $(CONFDIR)/bridge.env ]; then \
-		printf 'TENODERA_GATEWAY_URL=$(GATEWAY_URL)\n# Uncomment if gateway uses a self-signed TLS cert:\n# TENODERA_BRIDGE_ACCEPT_INSECURE=1\n' \
-			| sudo tee $(CONFDIR)/bridge.env > /dev/null; \
-		sudo chmod 640 $(CONFDIR)/bridge.env; \
-		echo "    Created $(CONFDIR)/bridge.env ($(GATEWAY_URL))"; \
+	@if [ ! -f $(CONFDIR)/agent.env ]; then \
+		printf 'TENODERA_GATEWAY_URL=$(GATEWAY_URL)\n# Uncomment if gateway uses a self-signed TLS cert:\n# TENODERA_AGENT_ACCEPT_INSECURE=1\n' \
+			| sudo tee $(CONFDIR)/agent.env > /dev/null; \
+		sudo chmod 640 $(CONFDIR)/agent.env; \
+		echo "    Created $(CONFDIR)/agent.env ($(GATEWAY_URL))"; \
 	else \
-		echo "    $(CONFDIR)/bridge.env already exists — skipping (preserving your config)"; \
+		echo "    $(CONFDIR)/agent.env already exists — skipping (preserving your config)"; \
 	fi
-	sudo systemctl enable --now tenodera-bridge
+	sudo systemctl enable --now tenodera-agent
 	@echo ""
-	@echo "✓ tenodera-bridge installed and running"
-	@echo "  Config:  $(CONFDIR)/bridge.env"
-	@echo "  Logs:    journalctl -u tenodera-bridge -f"
+	@echo "✓ tenodera-agent installed and running"
+	@echo "  Config:  $(CONFDIR)/agent.env"
+	@echo "  Logs:    journalctl -u tenodera-agent -f"
 	@echo "  Gateway: $(GATEWAY_URL)"
 
 # ── Uninstall ─────────────────────────────────────────────
 
 uninstall:
-	@echo "==> Removing tenodera-bridge..."
-	-sudo systemctl stop tenodera-bridge 2>/dev/null || true
-	-sudo systemctl disable tenodera-bridge 2>/dev/null || true
-	-sudo rm -f $(SYSTEMDDIR)/tenodera-bridge.service
+	@echo "==> Removing tenodera-agent..."
+	-sudo systemctl stop tenodera-agent 2>/dev/null || true
+	-sudo systemctl disable tenodera-agent 2>/dev/null || true
+	-sudo rm -f $(SYSTEMDDIR)/tenodera-agent.service
 	-sudo systemctl daemon-reload
-	-sudo rm -f $(BINDIR)/tenodera-bridge
-	-sudo rm -f $(CONFDIR)/bridge.env
+	-sudo rm -f $(BINDIR)/tenodera-agent
+	-sudo rm -f $(CONFDIR)/agent.env
 	-sudo rmdir $(CONFDIR) 2>/dev/null || true
 	-sudo rm -f /var/log/tenodera_audit.log
 	@echo "Done."
@@ -97,25 +97,25 @@ uninstall:
 VERSION ?= $(shell . "$$HOME/.cargo/env" 2>/dev/null || true; cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])" 2>/dev/null || echo "0.1.0")
 
 package-deb: build
-	@echo "==> Building Debian package (tenodera-bridge v$(VERSION))..."
+	@echo "==> Building Debian package (tenodera-agent v$(VERSION))..."
 	@command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb not found — install dpkg"; exit 1; }
-	$(eval PKGDIR := /tmp/tenodera-bridge-deb-$(VERSION))
+	$(eval PKGDIR := /tmp/tenodera-agent-deb-$(VERSION))
 	@rm -rf $(PKGDIR) && mkdir -p $(PKGDIR)/DEBIAN $(PKGDIR)/usr/bin $(PKGDIR)/lib/systemd/system
-	@install -m 4755 -o root -g root target/release/tenodera-bridge $(PKGDIR)/usr/bin/
-	@install -m 644 systemd/tenodera-bridge.service $(PKGDIR)/lib/systemd/system/
-	@printf 'Package: tenodera-bridge\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera bridge agent for managed hosts\n Installed on managed Linux servers. Connects outbound to the Tenodera\n gateway — no inbound ports or SSH keys required.\n' > $(PKGDIR)/DEBIAN/control
-	@dpkg-deb --build $(PKGDIR) tenodera-bridge_$(VERSION)_amd64.deb
+	@install -m 4755 -o root -g root target/release/tenodera-agent $(PKGDIR)/usr/bin/
+	@install -m 644 systemd/tenodera-agent.service $(PKGDIR)/lib/systemd/system/
+	@printf 'Package: tenodera-agent\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera agent for managed hosts\n Installed on managed Linux servers. Connects outbound to the Tenodera\n gateway — no inbound ports or SSH keys required.\n' > $(PKGDIR)/DEBIAN/control
+	@dpkg-deb --build $(PKGDIR) tenodera-agent_$(VERSION)_amd64.deb
 	@rm -rf $(PKGDIR)
-	@echo "✓ Package: tenodera-bridge_$(VERSION)_amd64.deb"
+	@echo "✓ Package: tenodera-agent_$(VERSION)_amd64.deb"
 
 package-rpm: build
-	@echo "==> Building RPM package (tenodera-bridge v$(VERSION))..."
+	@echo "==> Building RPM package (tenodera-agent v$(VERSION))..."
 	@command -v rpmbuild >/dev/null 2>&1 || { echo "ERROR: rpmbuild not found — install rpm-build"; exit 1; }
 	@mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-	@cp ../packaging/tenodera-bridge.spec ~/rpmbuild/SPECS/
-	@cp target/release/tenodera-bridge ~/rpmbuild/BUILD/
-	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-bridge.spec
-	@find ~/rpmbuild/RPMS -name "tenodera-bridge-*.rpm" -exec cp {} . \;
+	@cp ../packaging/tenodera-agent.spec ~/rpmbuild/SPECS/
+	@cp target/release/tenodera-agent ~/rpmbuild/BUILD/
+	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-agent.spec
+	@find ~/rpmbuild/RPMS -name "tenodera-agent-*.rpm" -exec cp {} . \;
 	@echo "✓ RPM package built"
 
 # ── Clean ─────────────────────────────────────────────────

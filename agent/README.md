@@ -1,22 +1,22 @@
-# tenodera-bridge
+# tenodera-agent
 
 Standalone system management agent deployed on each managed host.
 
 ## Role in Architecture
 
-The bridge is a **long-running systemd service** that connects outbound to the
+The agent is a **long-running systemd service** that connects outbound to the
 gateway over a persistent WebSocket. It is never spawned per-session and does
 not communicate over stdin/stdout.
 
 ```
-Gateway (:9090) <──WS── tenodera-bridge (each managed host)
+Gateway (:9090) <──WS── tenodera-agent (each managed host)
 ```
 
-On startup the bridge sends a `Hello` message containing its hostname and
+On startup the agent sends a `Hello` message containing its hostname and
 protocol version. The gateway responds with `HelloAck` and auto-registers the
 host — no tokens, no pre-registration, no inbound ports required on the managed
-host. Multiple user sessions on the gateway share the same bridge connection via
-the `BridgeRegistry`.
+host. Multiple user sessions on the gateway share the same agent connection via
+the `AgentRegistry`.
 
 ## Handler Modules
 
@@ -28,7 +28,7 @@ the `BridgeRegistry`.
 |---------|---------|-------------|
 | `SystemInfoHandler` | `system.info` | Hostname, OS, uptime, kernel |
 | `SystemPubkeyHandler` | `system.pubkey` | Host SSH public key |
-| `HostConfigHandler` | `host.config` | Host roles, hostname, uptime from bridge.env |
+| `HostConfigHandler` | `host.config` | Host roles, hostname, uptime from agent.env |
 | `HostActionHandler` | `host.action` | Set role or restart host (admin only) |
 | `SystemdUnitsHandler` | `systemd.units` | List all systemd units |
 | `HardwareInfoHandler` | `hardware.info` | CPU, cores, MHz, temperature sensors |
@@ -83,11 +83,11 @@ the `BridgeRegistry`.
 
 ## Configuration
 
-The bridge reads `/etc/tenodera/bridge.env` at startup:
+The agent reads `/etc/tenodera/agent.env` at startup:
 
 ```bash
 TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint (required)
-# TENODERA_BRIDGE_ACCEPT_INSECURE=1              # Allow self-signed TLS (dev only)
+# TENODERA_AGENT_ACCEPT_INSECURE=1              # Allow self-signed TLS (dev only)
 
 # Optional: one or more roles for this host (comma or space separated).
 # Roles group hosts in the Management page of the panel.
@@ -97,11 +97,11 @@ TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint (r
 
 Roles can be changed at runtime from the panel's **Management** page (admin only)
 via the `host.action` / `set_role` handler — this rewrites the `role=` lines in
-`bridge.env` using `sudo tee` without restarting the bridge.
+`agent.env` using `sudo tee` without restarting the agent.
 
 ## Privilege Model
 
-The bridge runs as a non-root user (`tenodera-brdg`). Privileged operations
+The agent runs as a non-root user (`tenodera-brdg`). Privileged operations
 use `sudo -S` with the password piped from the superuser context — the user
 authenticates once via `superuser.verify`, and that password is used for
 subsequent sudo calls within the session.
@@ -127,7 +127,7 @@ attempting the privileged action.
 ```bash
 make deps     # install Rust toolchain + system libraries
 make build    # cargo build --release
-sudo make install   # install to /usr/local/bin/tenodera-bridge
+sudo make install   # install to /usr/local/bin/tenodera-agent
 ```
 
 Or all at once:

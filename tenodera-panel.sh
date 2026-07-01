@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Tenodera Panel — installer (gateway + UI + local bridge)
+# Tenodera Panel — installer (gateway + UI + local agent)
 # Usage:
 #   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh | sudo bash
 #   Uninstall: sudo bash tenodera-panel.sh --uninstall
 #
 # Install:
-#   1. Downloads panel/, protocol/, and bridge/ source from GitHub
+#   1. Downloads panel/, protocol/, and agent/ source from GitHub
 #   2. Runs `make all` for panel (installs deps, builds gateway + UI, installs)
-#   3. Runs `make all` for bridge (builds + installs local bridge)
+#   3. Runs `make all` for agent (builds + installs local agent)
 #   4. Cleans up build artifacts
 #
 # Uninstall:
-#   Runs `make uninstall` for both panel and bridge
+#   Runs `make uninstall` for both panel and agent
 
 set -euo pipefail
 
@@ -46,7 +46,7 @@ fi
 # ── Uninstall ─────────────────────────────────────────────
 
 if [ "${1:-}" = "--uninstall" ]; then
-  info "Uninstalling Tenodera (panel + bridge)..."
+  info "Uninstalling Tenodera (panel + agent)..."
 
   # Stop and remove services
   systemctl stop tenodera-gateway 2>/dev/null || true
@@ -57,12 +57,12 @@ if [ "${1:-}" = "--uninstall" ]; then
 
   # Kill any running processes
   pkill -f tenodera-gateway 2>/dev/null || true
-  pkill -f tenodera-bridge 2>/dev/null || true
+  pkill -f tenodera-agent 2>/dev/null || true
 
-  # Remove all binaries (gateway + pam helper + bridge)
+  # Remove all binaries (gateway + pam helper + agent)
   rm -f "${INSTALL_DIR}/tenodera-gateway"
   rm -f "${INSTALL_DIR}/tenodera-pam-helper"
-  rm -f "${INSTALL_DIR}/tenodera-bridge"
+  rm -f "${INSTALL_DIR}/tenodera-agent"
 
   # Remove UI assets, config, logs, PAM and sudoers rules
   rm -rf /usr/share/tenodera
@@ -71,7 +71,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -f /etc/pam.d/tenodera
   rm -f /var/log/tenodera*
 
-  ok "Tenodera fully removed (panel + bridge)."
+  ok "Tenodera fully removed (panel + agent)."
   exit 0
 fi
 
@@ -118,10 +118,10 @@ if [ -z "$EXTRACTED" ]; then
 fi
 
 PANEL_DIR="$EXTRACTED/panel"
-BRIDGE_DIR="$EXTRACTED/bridge"
+AGENT_DIR="$EXTRACTED/agent"
 
-if [ ! -d "$PANEL_DIR" ] || [ ! -d "$BRIDGE_DIR" ] || [ ! -d "$EXTRACTED/protocol" ]; then
-  fail "Source directories not found (panel/, bridge/, or protocol/)"
+if [ ! -d "$PANEL_DIR" ] || [ ! -d "$AGENT_DIR" ] || [ ! -d "$EXTRACTED/protocol" ]; then
+  fail "Source directories not found (panel/, agent/, or protocol/)"
 fi
 
 # ── Build & Install Panel ─────────────────────────────────
@@ -132,19 +132,19 @@ echo "       system deps  →  Rust backend (~2-4 min)  →  frontend (~30 sec) 
 cd "$PANEL_DIR"
 make all 2>&1 | cargo_quiet
 
-# ── Build & Install Bridge ────────────────────────────────
+# ── Build & Install Agent ─────────────────────────────────
 
-step "2/2" "Building local bridge"
-echo "       system deps  →  Rust bridge (~2-4 min)  →  install"
+step "2/2" "Building local agent"
+echo "       system deps  →  Rust agent (~2-4 min)  →  install"
 
-cd "$BRIDGE_DIR"
+cd "$AGENT_DIR"
 make all 2>&1 | cargo_quiet
 
 # ── Verify ────────────────────────────────────────────────
 
 ERRORS=0
 
-for BIN in tenodera-gateway tenodera-pam-helper tenodera-bridge; do
+for BIN in tenodera-gateway tenodera-pam-helper tenodera-agent; do
   if [ -f "${INSTALL_DIR}/${BIN}" ]; then
     ok "${BIN} installed at ${INSTALL_DIR}/${BIN}"
   else
@@ -166,27 +166,27 @@ ok "Tenodera installed successfully!"
 
 CONF_DIR="/etc/tenodera"
 
-# ── Configure and start local bridge ─────────────────────────────────────────
-# The bridge connects to the local gateway over plain HTTP and auto-registers.
+# ── Configure and start local agent ──────────────────────────────────────────
+# The agent connects to the local gateway over plain HTTP and auto-registers.
 # To enable HTTPS: generate a cert (cd panel && sudo make tls-selfsigned),
-# then update /etc/tenodera/gateway.env and /etc/tenodera/bridge.env.
+# then update /etc/tenodera/gateway.env and /etc/tenodera/agent.env.
 
-if [ ! -f "${CONF_DIR}/bridge.env" ]; then
-  info "Writing bridge config..."
-  cat > "${CONF_DIR}/bridge.env" <<EOF
+if [ ! -f "${CONF_DIR}/agent.env" ]; then
+  info "Writing agent config..."
+  cat > "${CONF_DIR}/agent.env" <<EOF
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
 # Uncomment if you switch gateway to HTTPS with a self-signed cert:
-# TENODERA_BRIDGE_ACCEPT_INSECURE=1
+# TENODERA_AGENT_ACCEPT_INSECURE=1
 EOF
-  chmod 640 "${CONF_DIR}/bridge.env"
+  chmod 640 "${CONF_DIR}/agent.env"
 fi
 
-if systemctl is-active --quiet tenodera-bridge 2>/dev/null; then
-  info "tenodera-bridge already running — restarting to pick up new config"
-  systemctl restart tenodera-bridge
+if systemctl is-active --quiet tenodera-agent 2>/dev/null; then
+  info "tenodera-agent already running — restarting to pick up new config"
+  systemctl restart tenodera-agent
 else
-  info "Starting tenodera-bridge on this host..."
-  systemctl enable --now tenodera-bridge
+  info "Starting tenodera-agent on this host..."
+  systemctl enable --now tenodera-agent
 fi
 
 echo ""
@@ -196,8 +196,8 @@ echo "  Logs:      journalctl -u tenodera-gateway -f"
 echo "  Config:    /etc/tenodera/gateway.env"
 echo ""
 echo "  Log in with any PAM user that has sudo privileges."
-echo "  This host will appear in the UI as soon as the bridge connects (a few seconds)."
+echo "  This host will appear in the UI as soon as the agent connects (a few seconds)."
 echo ""
-echo "  Install bridge on remote managed hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh | sudo bash -s -- --gateway http://HOST:9090"
+echo "  Install agent on remote managed hosts:"
+echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://HOST:9090"
 echo ""

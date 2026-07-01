@@ -16,34 +16,34 @@ pub const PROTOCOL_VERSION: u32 = 1;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Message {
-    /// Bridge → Gateway (first message after stdio open): announce version and identity.
+    /// Agent → Gateway (first message after connection): announce version and identity.
     Hello {
         version: u32,
-        /// System hostname of the bridge host.
+        /// System hostname of the agent host.
         #[serde(default)]
         hostname: String,
-        /// True when the bridge is connecting from the same host as the gateway
+        /// True when the agent is connecting from the same host as the gateway
         /// (loopback URL). Used to mark the panel host in the UI.
         #[serde(default)]
         is_local: bool,
     },
 
-    /// Gateway → Bridge: acknowledge and report own version.
+    /// Gateway → Agent: acknowledge and report own version.
     HelloAck {
         version: u32,
-        /// Set when the gateway accepted the bridge despite a minor-version
-        /// difference. The bridge may log this and continue.
+        /// Set when the gateway accepted the agent despite a minor-version
+        /// difference. The agent may log this and continue.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         warning: Option<String>,
     },
-    /// Client → Bridge: open a new channel.
+    /// Client → Agent: open a new channel.
     Open {
         channel: ChannelId,
         #[serde(flatten)]
         options: ChannelOpenOptions,
     },
 
-    /// Bridge → Client: channel is ready to send/receive data.
+    /// Agent → Client: channel is ready to send/receive data.
     Ready {
         channel: ChannelId,
     },

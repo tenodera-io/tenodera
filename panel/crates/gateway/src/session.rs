@@ -11,7 +11,7 @@ use uuid::Uuid;
 pub enum Role {
     /// Full access including write/administrative operations.
     Admin,
-    /// Read-only access — write operations are rejected by bridge handlers.
+    /// Read-only access — write operations are rejected by agent handlers.
     Readonly,
 }
 

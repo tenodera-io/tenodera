@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tenodera Bridge — remote host installer
+# Tenodera Agent — remote host installer
 #
 # Usage:
-#   Install (local):  sudo bash tenodera-bridge.sh
-#   Install (remote): sudo bash tenodera-bridge.sh --gateway http://gw:9090
-#   Uninstall:        sudo bash tenodera-bridge.sh --uninstall
+#   Install (local):  sudo bash tenodera-agent.sh
+#   Install (remote): sudo bash tenodera-agent.sh --gateway http://gw:9090
+#   Uninstall:        sudo bash tenodera-agent.sh --uninstall
 #
-# The bridge connects outbound to the gateway — no tokens, no SSH keys, no inbound ports needed.
+# The agent connects outbound to the gateway — no tokens, no SSH keys, no inbound ports needed.
 # The host is registered automatically on first connection (identified by hostname).
 
 set -euo pipefail
@@ -36,7 +36,7 @@ cargo_quiet() {
 # ── Preflight ──────────────────────────────────────────────────────
 
 if [ "$(id -u)" -ne 0 ]; then
-  fail "This script must be run as root (use: sudo bash tenodera-bridge.sh ...)"
+  fail "This script must be run as root (use: sudo bash tenodera-agent.sh ...)"
 fi
 
 # ── Argument parsing ───────────────────────────────────────────────
@@ -47,16 +47,16 @@ ACCEPT_INSECURE="0"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --uninstall)
-      info "Removing tenodera-bridge..."
-      systemctl stop tenodera-bridge 2>/dev/null || true
-      systemctl disable tenodera-bridge 2>/dev/null || true
-      rm -f /etc/systemd/system/tenodera-bridge.service
+      info "Removing tenodera-agent..."
+      systemctl stop tenodera-agent 2>/dev/null || true
+      systemctl disable tenodera-agent 2>/dev/null || true
+      rm -f /etc/systemd/system/tenodera-agent.service
       systemctl daemon-reload 2>/dev/null || true
-      rm -f "${INSTALL_DIR}/tenodera-bridge"
-      rm -f "${CONF_DIR}/bridge.env"
+      rm -f "${INSTALL_DIR}/tenodera-agent"
+      rm -f "${CONF_DIR}/agent.env"
       rmdir "${CONF_DIR}" 2>/dev/null || true
       rm -f /var/log/tenodera_audit.log
-      ok "tenodera-bridge removed."
+      ok "tenodera-agent removed."
       exit 0
       ;;
     --gateway)
@@ -76,27 +76,27 @@ fi
 
 # ── Download & build (skipped if binary already installed) ─────────
 
-INSTALL_BIN="${INSTALL_DIR}/tenodera-bridge"
+INSTALL_BIN="${INSTALL_DIR}/tenodera-agent"
 WORK_DIR=""
 
-SYSTEMD_SERVICE="/etc/systemd/system/tenodera-bridge.service"
+SYSTEMD_SERVICE="/etc/systemd/system/tenodera-agent.service"
 
 if [ -x "$INSTALL_BIN" ]; then
-  info "tenodera-bridge already installed at ${INSTALL_BIN} — skipping build"
+  info "tenodera-agent already installed at ${INSTALL_BIN} — skipping build"
   # Service file may be missing if the binary was copied manually.
   if [ ! -f "$SYSTEMD_SERVICE" ]; then
-    info "Service file missing — installing tenodera-bridge.service..."
+    info "Service file missing — installing tenodera-agent.service..."
     cat > "$SYSTEMD_SERVICE" <<'SVCEOF'
 [Unit]
-Description=Tenodera Bridge Agent
+Description=Tenodera Agent
 Documentation=https://github.com/ultherego/Tenodera
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/tenodera-bridge
-EnvironmentFile=-/etc/tenodera/bridge.env
+ExecStart=/usr/local/bin/tenodera-agent
+EnvironmentFile=-/etc/tenodera/agent.env
 
 Restart=on-failure
 RestartSec=5
@@ -108,12 +108,12 @@ SVCEOF
 else
   REPO="ultherego/Tenodera"
   BRANCH="main"
-  WORK_DIR="/tmp/tenodera-bridge-install"
+  WORK_DIR="/tmp/tenodera-agent-install"
 
   command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
     fail "curl or wget is required"
 
-  info "Downloading bridge source..."
+  info "Downloading agent source..."
   rm -rf "$WORK_DIR"
   mkdir -p "$WORK_DIR"
 
@@ -128,34 +128,34 @@ else
   EXTRACTED=$(ls -d "$WORK_DIR"/Tenodera-* 2>/dev/null | head -1)
   [ -z "$EXTRACTED" ] && fail "Failed to extract source archive"
 
-  BRIDGE_DIR="$EXTRACTED/bridge"
-  [ ! -d "$BRIDGE_DIR" ] || [ ! -d "$EXTRACTED/protocol" ] && \
+  AGENT_DIR="$EXTRACTED/agent"
+  [ ! -d "$AGENT_DIR" ] || [ ! -d "$EXTRACTED/protocol" ] && \
     fail "Source directories not found"
 
-  info "Building tenodera-bridge"
+  info "Building tenodera-agent"
   echo "     system deps  →  Rust compilation (~2-4 min)  →  install"
-  cd "$BRIDGE_DIR"
+  cd "$AGENT_DIR"
   make all 2>&1 | cargo_quiet
 
   info "Cleaning up build artifacts..."
   rm -rf "$WORK_DIR"
 fi
 
-# ── Write bridge config ────────────────────────────────────────────
+# ── Write agent config ────────────────────────────────────────────
 
-info "Writing bridge config to ${CONF_DIR}/bridge.env..."
+info "Writing agent config to ${CONF_DIR}/agent.env..."
 mkdir -p "$CONF_DIR"
 chmod 755 "$CONF_DIR"
 
 if [ "$ACCEPT_INSECURE" = "1" ]; then
-  INSECURE_LINE="TENODERA_BRIDGE_ACCEPT_INSECURE=1"
+  INSECURE_LINE="TENODERA_AGENT_ACCEPT_INSECURE=1"
 else
-  INSECURE_LINE="# TENODERA_BRIDGE_ACCEPT_INSECURE=1"
+  INSECURE_LINE="# TENODERA_AGENT_ACCEPT_INSECURE=1"
 fi
 
-cat > "${CONF_DIR}/bridge.env" <<EOF
-# Tenodera Bridge configuration
-# Generated by tenodera-bridge.sh — edit as needed
+cat > "${CONF_DIR}/agent.env" <<EOF
+# Tenodera Agent configuration
+# Generated by tenodera-agent.sh — edit as needed
 
 TENODERA_GATEWAY_URL=${GATEWAY_URL}
 
@@ -164,24 +164,24 @@ TENODERA_GATEWAY_URL=${GATEWAY_URL}
 ${INSECURE_LINE}
 EOF
 
-chmod 600 "${CONF_DIR}/bridge.env"
+chmod 600 "${CONF_DIR}/agent.env"
 
 # ── Enable and start ───────────────────────────────────────────────
 
-info "Enabling and starting tenodera-bridge service..."
+info "Enabling and starting tenodera-agent service..."
 systemctl daemon-reload
-systemctl enable --now tenodera-bridge
+systemctl enable --now tenodera-agent
 
 # ── Verify ────────────────────────────────────────────────────────
 
 sleep 2
-if systemctl is-active --quiet tenodera-bridge; then
-  ok "tenodera-bridge is running"
+if systemctl is-active --quiet tenodera-agent; then
+  ok "tenodera-agent is running"
 else
   echo ""
   echo "  Service status:"
-  systemctl status tenodera-bridge --no-pager || true
-  fail "Service did not start — check logs: journalctl -u tenodera-bridge -n 30"
+  systemctl status tenodera-agent --no-pager || true
+  fail "Service did not start — check logs: journalctl -u tenodera-agent -n 30"
 fi
 
 # ── Cleanup ───────────────────────────────────────────────────────
@@ -191,12 +191,12 @@ if [ -n "$WORK_DIR" ]; then
   rm -rf "$WORK_DIR"
 fi
 
-ok "tenodera-bridge installed and running!"
+ok "tenodera-agent installed and running!"
 echo ""
-echo "  Config:  ${CONF_DIR}/bridge.env"
-echo "  Logs:    journalctl -u tenodera-bridge -f"
-echo "  Status:  systemctl status tenodera-bridge"
+echo "  Config:  ${CONF_DIR}/agent.env"
+echo "  Logs:    journalctl -u tenodera-agent -f"
+echo "  Status:  systemctl status tenodera-agent"
 echo ""
-echo "  The bridge will connect to: ${GATEWAY_URL}"
+echo "  The agent will connect to: ${GATEWAY_URL}"
 echo "  The host should appear online in the panel within seconds."
 echo ""

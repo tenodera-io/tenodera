@@ -1,25 +1,25 @@
 # tenodera-gateway
 
 HTTP/WebSocket server with PAM authentication, session management,
-TLS support, and reverse-WebSocket bridge registry.
+TLS support, and reverse-WebSocket agent registry.
 
 ## Role in Architecture
 
 The gateway is the central server accessible from the browser. It handles:
 
 1. **Login** -- PAM authentication via `tenodera-pam-helper` subprocess, sudo privilege check
-2. **WebSocket** -- channel-multiplexed transport to bridge connections
+2. **WebSocket** -- channel-multiplexed transport to agent connections
 3. **UI serving** -- static React SPA
 4. **TLS** -- optional encryption (rustls)
-5. **Multi-host** -- `BridgeRegistry` routes channels to the correct bridge by `host` field
+5. **Multi-host** -- `AgentRegistry` routes channels to the correct agent by `host` field
 
 ```
-Browser --> HTTPS/WSS --> Gateway (:9090) <-- outbound WS -- tenodera-bridge (each host)
+Browser --> HTTPS/WSS --> Gateway (:9090) <-- outbound WS -- tenodera-agent (each host)
 ```
 
-Bridges connect outbound to `GET /api/bridge`. The gateway auto-registers each host
+Agents connect outbound to `GET /api/agent`. The gateway auto-registers each host
 on first connect using the hostname from the `Hello` handshake (Zabbix-style). Multiple
-user WebSocket sessions share the same bridge connection via `BridgeRegistry`.
+user WebSocket sessions share the same agent connection via `AgentRegistry`.
 
 ## Modules
 
@@ -27,11 +27,10 @@ user WebSocket sessions share the same bridge connection via `BridgeRegistry`.
 |--------|-------------|
 | `main.rs` | Axum server setup, routing, shared state, core dump prevention |
 | `auth.rs` | Login (PAM + sudo check), logout (Bearer auth required) |
-| `ws.rs` | WebSocket upgrade, Origin validation, channel routing via BridgeRegistry |
-| `bridge_ws.rs` | `GET /api/bridge` endpoint — Hello/HelloAck handshake, bridge auto-registration |
-| `bridge_registry.rs` | In-memory registry of active bridge WebSocket connections |
+| `ws.rs` | WebSocket upgrade, Origin validation, channel routing via AgentRegistry |
+| `agent_ws.rs` | `GET /api/agent` endpoint — Hello/HelloAck handshake, agent auto-registration |
+| `agent_registry.rs` | In-memory registry of active agent WebSocket connections |
 | `session.rs` | In-memory session store with idle timeout, max lifetime, and reaper |
-| `bridge_transport.rs` | Declared but unused — dead code from a previous SSH-based architecture |
 | `pam.rs` | PAM authentication via `tenodera-pam-helper` subprocess, sudo privilege check via `sudo -l -U` |
 | `config.rs` | Configuration from environment variables |
 | `tls.rs` | TLS acceptor setup (tokio-rustls) |
@@ -47,7 +46,7 @@ user WebSocket sessions share the same bridge connection via `BridgeRegistry`.
 | `/api/auth/login` | POST | Login (PAM auth + sudo check, rate-limited per IP) |
 | `/api/auth/logout` | POST | Logout (requires `Authorization: Bearer <session_id>`) |
 | `/api/ws` | GET | WebSocket upgrade for browser sessions (`?session_id=...`, Origin validated) |
-| `/api/bridge` | GET | WebSocket upgrade for bridge connections (Hello/HelloAck handshake) |
+| `/api/agent` | GET | WebSocket upgrade for agent connections (Hello/HelloAck handshake) |
 | `/api/hosts` | GET | List all registered hosts with status |
 | `/api/hosts/{id}` | DELETE | Remove a host from the registry |
 | `/api/hosts/{id}` | PATCH | Update host metadata (e.g. name) |
@@ -60,11 +59,11 @@ user WebSocket sessions share the same bridge connection via `BridgeRegistry`.
 When a browser client opens a channel:
 
 - **No `host` field** -- returns a `host-required` error; all channels must specify a target host
-- **With `host` field** -- host ID looked up in `BridgeRegistry`; message forwarded to the
-  appropriate bridge connection. The `host` field is stripped before forwarding.
+- **With `host` field** -- host ID looked up in `AgentRegistry`; message forwarded to the
+  appropriate agent connection. The `host` field is stripped before forwarding.
 
 The gateway injects `_user` and `_role` from the authenticated session into every
-channel's `ChannelOpenOptions` before forwarding to the bridge. Handlers use `_role`
+channel's `ChannelOpenOptions` before forwarding to the agent. Handlers use `_role`
 to enforce admin-only operations via `require_admin()`.
 
 A background task polls for session existence every 5 seconds. When a session is

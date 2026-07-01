@@ -8,12 +8,12 @@ A self-hosted Linux server administration panel with real-time monitoring,
 terminal access, and multi-host management -- all from a single web interface.
 
 ```
-Browser ──WS──> Gateway (:9090) <──WS── tenodera-bridge (remote host)
-                                 <──WS── tenodera-bridge (localhost)
+Browser ──WS──> Gateway (:9090) <──WS── tenodera-agent (remote host)
+                                 <──WS── tenodera-agent (localhost)
 ```
 
 No open inbound ports on managed hosts.
-Each bridge connects outbound to the gateway over a persistent WebSocket.
+Each agent connects outbound to the gateway over a persistent WebSocket.
 
 ![MIT License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -36,13 +36,13 @@ Each bridge connects outbound to the gateway over a persistent WebSocket.
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
 | **DNS** | `/etc/resolv.conf` and `/etc/hosts` editing, DNS lookup tool, systemd-resolved configuration |
 | **Certificates** | TLS certificate scanning, trust store management, self-signed generation, Let's Encrypt |
-| **Multi-host** | Manage multiple servers from one panel via reverse-WebSocket bridge |
+| **Multi-host** | Manage multiple servers from one panel via reverse-WebSocket agent |
 | **Management** | Host role assignment, host restart, host removal — admin-only panel |
 | **Access control** | Role-based: Admin (sudo/wheel users) get full access; non-sudo users get read-only access |
 
 ## Install
 
-### Panel (gateway + UI + local bridge)
+### Panel (gateway + UI + local agent)
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh | sudo bash
@@ -52,31 +52,31 @@ This downloads the source, installs all build dependencies (Rust, Node.js,
 system libraries), compiles everything natively, installs binaries and
 systemd services, and starts the panel on port 9090.
 
-### Bridge (managed hosts)
+### Agent (managed hosts)
 
 On the **same host as the panel** (no arguments needed — defaults to local gateway):
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
   | sudo bash
 ```
 
 On **remote hosts** you want to manage:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<your-panel-host>:9090
 ```
 
 If the panel uses HTTPS with a self-signed certificate, add `--accept-insecure`:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway https://<your-panel-host>:9090 --accept-insecure
 ```
 
-The installer builds the bridge binary, writes `/etc/tenodera/bridge.env`, installs a systemd
-service, and starts it. The bridge connects outbound to the gateway — no inbound ports needed
+The installer builds the agent binary, writes `/etc/tenodera/agent.env`, installs a systemd
+service, and starts it. The agent connects outbound to the gateway — no inbound ports needed
 on the managed host. The host is registered automatically on first connection, identified by
 its hostname.
 
@@ -91,31 +91,31 @@ cd Tenodera
 # Panel (gateway host):
 cd panel && sudo make all
 
-# Bridge (managed hosts):
-cd bridge && sudo make all
+# Agent (managed hosts):
+cd agent && sudo make all
 ```
 
 ### Uninstall
 
 ```bash
-# Panel (removes gateway, bridge, UI, config, services):
+# Panel (removes gateway, agent, UI, config, services):
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh \
   | sudo bash -s -- --uninstall
 
-# Bridge only (on managed hosts):
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+# Agent only (on managed hosts):
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --uninstall
 ```
 
-Or from source: `cd panel && sudo make uninstall` / `cd bridge && sudo make uninstall`.
+Or from source: `cd panel && sudo make uninstall` / `cd agent && sudo make uninstall`.
 
-### Bridge configuration
+### Agent configuration
 
-The bridge config lives at `/etc/tenodera/bridge.env` on each managed host:
+The agent config lives at `/etc/tenodera/agent.env` on each managed host:
 
 ```bash
 TENODERA_GATEWAY_URL=http://<panel-host>:9090    # Gateway WebSocket endpoint (http:// or https://)
-# TENODERA_BRIDGE_ACCEPT_INSECURE=1              # Uncomment when gateway uses a self-signed TLS cert
+# TENODERA_AGENT_ACCEPT_INSECURE=1              # Uncomment when gateway uses a self-signed TLS cert
 
 # Optional: one or more roles assigned to this host (comma or space separated).
 # Roles are used to group hosts in the Management page.
@@ -126,7 +126,7 @@ TENODERA_GATEWAY_URL=http://<panel-host>:9090    # Gateway WebSocket endpoint (h
 Roles can also be changed at runtime from the **Management** page (admin only) —
 no manual edit or service restart required.
 
-Edit and restart: `sudo systemctl restart tenodera-bridge`
+Edit and restart: `sudo systemctl restart tenodera-agent`
 
 ## Configuration
 
@@ -143,7 +143,7 @@ Example with all available options:
 TENODERA_BIND_ADDR=0.0.0.0        # Listen address (default: 0.0.0.0)
 TENODERA_BIND_PORT=9090            # Listen port (default: 9090)
 
-# ── External URL (used in bridge install commands shown in the UI) ────────
+# ── External URL (used in agent install commands shown in the UI) ────────
 # Set this if the panel is behind a reverse proxy or has a public hostname.
 # Without it, the gateway falls back to the HTTP Host header, then bind addr.
 # TENODERA_EXTERNAL_URL=https://panel.example.com
@@ -154,8 +154,8 @@ TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem     # TLS private key (PEM)
 # TENODERA_ALLOW_UNENCRYPTED=1     # Allow plaintext HTTP (dev only!)
 
 # ── Paths ────────────────────────────────────────────────
-TENODERA_BRIDGE_BIN=/usr/local/bin/tenodera-bridge  # Bridge binary path
-TENODERA_UI_DIR=/usr/share/tenodera/ui              # Built UI assets
+TENODERA_AGENT_BIN=/usr/local/bin/tenodera-agent  # Agent binary path
+TENODERA_UI_DIR=/usr/share/tenodera/ui            # Built UI assets
 
 # ── Security ─────────────────────────────────────────────
 TENODERA_IDLE_TIMEOUT=900          # Session idle timeout in seconds (default: 900)
@@ -211,19 +211,19 @@ operations.
 
 ### Adding remote hosts
 
-Run the bridge installer on each host you want to manage:
+Run the agent installer on each host you want to manage:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
 On the panel host itself, `--gateway` can be omitted — it defaults to `http://127.0.0.1:9090`.
 
-The bridge connects outbound to the gateway and registers itself by hostname — no UI
+The agent connects outbound to the gateway and registers itself by hostname — no UI
 pre-registration, no tokens, no SSH keys, no open ports on the managed host.
 
-The host appears in the panel UI as soon as the bridge connects. Open the host selector
+The host appears in the panel UI as soon as the agent connects. Open the host selector
 (top-left) and click **Manage hosts…** to see all connected hosts. Select a host to
 start managing it.
 
@@ -234,16 +234,16 @@ sudo systemctl restart tenodera-gateway
 journalctl -u tenodera-gateway -f
 
 # Service management (managed hosts)
-sudo systemctl status tenodera-bridge
-sudo systemctl restart tenodera-bridge
-journalctl -u tenodera-bridge -f
+sudo systemctl status tenodera-agent
+sudo systemctl restart tenodera-agent
+journalctl -u tenodera-agent -f
 ```
 
 ### Health endpoints
 
 ```
 GET /api/health        → { status, sessions, uptime_secs, version }
-GET /api/health/ready  → 200 OK | 503 Service Unavailable (bridge binary check)
+GET /api/health/ready  → 200 OK | 503 Service Unavailable (agent binary check)
 ```
 
 Use `/api/health/ready` as a readiness probe in load balancers or container
@@ -260,26 +260,26 @@ orchestration.
                  /      |      \
    outbound WS  /       |       \  outbound WS
                /        |        \
-        [ Bridge ]  [ Bridge ]  [ Bridge ]   ...
+        [ Agent ]  [ Agent ]  [ Agent ]   ...
           host-1      host-2     localhost
           (srv01)     (srv02)   (panel host)
 ```
 
-Bridges work like **Zabbix active agents**: each one connects outbound to the
+Agents work like **Zabbix active agents**: each one connects outbound to the
 gateway over a persistent WebSocket, announces its hostname in a `Hello`
 handshake, and is auto-registered on first connect — no tokens, no pre-registration,
 no inbound ports required on managed hosts.
 
 - **Gateway** authenticates users via PAM, serves the React UI, and routes
-  channel-multiplexed JSON between browser sessions and the appropriate bridge.
-- **Bridge** is a lightweight systemd service deployed on each managed host.
+  channel-multiplexed JSON between browser sessions and the appropriate agent.
+- **Agent** is a lightweight systemd service deployed on each managed host.
   It connects outbound to the gateway, handles 39 operation types (system info,
   services, packages, terminal, DNS, certificates, …), and reconnects automatically with
   exponential backoff on disconnect.
 - **Protocol** is a shared Rust crate defining the message types used by
-  both gateway and bridge.
+  both gateway and agent.
 
-The bridge announces its protocol version via a `Hello/HelloAck` handshake on connect.
+The agent announces its protocol version via a `Hello/HelloAck` handshake on connect.
 The gateway checks compatibility and includes a warning in `HelloAck` if versions differ,
 but allows the connection to continue. Current protocol version: **1**.
 
@@ -287,11 +287,11 @@ but allows the connection to continue. Current protocol version: **1**.
 
 ```
 panel/                   Central server (gateway + UI)
-  crates/gateway/        Axum HTTP/WS gateway, PAM auth, reverse-WS bridge registry
+  crates/gateway/        Axum HTTP/WS gateway, PAM auth, reverse-WS agent registry
   ui/                    React 19 + TypeScript SPA (Vite 6)
   Makefile               Build & install
 
-bridge/                  Standalone bridge binary (deployed to managed hosts)
+agent/                   Standalone agent binary (deployed to managed hosts)
   src/handlers/          28 handler modules (39 registered handlers)
   Makefile               Build & install
 
@@ -374,8 +374,8 @@ cd panel && cargo clippy && cargo build
 # Frontend (dev server with HMR, proxies /api to :9090)
 cd panel/ui && npm ci && npm run dev
 
-# Bridge
-cd bridge && cargo clippy && cargo build
+# Agent
+cd agent && cargo clippy && cargo build
 ```
 
 ## License

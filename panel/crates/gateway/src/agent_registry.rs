@@ -7,38 +7,38 @@ use tenodera_protocol::message::Message;
 
 const SESSION_PREFIX_LEN: usize = 8;
 
-/// One entry per connected bridge host.
-struct BridgeConn {
-    /// Send messages to the bridge WS connection.
-    to_bridge: mpsc::Sender<Message>,
+/// One entry per connected agent host.
+struct AgentConn {
+    /// Send messages to the agent WS connection.
+    to_agent: mpsc::Sender<Message>,
     /// session_prefix → channel back to that WS session.
     subscribers: Arc<RwLock<HashMap<String, mpsc::Sender<Message>>>>,
-    /// Remote IP address of the bridge connection.
+    /// Remote IP address of the agent connection.
     remote_ip: Option<String>,
 }
 
-/// Registry of currently-connected bridge WebSocket connections.
-/// One entry per managed host; multiple user sessions share the same bridge connection.
+/// Registry of currently-connected agent WebSocket connections.
+/// One entry per managed host; multiple user sessions share the same agent connection.
 #[derive(Clone)]
-pub struct BridgeRegistry {
-    inner: Arc<RwLock<HashMap<String, Arc<BridgeConn>>>>,
+pub struct AgentRegistry {
+    inner: Arc<RwLock<HashMap<String, Arc<AgentConn>>>>,
 }
 
-impl BridgeRegistry {
+impl AgentRegistry {
     pub fn new() -> Self {
         Self { inner: Arc::new(RwLock::new(HashMap::new())) }
     }
 
-    /// Register a newly-connected bridge.
-    /// Returns the subscriber map so the bridge WS reader can route responses.
+    /// Register a newly-connected agent.
+    /// Returns the subscriber map so the agent WS reader can route responses.
     pub async fn register(
         &self,
         host_id: String,
-        to_bridge: mpsc::Sender<Message>,
+        to_agent: mpsc::Sender<Message>,
         remote_ip: Option<String>,
     ) -> Arc<RwLock<HashMap<String, mpsc::Sender<Message>>>> {
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
-        let conn = Arc::new(BridgeConn { to_bridge, subscribers: subscribers.clone(), remote_ip });
+        let conn = Arc::new(AgentConn { to_agent, subscribers: subscribers.clone(), remote_ip });
         self.inner.write().await.insert(host_id, conn);
         subscribers
     }
@@ -59,12 +59,12 @@ impl BridgeRegistry {
         self.inner.read().await.keys().cloned().collect()
     }
 
-    /// Subscribe a user WS session to a bridge connection.
+    /// Subscribe a user WS session to an agent connection.
     ///
     /// Returns a `(tx, rx)` pair:
     /// - `tx`: proxy sender — transparently prefixes channel IDs with `session_prefix`
-    ///   so multiple sessions can share the same bridge without channel ID collisions.
-    /// - `rx`: receives bridge responses for this session (prefix stripped).
+    ///   so multiple sessions can share the same agent without channel ID collisions.
+    /// - `rx`: receives agent responses for this session (prefix stripped).
     pub async fn connect_session(
         &self,
         host_id: &str,
@@ -76,13 +76,13 @@ impl BridgeRegistry {
 
         // Channel that the gateway session writes to (before prefixing)
         let (proxy_tx, mut proxy_rx) = mpsc::channel::<Message>(256);
-        // Channel that bridge responses are delivered to
+        // Channel that agent responses are delivered to
         let (sub_tx, sub_rx) = mpsc::channel::<Message>(256);
 
         conn.subscribers.write().await.insert(prefix.clone(), sub_tx);
 
-        // Proxy task: add prefix to channel IDs before forwarding to bridge
-        let real_tx = conn.to_bridge.clone();
+        // Proxy task: add prefix to channel IDs before forwarding to agent
+        let real_tx = conn.to_agent.clone();
         tokio::spawn(async move {
             while let Some(msg) = proxy_rx.recv().await {
                 let prefixed = prefix_message(msg, &prefix);

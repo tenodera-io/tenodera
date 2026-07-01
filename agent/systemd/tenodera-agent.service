@@ -1,13 +1,13 @@
 [Unit]
-Description=Tenodera Bridge Agent
+Description=Tenodera Agent
 Documentation=https://github.com/ultherego/Tenodera
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/tenodera-bridge
-EnvironmentFile=-/etc/tenodera/bridge.env
+ExecStart=/usr/local/bin/tenodera-agent
+EnvironmentFile=-/etc/tenodera/agent.env
 
 Restart=on-failure
 RestartSec=5

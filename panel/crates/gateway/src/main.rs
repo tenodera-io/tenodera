@@ -1,7 +1,7 @@
 mod audit;
 mod auth;
-mod bridge_registry;
-mod bridge_ws;
+mod agent_registry;
+mod agent_ws;
 mod config;
 mod hosts_config;
 mod pam;
@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
-use crate::bridge_registry::BridgeRegistry;
+use crate::agent_registry::AgentRegistry;
 use crate::config::GatewayConfig;
 use crate::rate_limit::LoginRateLimiter;
 use crate::session::SessionStore;
@@ -79,7 +79,7 @@ pub struct AppState {
     pub config: GatewayConfig,
     pub sessions: SessionStore,
     pub login_limiter: LoginRateLimiter,
-    pub bridge_registry: BridgeRegistry,
+    pub agent_registry: AgentRegistry,
     pub started_at: std::time::Instant,
 }
 
@@ -122,7 +122,7 @@ async fn main() -> anyhow::Result<()> {
         config,
         sessions,
         login_limiter,
-        bridge_registry: BridgeRegistry::new(),
+        agent_registry: AgentRegistry::new(),
         started_at: std::time::Instant::now(),
     });
 
@@ -134,7 +134,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/login", axum::routing::post(auth::login))
         .route("/api/auth/logout", axum::routing::post(auth::logout))
         .route("/api/ws", get(ws::ws_upgrade))
-        .route("/api/bridge", get(bridge_ws::bridge_ws_upgrade))
+        .route("/api/agent", get(agent_ws::agent_ws_upgrade))
         .route("/api/hosts", axum::routing::get(hosts_list))
         .route("/api/hosts/{id}", axum::routing::delete(hosts_remove).patch(hosts_patch))
         .route("/api/health", get(health))
@@ -254,7 +254,7 @@ async fn health(State(state): State<Arc<AppState>>) -> Json<HealthResponse> {
 #[derive(Serialize)]
 struct ReadyResponse {
     ready: bool,
-    bridge_bin: String,
+    agent_bin: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -262,7 +262,7 @@ struct ReadyResponse {
 async fn health_ready(
     State(state): State<Arc<AppState>>,
 ) -> (StatusCode, Json<ReadyResponse>) {
-    let bin = state.config.bridge_bin.clone();
+    let bin = state.config.agent_bin.clone();
     let (ready, error) = match tokio::fs::metadata(&bin).await {
         Ok(m) if {
             use std::os::unix::fs::PermissionsExt;
@@ -272,7 +272,7 @@ async fn health_ready(
         Err(e) => (false, Some(format!("{bin}: {e}"))),
     };
     let code = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
-    (code, Json(ReadyResponse { ready, bridge_bin: bin, error }))
+    (code, Json(ReadyResponse { ready, agent_bin: bin, error }))
 }
 
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
@@ -305,12 +305,12 @@ async fn hosts_list(
     State(state): State<Arc<AppState>>,
 ) -> Json<serde_json::Value> {
     let config = hosts_config::load().await;
-    let online = state.bridge_registry.online_host_ids().await;
+    let online = state.agent_registry.online_host_ids().await;
     let mut hosts = Vec::with_capacity(config.hosts.len());
     for h in &config.hosts {
         let is_online = online.contains(&h.id);
         let remote_ip = if is_online {
-            state.bridge_registry.get_remote_ip(&h.id).await
+            state.agent_registry.get_remote_ip(&h.id).await
         } else {
             None
         };

@@ -8,8 +8,8 @@ pub struct GatewayConfig {
     pub allow_unencrypted: bool,
     pub idle_timeout_secs: u64,
     pub max_startups: usize,
-    /// Path to the tenodera-bridge binary.
-    pub bridge_bin: String,
+    /// Path to the tenodera-agent binary.
+    pub agent_bin: String,
     /// TLS certificate file path (PEM). If set with tls_key, enables TLS.
     pub tls_cert: Option<String>,
     /// TLS private key file path (PEM).
@@ -23,33 +23,33 @@ impl GatewayConfig {
     /// Validate configuration at startup — fail fast with clear error messages
     /// instead of silently starting and failing on first user action.
     pub fn validate(&self) -> anyhow::Result<()> {
-        // Check bridge binary exists and is executable.
+        // Check agent binary exists and is executable.
         // If the path contains no '/', search PATH like the shell would.
-        let bridge_path = if self.bridge_bin.contains('/') {
-            std::path::PathBuf::from(&self.bridge_bin)
+        let agent_path = if self.agent_bin.contains('/') {
+            std::path::PathBuf::from(&self.agent_bin)
         } else {
             std::env::var_os("PATH")
                 .unwrap_or_default()
                 .to_string_lossy()
                 .split(':')
-                .map(|dir| std::path::Path::new(dir).join(&self.bridge_bin))
+                .map(|dir| std::path::Path::new(dir).join(&self.agent_bin))
                 .find(|p| p.exists())
-                .unwrap_or_else(|| std::path::PathBuf::from(&self.bridge_bin))
+                .unwrap_or_else(|| std::path::PathBuf::from(&self.agent_bin))
         };
 
-        match std::fs::metadata(&bridge_path) {
+        match std::fs::metadata(&agent_path) {
             Ok(meta) => {
                 if meta.permissions().mode() & 0o111 == 0 {
                     anyhow::bail!(
-                        "bridge binary '{}' exists but is not executable — run: chmod +x {}",
-                        bridge_path.display(), bridge_path.display()
+                        "agent binary '{}' exists but is not executable — run: chmod +x {}",
+                        agent_path.display(), agent_path.display()
                     );
                 }
             }
             Err(e) => {
                 anyhow::bail!(
-                    "bridge binary '{}' not found: {} — build and install tenodera-bridge first",
-                    self.bridge_bin, e
+                    "agent binary '{}' not found: {} — build and install tenodera-agent first",
+                    self.agent_bin, e
                 );
             }
         }
@@ -126,8 +126,8 @@ impl Default for GatewayConfig {
                 .and_then(|s| s.parse().ok())
                 .map(|n: usize| n.max(1)) // min 1 to prevent disabling all auth
                 .unwrap_or(20),
-            bridge_bin: std::env::var("TENODERA_BRIDGE_BIN")
-                .unwrap_or_else(|_| "tenodera-bridge".to_string()),
+            agent_bin: std::env::var("TENODERA_AGENT_BIN")
+                .unwrap_or_else(|_| "tenodera-agent".to_string()),
             tls_cert: std::env::var("TENODERA_TLS_CERT")
                 .ok()
                 .filter(|s| !s.is_empty()),

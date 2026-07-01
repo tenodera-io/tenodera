@@ -313,7 +313,7 @@ fn lookup_user(username: &str) -> Option<(u32, u32, String, String)> {
 /// because `fork()` in a multi-threaded process only duplicates the calling
 /// thread — all tokio runtime threads die in the child. Additionally, raw
 /// `fork()` does not set `CLOEXEC` on inherited file descriptors, so the
-/// child process inherits the bridge's stdin/stdout pipes (SSH transport),
+/// child process inherits the agent's stdin/stdout pipes (SSH transport),
 /// which can corrupt the JSON protocol stream.
 ///
 /// `std::process::Command` handles `fork()`+`exec()` safely, sets `CLOEXEC`
@@ -381,7 +381,7 @@ fn open_pty(
     unsafe {
         let user_info_clone = user_info.clone();
         cmd.pre_exec(move || {
-            // Create new session (detach from bridge's session)
+            // Create new session (detach from agent's session)
             libc::setsid();
 
             // Set controlling terminal — fd 0 is the PTY slave (set by Command)

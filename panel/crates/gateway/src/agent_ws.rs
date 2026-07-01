@@ -11,29 +11,29 @@ use tokio::sync::mpsc;
 use tenodera_protocol::message::{self, PROTOCOL_VERSION};
 
 use crate::AppState;
-use crate::bridge_registry::{self, BridgeRegistry};
+use crate::agent_registry::{self, AgentRegistry};
 use crate::hosts_config;
 
-/// GET /api/bridge — WebSocket endpoint for bridge connections.
+/// GET /api/agent — WebSocket endpoint for agent connections.
 ///
-/// Any bridge may connect. The bridge identifies itself via its hostname sent
+/// Any agent may connect. The agent identifies itself via its hostname sent
 /// in the Hello message. If no entry exists for that hostname, one is created
 /// automatically (Zabbix-style auto-registration).
-pub async fn bridge_ws_upgrade(
+pub async fn agent_ws_upgrade(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
-    let registry = state.bridge_registry.clone();
+    let registry = state.agent_registry.clone();
     let remote_ip = addr.ip().to_string();
-    ws.on_upgrade(move |socket| handle_bridge_socket(registry, socket, remote_ip))
+    ws.on_upgrade(move |socket| handle_agent_socket(registry, socket, remote_ip))
 }
 
-async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket, remote_ip: String) {
+async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_ip: String) {
     let (mut sink, mut stream) = socket.split();
 
     // ── Hello/HelloAck handshake ──────────────────────────────────────────
-    let (bridge_version, hostname, is_local) = loop {
+    let (agent_version, hostname, is_local) = loop {
         match stream.next().await {
             Some(Ok(Message::Text(text))) => {
                 match serde_json::from_str::<message::Message>(&text) {
@@ -41,7 +41,7 @@ async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket, remot
                         break (version, hostname, is_local);
                     }
                     Ok(other) => {
-                        tracing::warn!(?other, "expected Hello from bridge");
+                        tracing::warn!(?other, "expected Hello from agent");
                         return;
                     }
                     Err(e) => {
@@ -67,12 +67,12 @@ async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket, remot
         host_id = %host.id,
         host_name = %host.name,
         hostname = %effective_hostname,
-        "bridge connection accepted"
+        "agent connection accepted"
     );
 
-    let warning = if bridge_version != PROTOCOL_VERSION {
+    let warning = if agent_version != PROTOCOL_VERSION {
         let w = format!(
-            "protocol version mismatch: gateway={PROTOCOL_VERSION}, bridge={bridge_version}"
+            "protocol version mismatch: gateway={PROTOCOL_VERSION}, agent={agent_version}"
         );
         tracing::warn!(host = %host.id, "{w}");
         Some(w)
@@ -95,29 +95,29 @@ async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket, remot
     tracing::info!(
         host = %host.id,
         hostname = %effective_hostname,
-        bridge_version,
-        "bridge handshake complete"
+        agent_version,
+        "agent handshake complete"
     );
 
-    // ── Register in bridge registry ───────────────────────────────────────
-    let (to_bridge_tx, mut to_bridge_rx) = mpsc::channel::<message::Message>(512);
-    let subscribers = registry.register(host.id.clone(), to_bridge_tx, Some(remote_ip)).await;
+    // ── Register in agent registry ────────────────────────────────────────
+    let (to_agent_tx, mut to_agent_rx) = mpsc::channel::<message::Message>(512);
+    let subscribers = registry.register(host.id.clone(), to_agent_tx, Some(remote_ip)).await;
 
-    // ── WS writer task: gateway → bridge ─────────────────────────────────
+    // ── WS writer task: gateway → agent ──────────────────────────────────
     let writer_handle = tokio::spawn(async move {
-        while let Some(msg) = to_bridge_rx.recv().await {
+        while let Some(msg) = to_agent_rx.recv().await {
             match serde_json::to_string(&msg) {
                 Ok(json) => {
                     if sink.send(Message::Text(json.into())).await.is_err() {
                         break;
                     }
                 }
-                Err(e) => tracing::warn!(error = %e, "failed to serialize message to bridge"),
+                Err(e) => tracing::warn!(error = %e, "failed to serialize message to agent"),
             }
         }
     });
 
-    // ── WS reader task: bridge → gateway sessions ─────────────────────────
+    // ── WS reader task: agent → gateway sessions ──────────────────────────
     while let Some(frame) = stream.next().await {
         let text = match frame {
             Ok(Message::Text(t)) => t,
@@ -129,12 +129,12 @@ async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket, remot
         let msg: message::Message = match serde_json::from_str(&text) {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!(host = %host.id, error = %e, "invalid message from bridge");
+                tracing::warn!(host = %host.id, error = %e, "invalid message from agent");
                 continue;
             }
         };
 
-        let (stripped, prefix) = match bridge_registry::strip_prefix_from_message(msg) {
+        let (stripped, prefix) = match agent_registry::strip_prefix_from_message(msg) {
             Some(pair) => pair,
             None => continue,
         };
@@ -153,5 +153,5 @@ async fn handle_bridge_socket(registry: BridgeRegistry, socket: WebSocket, remot
     hosts_config::update_last_seen(&host.id).await;
     registry.unregister(&host.id).await;
     writer_handle.abort();
-    tracing::info!(host = %host.id, "bridge disconnected");
+    tracing::info!(host = %host.id, "agent disconnected");
 }

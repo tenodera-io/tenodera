@@ -153,7 +153,7 @@ pub async fn login(
     }
 
     // Determine role: admin if user is in sudo/wheel/admin group, readonly otherwise.
-    // Non-admin users can still log in but write operations will be rejected by the bridge.
+    // Non-admin users can still log in but write operations will be rejected by the agent.
     let role = match pam::verify_sudo(&req.user).await {
         Ok(()) => Role::Admin,
         Err(e) => {

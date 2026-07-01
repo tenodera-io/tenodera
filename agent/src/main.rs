@@ -14,20 +14,20 @@ use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing_subscriber::EnvFilter;
 
-use crate::config::BridgeConfig;
+use crate::config::AgentConfig;
 use crate::router::Router;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::from_default_env().add_directive("tenodera_bridge=debug".parse()?),
+            EnvFilter::from_default_env().add_directive("tenodera_agent=debug".parse()?),
         )
         .with_ansi(false)
         .with_writer(std::io::stderr)
         .init();
 
-    let config = match BridgeConfig::from_env() {
+    let config = match AgentConfig::from_env() {
         Ok(c) => c,
         Err(e) => {
             tracing::error!("{e}");
@@ -36,7 +36,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let hostname = hostname();
-    tracing::info!(gateway = %config.bridge_ws_url(), %hostname, "tenodera-bridge starting");
+    tracing::info!(gateway = %config.agent_ws_url(), %hostname, "tenodera-agent starting");
 
     let mut backoff_secs: u64 = 1;
     loop {
@@ -54,8 +54,8 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn run_session(config: &BridgeConfig, hostname: &str) -> anyhow::Result<()> {
-    let url = config.bridge_ws_url();
+async fn run_session(config: &AgentConfig, hostname: &str) -> anyhow::Result<()> {
+    let url = config.agent_ws_url();
     let connector = build_tls_connector(config);
     let request = url.clone().into_client_request()?;
 
@@ -163,9 +163,9 @@ async fn run_session(config: &BridgeConfig, hostname: &str) -> anyhow::Result<()
     Ok(())
 }
 
-fn build_tls_connector(config: &BridgeConfig) -> Option<tokio_tungstenite::Connector> {
+fn build_tls_connector(config: &AgentConfig) -> Option<tokio_tungstenite::Connector> {
     if config.accept_insecure {
-        tracing::warn!("TLS certificate verification disabled (TENODERA_BRIDGE_ACCEPT_INSECURE=1)");
+        tracing::warn!("TLS certificate verification disabled (TENODERA_AGENT_ACCEPT_INSECURE=1)");
         let rustls_config = rustls::ClientConfig::builder()
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(SkipVerify))

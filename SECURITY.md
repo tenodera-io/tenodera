@@ -45,8 +45,8 @@ Every response includes:
 
 ### Authorization
 
-- The gateway injects `_user` and `_role` into every channel message before forwarding to the bridge — the bridge never trusts client-supplied identity
-- Admin-only operations (firewall changes, user management, package install, host restart, etc.) are gated by `require_admin()` on the bridge side, which checks the gateway-injected `_role`
+- The gateway injects `_user` and `_role` into every channel message before forwarding to the agent — the agent never trusts client-supplied identity
+- Admin-only operations (firewall changes, user management, package install, host restart, etc.) are gated by `require_admin()` on the agent side, which checks the gateway-injected `_role`
 - Read-only users can observe but cannot execute any write operation
 
 ### Audit Logging
@@ -63,7 +63,7 @@ The gateway service runs with:
 - `ProtectHome=yes`
 - Dedicated unprivileged service user (`tenodera-gw`)
 
-The bridge service runs as a separate unprivileged user (`tenodera-brdg`) and uses `sudo -S` only for operations that require elevated privileges, with the password supplied by the authenticated user.
+The agent service runs as a separate unprivileged user (`tenodera-brdg`) and uses `sudo -S` only for operations that require elevated privileges, with the password supplied by the authenticated user.
 
 ### Input Validation
 
@@ -78,7 +78,7 @@ The bridge service runs as a separate unprivileged user (`tenodera-brdg`) and us
 These are not handled by the software itself and remain the operator's responsibility:
 
 - **Use a reverse proxy** (nginx, Caddy) in front of the gateway for additional TLS termination, access logging, and DDoS mitigation
-- **Restrict network access** — expose port 9090 only to trusted networks or via VPN; the bridge connects outbound and needs no inbound port
+- **Restrict network access** — expose port 9090 only to trusted networks or via VPN; the agent connects outbound and needs no inbound port
 - **Use strong system passwords** — authentication relies on PAM/system accounts; password strength is determined by the OS PAM configuration
 - **Rotate TLS certificates** — the installer can generate a self-signed cert for testing, but use a CA-signed certificate in production
 - **Review sudo configuration** — the `admin` role is granted to any user with unrestricted sudo; ensure your `/etc/sudoers` reflects intended access

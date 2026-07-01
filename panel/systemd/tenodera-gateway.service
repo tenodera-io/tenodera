@@ -16,11 +16,11 @@ EnvironmentFile=-/etc/tenodera/gateway.env
 # Zabbix, and Apache.
 #
 # NoNewPrivileges is intentionally NOT set: child processes (tenodera-pam-helper,
-# tenodera-bridge) are setuid root and must be able to gain root for PAM auth
+# tenodera-agent) are setuid root and must be able to gain root for PAM auth
 # and PTY user switching.
 #
 # The following systemd security directives are intentionally NOT used
-# because they break setuid child processes (pam-helper, bridge):
+# because they break setuid child processes (pam-helper, agent):
 #
 #   PrivateTmp=yes            — user namespace mount isolation drops setuid
 #   RestrictNamespaces=yes    — implies NoNewPrivileges
@@ -29,7 +29,7 @@ EnvironmentFile=-/etc/tenodera/gateway.env
 #   ProtectKernelModules=yes  — implies NoNewPrivileges on this systemd version
 #   CapabilityBoundingSet=    — empty set inherited by children; breaks setuid helpers
 #   MemoryDenyWriteExecute    — PAM modules (pam_sss.so, pam_ldap.so) may need W+X
-#   ProtectSystem=strict      — bridge child processes write to /usr, /var, /run
+#   ProtectSystem=strict      — agent child processes write to /usr, /var, /run
 RestrictSUIDSGID=no
 ProtectControlGroups=yes
 

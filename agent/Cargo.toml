@@ -1,11 +1,11 @@
 [package]
-name = "tenodera-bridge"
+name = "tenodera-agent"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 
 [[bin]]
-name = "tenodera-bridge"
+name = "tenodera-agent"
 path = "src/main.rs"
 
 [dependencies]

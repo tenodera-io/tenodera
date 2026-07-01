@@ -132,7 +132,7 @@ async fn list_log_files(base: &str, password: &str) -> Vec<serde_json::Value> {
         return list_log_files_sudo(base, password).await;
     }
 
-    // Direct filesystem access (root bridge or no password)
+    // Direct filesystem access (root agent or no password)
     list_log_files_direct(base).await
 }
 
@@ -285,9 +285,9 @@ fn validate_log_path(path: &str) -> Result<PathBuf, String> {
     Ok(canonical)
 }
 
-/// Validate a log path using sudo realpath — for non-root bridge with
+/// Validate a log path using sudo realpath — for non-root agent with
 /// administrative access, where the directory may not be readable by the
-/// bridge user but is accessible via sudo.
+/// agent user but is accessible via sudo.
 async fn validate_log_path_sudo(path: &str, password: &str) -> Result<PathBuf, String> {
     let p = Path::new(path);
     if !p.is_absolute() || path.contains("..") {

@@ -33,7 +33,7 @@ Communicates with the gateway via WebSocket using the channel protocol.
 
 **`HostTransportContext.tsx`** -- React context for transparent multi-host
 routing. When a `hostId` is set, all channel opens include
-`{ host: hostId }` so the gateway routes to the remote bridge.
+`{ host: hostId }` so the gateway routes to the remote agent.
 
 ### Pages (`src/pages/`)
 

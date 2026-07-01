@@ -1,28 +1,28 @@
 # tenodera-protocol
 
 Shared type library defining the channel-based communication protocol
-between the gateway and bridge.
+between the gateway and agent.
 
 ## Role in Architecture
 
 `tenodera-protocol` is a **library crate** -- it produces no binary.
-Both `tenodera-gateway` and `tenodera-bridge` depend on it via path
+Both `tenodera-gateway` and `tenodera-agent` depend on it via path
 dependency. It defines the message format for channel-multiplexed JSON
 communication over WebSocket (browser <-> gateway) and stdin/stdout
-(gateway <-> bridge).
+(gateway <-> agent).
 
 ## Message Types
 
 | Variant | Direction | Description |
 |---------|-----------|-------------|
-| `Open` | Client -> Bridge | Open a new channel (payload type + options) |
-| `Ready` | Bridge -> Client | Channel is ready |
+| `Open` | Client -> Agent | Open a new channel (payload type + options) |
+| `Ready` | Agent -> Client | Channel is ready |
 | `Data` | Bidirectional | Payload data (`serde_json::Value`) |
 | `Control` | Bidirectional | Control signal on a channel |
 | `Close` | Bidirectional | Channel close (`problem: None` = clean) |
 | `Ping` | Bidirectional | Heartbeat |
 | `Pong` | Bidirectional | Heartbeat response |
-| `AuthResult` | Bridge -> Client | Authentication result (used internally) |
+| `AuthResult` | Agent -> Client | Authentication result (used internally) |
 
 ## Payload Types
 

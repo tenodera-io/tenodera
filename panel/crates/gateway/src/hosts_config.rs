@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct HostEntry {
     pub id: String,
     pub name: String,
-    /// System hostname reported by the bridge in Hello.
+    /// System hostname reported by the agent in Hello.
     #[serde(default)]
     pub hostname: String,
     /// ISO-8601 timestamp when the host was first registered.
@@ -18,7 +18,7 @@ pub struct HostEntry {
     /// User-assigned display name; falls back to `name` when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
-    /// ISO-8601 timestamp of the last bridge disconnect (updated on each disconnect).
+    /// ISO-8601 timestamp of the last agent disconnect (updated on each disconnect).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_seen: Option<String>,
     /// Legacy field — kept so existing hosts.json files deserialize cleanly.
@@ -73,7 +73,7 @@ pub async fn find_or_register_by_hostname(hostname: &str, is_local: bool) -> Hos
             config.hosts[i].hostname = hostname.to_string();
             changed = true;
         }
-        // Update is_local if it changed (e.g. bridge.env switched to localhost URL)
+        // Update is_local if it changed (e.g. agent.env switched to localhost URL)
         if config.hosts[i].is_local != is_local {
             config.hosts[i].is_local = is_local;
             changed = true;

@@ -24,7 +24,7 @@ The service file includes the following hardening directives:
 | `MemoryDenyWriteExecute=yes` | Prevent W+X memory mappings |
 | `RestrictSUIDSGID=no` | Required for `useradd`/`groupadd` lock file management |
 
-**Note:** `ReadWritePaths` includes `/etc` because the bridge (spawned as a
+**Note:** `ReadWritePaths` includes `/etc` because the agent (spawned as a
 child of the gateway) needs to write to `/etc/passwd`, `/etc/shadow`,
 `/etc/group`, `/etc/gshadow`, and create lock files like `/etc/.pwd.lock`
 for user and group management operations. The `/home` path is needed for

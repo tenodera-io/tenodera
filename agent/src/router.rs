@@ -23,7 +23,7 @@ pub struct Router {
     channel_handlers: HashMap<ChannelId, Arc<dyn ChannelHandler>>,
     /// Maps channel id → open options (for injecting context into Data messages).
     channel_options: HashMap<ChannelId, ChannelOpenOptions>,
-    /// Sender for outgoing messages (bridge → gateway).
+    /// Sender for outgoing messages (agent → gateway).
     out_tx: mpsc::Sender<Message>,
 }
 
@@ -169,7 +169,7 @@ impl Router {
             }
             Message::Ping => vec![Message::Pong],
             _ => {
-                tracing::debug!(?msg, "unhandled message in bridge");
+                tracing::debug!(?msg, "unhandled message in agent");
                 vec![]
             }
         }

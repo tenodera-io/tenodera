@@ -1,31 +1,31 @@
 
-pub struct BridgeConfig {
+pub struct AgentConfig {
     pub gateway_url: String,
     /// Skip TLS certificate verification. Use only for dev/self-signed certs.
     pub accept_insecure: bool,
 }
 
-impl BridgeConfig {
+impl AgentConfig {
     pub fn from_env() -> anyhow::Result<Self> {
         load_env_file();
 
         let gateway_url = std::env::var("TENODERA_GATEWAY_URL")
-            .map_err(|_| anyhow::anyhow!("TENODERA_GATEWAY_URL not set in environment or /etc/tenodera/bridge.env"))?;
+            .map_err(|_| anyhow::anyhow!("TENODERA_GATEWAY_URL not set in environment or /etc/tenodera/agent.env"))?;
 
-        let accept_insecure = std::env::var("TENODERA_BRIDGE_ACCEPT_INSECURE")
+        let accept_insecure = std::env::var("TENODERA_AGENT_ACCEPT_INSECURE")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
         Ok(Self { gateway_url, accept_insecure })
     }
 
-    /// WebSocket URL for the bridge endpoint on the gateway.
-    pub fn bridge_ws_url(&self) -> String {
+    /// WebSocket URL for the agent endpoint on the gateway.
+    pub fn agent_ws_url(&self) -> String {
         let base = self.gateway_url.trim_end_matches('/');
         let base = base
             .replacen("https://", "wss://", 1)
             .replacen("http://", "ws://", 1);
-        format!("{base}/api/bridge")
+        format!("{base}/api/agent")
     }
 
     /// True when the gateway URL points to localhost — used to mark the panel host.
@@ -39,31 +39,31 @@ impl BridgeConfig {
 mod tests {
     use super::*;
 
-    fn cfg(url: &str) -> BridgeConfig {
-        BridgeConfig { gateway_url: url.to_string(), accept_insecure: false }
+    fn cfg(url: &str) -> AgentConfig {
+        AgentConfig { gateway_url: url.to_string(), accept_insecure: false }
     }
 
     #[test]
     fn https_becomes_wss() {
         assert_eq!(
-            cfg("https://panel.example.com:9090").bridge_ws_url(),
-            "wss://panel.example.com:9090/api/bridge"
+            cfg("https://panel.example.com:9090").agent_ws_url(),
+            "wss://panel.example.com:9090/api/agent"
         );
     }
 
     #[test]
     fn http_becomes_ws() {
         assert_eq!(
-            cfg("http://panel.example.com:9090").bridge_ws_url(),
-            "ws://panel.example.com:9090/api/bridge"
+            cfg("http://panel.example.com:9090").agent_ws_url(),
+            "ws://panel.example.com:9090/api/agent"
         );
     }
 
     #[test]
     fn trailing_slash_stripped() {
         assert_eq!(
-            cfg("https://panel.example.com:9090/").bridge_ws_url(),
-            "wss://panel.example.com:9090/api/bridge"
+            cfg("https://panel.example.com:9090/").agent_ws_url(),
+            "wss://panel.example.com:9090/api/agent"
         );
     }
 
@@ -89,7 +89,7 @@ mod tests {
 }
 
 fn load_env_file() {
-    let path = "/etc/tenodera/bridge.env";
+    let path = "/etc/tenodera/agent.env";
     let Ok(content) = std::fs::read_to_string(path) else { return };
     for line in content.lines() {
         let line = line.trim();
