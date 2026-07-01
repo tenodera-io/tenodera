@@ -78,8 +78,32 @@ fi
 INSTALL_BIN="${INSTALL_DIR}/tenodera-bridge"
 WORK_DIR=""
 
+SYSTEMD_SERVICE="/etc/systemd/system/tenodera-bridge.service"
+
 if [ -x "$INSTALL_BIN" ]; then
   info "tenodera-bridge already installed at ${INSTALL_BIN} — skipping build"
+  # Service file may be missing if the binary was copied manually.
+  if [ ! -f "$SYSTEMD_SERVICE" ]; then
+    info "Service file missing — installing tenodera-bridge.service..."
+    cat > "$SYSTEMD_SERVICE" <<'SVCEOF'
+[Unit]
+Description=Tenodera Bridge Agent
+Documentation=https://github.com/ultherego/Tenodera
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/tenodera-bridge
+EnvironmentFile=-/etc/tenodera/bridge.env
+
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+SVCEOF
+  fi
 else
   REPO="ultherego/Tenodera"
   BRANCH="main"

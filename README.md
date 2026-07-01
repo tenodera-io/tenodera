@@ -99,10 +99,12 @@ cd bridge && sudo make all
 
 ```bash
 # Panel (removes gateway, bridge, UI, config, services):
-sudo bash tenodera-panel.sh --uninstall
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-panel.sh \
+  | sudo bash -s -- --uninstall
 
 # Bridge only (on managed hosts):
-sudo bash tenodera-bridge.sh --uninstall
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-bridge.sh \
+  | sudo bash -s -- --uninstall
 ```
 
 Or from source: `cd panel && sudo make uninstall` / `cd bridge && sudo make uninstall`.
