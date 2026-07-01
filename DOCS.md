@@ -18,6 +18,22 @@
 6. [Authentication & Access Control](#6-authentication--access-control)
 7. [Multi-Host Management](#7-multi-host-management)
 8. [Feature Reference](#8-feature-reference)
+   - 8.1 [Dashboard](#81-dashboard)
+   - 8.2 [Terminal](#82-terminal)
+   - 8.3 [Services](#83-services)
+   - 8.4 [Users & Groups](#84-users--groups)
+   - 8.5 [Packages](#85-packages)
+   - 8.6 [Storage](#86-storage)
+   - 8.7 [Networking](#87-networking)
+   - 8.8 [Containers](#88-containers)
+   - 8.9 [Files](#89-files)
+   - 8.10 [Logs (Journal)](#810-logs-journal)
+   - 8.11 [Log Files](#811-log-files)
+   - 8.12 [Cron Jobs](#812-cron-jobs)
+   - 8.13 [Kernel Dump (kdump)](#813-kernel-dump-kdump)
+   - 8.14 [DNS](#814-dns)
+   - 8.15 [Certificates](#815-certificates)
+   - 8.16 [Management](#816-management-admin-only)
 9. [Service Management](#9-service-management)
 10. [Health & Monitoring](#10-health--monitoring)
 11. [Architecture](#11-architecture)
@@ -385,69 +401,507 @@ Agents reconnect automatically with exponential backoff if the connection to the
 
 ## 8. Feature Reference
 
-### Dashboard
+This section describes every page and sub-tab available in the Tenodera UI. Write operations (marked **admin only**) require the user to be a member of the `sudo`, `wheel`, or `admin` group on the panel host.
 
-Real-time streaming charts for CPU usage, RAM and swap, disk I/O (read/write), and network I/O (in/out). Data is streamed over WebSocket — no polling.
+Many write operations also require entering the **superuser password** — this is the password of the currently logged-in user (used for `sudo -S` on the managed host). A padlock button in the top bar opens the superuser password prompt; the password is stored encrypted in browser `sessionStorage` for the duration of the session.
 
-### Terminal
+---
 
-Full PTY terminal in the browser using xterm.js. Opens a shell as the authenticated user. Supports terminal resize. The agent drops to the user's UID/GID before spawning the shell — no root shell is exposed.
+### 8.1 Dashboard
 
-### Services
+The Dashboard provides a live overview of the selected host's system state. All metrics are streamed over WebSocket — no page refresh needed.
 
-Lists all systemd units. Actions: start, stop, restart, enable, disable. Requires admin role for write operations. Reads unit status and journal output.
+**System information panel**
 
-### Users & Groups
+- Hostname, operating system (name, version, ID)
+- Uptime, boot time, current host time and timezone
+- CPU model, core count, thread count, frequency (MHz), architecture
+- Kernel version
+- CPU temperatures (per sensor, with critical threshold if available)
 
-View and manage local system users and groups. Actions: create user, delete user, lock/unlock account, change password, assign groups. NSS-aware — works with LDAP/SSSD users.
+**Real-time charts** (90-point rolling history, configurable interval)
 
-### Packages
+| Chart | Metrics |
+|-------|---------|
+| CPU | User %, system % — stacked area chart |
+| Load average | 1-minute, 5-minute, 15-minute load |
+| Memory | Used % (from MemTotal − MemAvailable) |
+| Disk I/O | Read KB/s, write KB/s |
+| Network I/O | RX bytes/s, TX bytes/s (aggregated) |
 
-Shows installed packages. Package manager detected automatically (apt, dnf, pacman). Actions: search, install, update, remove. Repository management for apt (sources.list) and dnf (repo files).
+**Disk partitions table**
 
-### Storage
+Device, mount point, filesystem type, total size, used, free, use %.
 
-Block devices, mount points, partition usage. Real-time I/O charts per device. SMART status where available.
+**Network interfaces table**
 
-### Networking
+Interface name, state (up/down), MAC address, speed (Mbps), IPv4 and IPv6 addresses, RX/TX bytes and packets, error counts.
 
-Network interfaces with traffic charts. Firewall management supporting ufw, firewalld, and nftables. Interface up/down control. Bridges and VLANs.
+**Top processes table**
 
-### Containers
+PID, process name, CPU %, memory %, user, state — sorted by CPU usage descending.
 
-Lists Docker and Podman containers (user and root namespaces). Actions: start, stop, remove, create. Image browser. Container logs streamed in real time.
+---
 
-### Files
+### 8.2 Terminal
 
-Remote file browser. Navigate directories, view files, upload/download. Falls back to sudo for root-owned files when the user has sudo access.
+A full PTY (pseudo-terminal) running in the browser, powered by xterm.js.
 
-### Logs (journald)
+- Opens a shell as the **authenticated user** (the agent drops to the user's UID/GID via `setuid()`/`setgid()` before spawning the shell — no root shell is exposed)
+- 10 000-line scrollback buffer
+- Font: JetBrains Mono → Fira Code → Cascadia Code → monospace fallback, 14 px
+- Tokyo Night color theme (matches the rest of the UI)
+- **Auto-copy**: selecting text automatically copies it to the clipboard (requires HTTPS or localhost — browser Clipboard API restriction)
+- **Resize**: the terminal resizes automatically with the browser window (xterm.js FitAddon)
+- The connection is a WebSocket channel multiplexed through the gateway — no direct SSH to the managed host
 
-Streams systemd journal entries. Filter by unit name, priority, and time range.
+> **Note:** The Terminal works per-host. Use the host selector (top-left) to open a terminal on a different managed host.
 
-### Log Files
+---
 
-Browses `/var/log` directory. Keyword search with context lines. Date and time range filtering.
+### 8.3 Services
 
-### Cron Jobs
+Manage systemd units on the selected host.
 
-Lists all crontab sources: `/etc/crontab`, `/etc/cron.d/`, and per-user crontabs. View entries and edit raw crontab content.
+**Services tab**
 
-### Kernel Dump (kdump)
+Lists all loaded systemd units (services, sockets, mounts, etc.) with:
 
-Shows kdump service status, crash kernel configuration. Browses existing crash dump files.
+| Column | Description |
+|--------|-------------|
+| Unit | Unit filename (e.g. `sshd.service`) |
+| Description | Unit description string |
+| Active | `active` / `activating` / `deactivating` / `inactive` / `failed` |
+| State | `running` / `exited` / `dead` / `waiting` / `mounted` |
+| Load | `loaded` / `not-found` / `masked` |
 
-### DNS
+- **Filter** by unit name (text search)
+- **Sort** by Active or State column (click column header to cycle: desc → asc → unsorted)
+- Color coding: green = active/running, red = failed, gray = inactive
+- **Actions** (admin only): Start, Stop, Restart, Enable, Disable
 
-Edit `/etc/resolv.conf` and `/etc/hosts`. DNS lookup tool (wraps `dig`). systemd-resolved status and configuration.
+**Timers tab**
 
-### Certificates
+Lists all systemd timer units with:
+- Unit name and description
+- Active/sub state
+- Next scheduled run time
+- Last run time
+- Enabled state
+- Triggered unit (the service the timer activates)
 
-TLS certificate scanning (installed certs, expiry dates). System trust store management. Self-signed certificate generation. Let's Encrypt integration status.
+---
 
-### Management (admin only)
+### 8.4 Users & Groups
 
-Manage connected agents: view all hosts, assign roles, restart agent service, remove host from registry. Admin-only panel.
+Manage system users and groups on the selected host.
+
+**Users tab**
+
+Lists all users visible through NSS (local `/etc/passwd`, LDAP, SSSD, FreeIPA) with:
+
+| Field | Description |
+|-------|-------------|
+| Username | Login name |
+| UID / GID | Numeric user and primary group ID |
+| Full name | GECOS field |
+| Home | Home directory path |
+| Shell | Login shell |
+| Groups | All groups the user belongs to |
+| Status | Active or Locked |
+| Last login | Timestamp of most recent login |
+| Source | `local` or LDAP/SSSD source |
+
+- **Filter** by username (text search)
+- **Sort** by username, UID, or status (click column header)
+- **Actions** (admin only): Lock account, Unlock account, Delete user, Change password
+
+**Groups tab**
+
+Lists all groups visible through NSS with:
+- Group name, GID
+- Member list
+- System group flag
+
+**Create Account tab** (admin only)
+
+Create a new local user account:
+- Username, password
+- Full name (GECOS)
+- Home directory (auto-generated or custom)
+- Login shell (from allowed shell list)
+- Initial group memberships
+
+---
+
+### 8.5 Packages
+
+Manage software packages on the selected host. The package manager is **auto-detected** (apt for Debian/Ubuntu, dnf for RHEL/Fedora, pacman for Arch). The detected backend and distribution name are shown at the top of the page.
+
+**Installed tab**
+
+Lists all installed packages:
+- Name, version, repository source
+- Filter by name (text search)
+- Total package count shown
+
+**Search tab** (admin only for install)
+
+Search available packages in configured repositories:
+- Enter search query → results show name, version, description, repository
+- Install a package from search results
+
+**Updates tab** (admin only)
+
+Lists available package updates:
+- Package name, current installed version, available version
+- **Update all** — runs the full system upgrade (`apt upgrade`, `dnf upgrade`, `pacman -Syu`)
+- Live output streamed to the UI during update
+
+**Repositories tab** (admin only)
+
+View and manage configured repositories:
+
+| Backend | Fields shown |
+|---------|-------------|
+| apt | Repository line, file path, format (one-line / deb822), Types, URIs, Suites, Components |
+| dnf | Repo name, description, enabled state |
+| pacman | Server URL, Include path, SigLevel |
+
+- Enable / disable repositories (admin only)
+
+---
+
+### 8.6 Storage
+
+Monitor block devices and disk I/O on the selected host.
+
+**Block device tree**
+
+Displayed as a hierarchical tree (similar to `lsblk`):
+- Device name, size, type (disk / part / lvm / raid / etc.)
+- Mount points
+- Used / free space and use % (for mounted devices)
+- Tree connectors (├─ / └─) for child partitions and LVM volumes
+
+**Disk I/O chart**
+
+Real-time area chart showing read KB/s and write KB/s:
+- Configurable polling interval: 1 s, 5 s, 10 s, 30 s, 1 min, 5 min, 10 min, 30 min
+- 90-point rolling history
+- Interval preference saved in browser `localStorage`
+
+---
+
+### 8.7 Networking
+
+Monitor and manage network configuration on the selected host.
+
+**Overview tab**
+
+Real-time traffic charts per network interface:
+- Separate RX and TX lines per interface (up to 8 interfaces, color-coded)
+- Configurable polling interval: 1 s to 30 min
+- 90-point rolling history
+
+**Firewall tab** (write operations — admin only)
+
+Shows status and rules for all detected firewall backends (ufw, firewalld, nftables):
+- Primary active backend highlighted
+- Per-backend: active state, rule list
+- **Add rule**: port/protocol, source IP/CIDR, action (allow/deny)
+- **Remove rule**: by rule number or specification
+- Supports mixed environments (e.g. firewalld active alongside nftables)
+
+**Interfaces tab** (write operations — admin only)
+
+Detailed view of all network interfaces:
+- State (up/down), MAC address, MTU, link type, interface type, flags
+- IPv4 and IPv6 address list
+- **Bring interface up / down** (via `ip link set dev <iface> up/down` or nmcli)
+- VPN connections listed separately (type, device, state)
+
+**Logs tab**
+
+Network-related log entries from the system journal.
+
+---
+
+### 8.8 Containers
+
+Manage Docker and Podman containers on the selected host.
+
+**Containers tab**
+
+Lists all containers from both **user namespace** (rootless) and **root namespace**:
+
+| Column | Description |
+|--------|-------------|
+| Name | Container name |
+| Image | Image the container was created from |
+| State | `running` / `paused` / `restarting` / `created` / `exited` / `dead` |
+| Status | Human-readable status string |
+| Ports | Exposed port mappings |
+| Owner | `user` (rootless) or `root` |
+
+- Sorted by state (running first), then by owner (user before root)
+- **Actions** (admin only): Start, Stop, Remove
+
+**Images tab** (admin only)
+
+Lists all container images:
+- Repository, tags, size, creation date, owner (user/root)
+- **Remove image** (fails with a friendly error if the image is in use by a running container)
+
+**Create tab** (admin only)
+
+Create a new container from an image.
+
+---
+
+### 8.9 Files
+
+A remote file browser for the selected host.
+
+- Opens at the authenticated user's home directory (`/home/<user>`)
+- **Path input** with autocomplete: as you type a path, matching subdirectories are suggested (up to 12 suggestions)
+- Navigate with keyboard (arrow keys, Enter) or mouse
+- File listing shows: name, type (file / directory / symlink / unknown), size
+- **Sudo mode**: if the superuser password is active, root-owned directories are accessible via sudo fallback
+
+> **Note:** The file browser is currently read-only (directory navigation and listing). File download/upload and editing are not yet implemented.
+
+---
+
+### 8.10 Logs (Journal)
+
+Query the systemd journal on the selected host.
+
+- **Unit filter**: filter by unit name (e.g. `sshd`, `nginx`) — filter is debounced 400 ms after typing stops
+- **Line count**: configurable number of entries to fetch (default: 100)
+- Each entry shows: timestamp, unit name, priority, message text
+- **Refresh**: re-fetch with current filters
+- Superuser password enables access to protected journal entries
+
+---
+
+### 8.11 Log Files
+
+Browse and search files in `/var/log` on the selected host.
+
+**File list**
+
+- Lists all files in `/var/log` (recursively)
+- Shows filename, size, last-modified time
+- Filter by filename
+
+**Tail view**
+
+Shows the last N lines of the selected file (default: 100, configurable).
+
+**Search view**
+
+Full-text search within the selected file:
+
+| Option | Description |
+|--------|-------------|
+| Query | Search keyword or phrase |
+| Before | Context lines before each match (default: 3) |
+| After | Context lines after each match (default: 3) |
+| Max results | Maximum number of matching lines to return (default: 100) |
+| Date from / to | Filter by date range |
+| Time from / to | Filter by time range within the selected dates |
+
+Results show matched lines highlighted, with surrounding context lines. Total match count displayed.
+
+---
+
+### 8.12 Cron Jobs
+
+View and manage cron jobs on the selected host.
+
+**Sources**
+
+Tenodera reads all crontab sources:
+- `/etc/crontab` — system crontab
+- `/etc/cron.d/*` — drop-in system cron files
+- Per-user crontabs (`crontab -l -u <user>` for all users with a crontab)
+
+**Entry list**
+
+Each entry shows:
+- **Source** — file path or "User: \<username\>" for user crontabs
+- **Schedule** — raw cron expression (e.g. `0 3 * * *`) with a human-readable description:
+  - `@reboot` → "At boot"
+  - `@daily` / `@midnight` → "Daily"
+  - `0 3 * * *` → "Daily at 03:00"
+  - `*/6 * * * *` → "Every 6h"
+  - etc.
+- **User** — the user the command runs as
+- **Command** — the command executed
+- **Comment** — inline comment from the crontab file
+
+**Edit** (admin only)
+
+Click a source to open its raw content in an editor. Save writes the new crontab back to the file.
+
+---
+
+### 8.13 Kernel Dump (kdump)
+
+Monitor kernel crash dump configuration on the selected host.
+
+**Status panel**
+
+| Field | Description |
+|-------|-------------|
+| Installed | Whether kdump is installed (`kdump-tools` on Debian, `kexec-tools` on RHEL/Fedora) |
+| Service | Service name (`kdump` / `kdump-tools`), active state, enabled state |
+| Crash kernel loaded | Whether a secondary kernel is loaded in reserved memory |
+| Reserved memory | Bytes reserved for the crash kernel |
+| Kernel version | Running kernel version |
+
+**CrashKernel parameter**
+
+- Current `crashkernel=` boot parameter value
+- Whether it is configured (present in boot config)
+
+**Config file**
+
+- Path to the kdump config file
+- Full file content displayed
+
+**Crash dumps browser**
+
+Lists existing crash dump directories (typically under `/var/crash`):
+
+| Field | Description |
+|-------|-------------|
+| Name | Directory name |
+| Type | Dump type |
+| Size | Total size of dump directory |
+| Has vmcore | Whether the vmcore file is present |
+| Has dmesg | Whether a dmesg capture is present |
+| Timestamp | Creation time |
+
+- Expand a dump to see individual files (name, size, timestamp)
+- **View dmesg**: reads and displays the dmesg capture inline
+
+---
+
+### 8.14 DNS
+
+Manage DNS configuration on the selected host.
+
+**Resolver tab** (write — admin only)
+
+Displays and edits `/etc/resolv.conf`:
+- Nameserver list
+- Search domain list
+- Edit mode: modify content and save
+
+**`/etc/hosts` tab** (write — admin only)
+
+Displays and edits `/etc/hosts`:
+- Full file content in editable text area
+- Save writes back to the file
+
+**Lookup tab**
+
+Interactive DNS lookup tool (wraps `dig`):
+
+- Enter a hostname or IP address
+- Select query type: A, AAAA, MX, NS, TXT, CNAME, PTR, SOA, SRV
+- Results displayed as returned by `dig`
+
+**systemd-resolved tab** (write — admin only)
+
+- Shows whether `systemd-resolved` is active
+- Displays resolved configuration
+- Allows restarting the resolved service
+
+---
+
+### 8.15 Certificates
+
+Manage TLS certificates on the selected host.
+
+**Certificates tab**
+
+Scans common certificate locations and lists installed certificates:
+
+| Field | Description |
+|-------|-------------|
+| Common Name (CN) | Certificate subject CN |
+| Issuer | Issuer CN and organization |
+| Valid from | `notBefore` date |
+| Valid until | `notAfter` date |
+| Days remaining | Days until expiry (highlighted red when close) |
+| SANs | Subject Alternative Names |
+| Is CA | Whether this is a CA certificate |
+| Source | File path where the certificate was found |
+
+- Click a certificate to view full details
+- **Import certificate** (admin only): paste PEM-encoded certificate and private key → validated before saving
+- **Remove certificate** (admin only): requires superuser password
+
+**Trust Store tab** (admin only)
+
+Manage the system certificate trust store:
+- List trusted CA certificates
+- Add / remove trusted CAs
+
+**Let's Encrypt tab**
+
+Lists certificates managed by Certbot:
+- Domain name, covered domains, expiry date, days remaining
+- Paths to certificate and key files
+
+**Self-Signed tab** (admin only)
+
+Generate a self-signed TLS certificate:
+- Common Name, validity period
+- Generated certificate and key saved to specified paths
+
+---
+
+### 8.16 Management (admin only)
+
+An admin-only panel for managing all connected agents from a single view.
+
+**Host list**
+
+Shows all hosts that have ever connected to this gateway:
+
+| Column | Description |
+|--------|-------------|
+| Hostname | Agent hostname as reported in the `Hello` handshake |
+| Display name | Custom label (editable inline) |
+| Roles | Roles assigned to the host |
+| Status | Online / offline, with last-seen timestamp |
+| Uptime | Agent process uptime (online hosts only) |
+| IP | Remote IP address of the agent connection |
+
+- **Filter** by hostname or display name
+- The panel host itself is labeled **Panel / Local** automatically
+
+**Actions per host**
+
+| Action | Description |
+|--------|-------------|
+| Edit display name | Set a custom label shown in the host selector |
+| Edit roles | Add or remove role labels (comma-separated) |
+| Restart agent | Sends a restart command to the agent service |
+| Remove host | Removes the host from the registry (it will re-register on next connect) |
+
+> **Note:** All actions on offline hosts (except Remove) are disabled.
+
+**Host selector** (top bar, all users)
+
+The host selector dropdown (top-left, showing the current hostname) is available to all logged-in users. Click it to:
+- See all online and offline hosts
+- Switch the active host — all pages then show data from the selected host
+- Open **Manage hosts…** (Management page)
 
 ---
 
