@@ -5,10 +5,10 @@
 </p>
 
 A self-hosted Linux server administration panel with real-time monitoring,
-terminal access, and multi-host management -- all from a single web interface.
+terminal access, and multi-host management — all from a single web interface.
 
 ```
-Browser ──WS──> Gateway (:9090) <──WS── tenodera-agent (remote host)
+Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote host)
                                  <──WS── tenodera-agent (localhost)
 ```
 
@@ -21,24 +21,23 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 
 | Category | Capabilities |
 |----------|-------------|
-| **Dashboard** | CPU, RAM, swap, disk I/O, network I/O -- real-time streaming charts |
+| **Dashboard** | CPU, RAM, swap, disk I/O, network I/O — real-time streaming charts |
 | **Terminal** | Full PTY shell in the browser (xterm.js) |
-| **Services** | systemd unit management -- start / stop / restart / enable / disable |
+| **Services** | systemd unit management — start / stop / restart / enable / disable |
 | **Users & Groups** | User account CRUD, group management, lock/unlock, password policy |
 | **Packages** | Installed packages, search, install, update, repository management (apt, dnf, pacman) |
 | **Storage** | Block devices, mount points, partition usage, I/O charts |
-| **Networking** | Interfaces, traffic, firewall (ufw/firewalld/nftables), bridges, VLANs, VPN |
-| **Containers** | Docker / Podman -- containers, images, create, logs (user + root) |
+| **Networking** | Interfaces, traffic, firewall (ufw / firewalld / nftables), bridges, VLANs |
+| **Containers** | Docker / Podman — containers, images, create, logs |
 | **Files** | Remote file browser with sudo fallback |
-| **Logs** | journald viewer with unit/priority filters and timestamps |
-| **Log Files** | Browse `/var/log` with keyword search, context lines, date/time range |
-| **Cron Jobs** | List all crontab sources (/etc/crontab, cron.d, user crontabs), view entries, edit raw crontab content |
+| **Logs** | journald viewer with unit/priority filters |
+| **Log Files** | Browse `/var/log` with keyword search and date/time range |
+| **Cron Jobs** | List all crontab sources, view entries, edit raw crontab |
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
-| **DNS** | `/etc/resolv.conf` and `/etc/hosts` editing, DNS lookup tool, systemd-resolved configuration |
-| **Certificates** | TLS certificate scanning, trust store management, self-signed generation, Let's Encrypt |
+| **DNS** | `/etc/resolv.conf` and `/etc/hosts` editing, DNS lookup, systemd-resolved |
+| **Certificates** | TLS certificate scanning, trust store, self-signed generation, Let's Encrypt |
 | **Multi-host** | Manage multiple servers from one panel via reverse-WebSocket agent |
-| **Management** | Host role assignment, host restart, host removal — admin-only panel |
-| **Access control** | Role-based: Admin (sudo/wheel users) get full access; non-sudo users get read-only access |
+| **Access control** | Admin (sudo/wheel users) — full access; other users — read-only |
 
 ## Install
 
@@ -48,269 +47,43 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh | sudo bash
 ```
 
-This downloads the source, installs all build dependencies (Rust, Node.js,
-system libraries), compiles everything natively, installs binaries and
-systemd services, and starts the panel on port 9090.
+Installs build dependencies, compiles from source, installs systemd services, starts the panel on port 9090.
+Log in at `http://<host>:9090` with any PAM system user.
 
 ### Agent (managed hosts)
-
-On the **same host as the panel** (no arguments needed — defaults to local gateway):
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash
-```
-
-On **remote hosts** you want to manage:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<your-panel-host>:9090
-```
-
-If the panel uses HTTPS with a self-signed certificate, add `--accept-insecure`:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway https://<your-panel-host>:9090 --accept-insecure
-```
-
-The installer builds the agent binary, writes `/etc/tenodera/agent.cnf`, installs a systemd
-service, and starts it. The agent connects outbound to the gateway — no inbound ports needed
-on the managed host. The host is registered automatically on first connection, identified by
-its hostname.
-
-### Build from source
-
-If you prefer to clone the repo:
-
-```bash
-git clone https://github.com/ultherego/Tenodera
-cd Tenodera
-
-# Panel (gateway host):
-cd panel && sudo make all
-
-# Agent (managed hosts):
-cd agent && sudo make all
-```
-
-### Uninstall
-
-```bash
-# Panel (removes gateway, agent, UI, config, services):
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh \
-  | sudo bash -s -- --uninstall
-
-# Agent only (on managed hosts):
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --uninstall
-```
-
-Or from source: `cd panel && sudo make uninstall` / `cd agent && sudo make uninstall`.
-
-### Agent configuration
-
-The agent config lives at `/etc/tenodera/agent.cnf` on each managed host:
-
-```bash
-# Protocol: http:// = plain WebSocket (ws://); https:// = encrypted WebSocket (wss://).
-# To use HTTPS with a CA-signed cert (e.g. Let's Encrypt): just change to https://.
-# To use HTTPS with a self-signed cert: change to https:// AND uncomment ACCEPT_INSECURE.
-TENODERA_GATEWAY_URL=http://<panel-host>:9090
-
-# Uncomment ONLY when using https:// with a self-signed certificate.
-# Not needed for http:// or for https:// with a trusted CA-signed certificate.
-# TENODERA_AGENT_ACCEPT_INSECURE=1
-
-# Optional: one or more roles assigned to this host (comma or space separated).
-# Roles are used to group hosts in the Management page.
-# role=web
-# role=db,backup
-```
-
-Roles can also be changed at runtime from the **Management** page (admin only) —
-no manual edit or service restart required.
-
-Edit and restart: `sudo systemctl restart tenodera-agent`
-
-## Configuration
-
-After install, the gateway config is at:
-
-```
-/etc/tenodera/tenodera.cnf
-```
-
-Example with all available options:
-
-```bash
-# ── Network ──────────────────────────────────────────────
-TENODERA_BIND_ADDR=0.0.0.0        # Listen address (default: 0.0.0.0)
-TENODERA_BIND_PORT=9090            # Listen port (default: 9090)
-
-# ── External URL (used in agent install commands shown in the UI) ────────
-# Set this if the panel is behind a reverse proxy or has a public hostname.
-# Without it, the gateway falls back to the HTTP Host header, then bind addr.
-# TENODERA_EXTERNAL_URL=https://panel.example.com
-
-# ── TLS ──────────────────────────────────────────────────
-TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem   # TLS certificate (PEM)
-TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem     # TLS private key (PEM)
-# TENODERA_ALLOW_UNENCRYPTED=1     # Allow plaintext HTTP (dev only!)
-
-# ── Paths ────────────────────────────────────────────────
-TENODERA_AGENT_BIN=/usr/local/bin/tenodera-agent  # Agent binary path
-TENODERA_UI_DIR=/usr/share/tenodera/ui            # Built UI assets
-
-# ── Security ─────────────────────────────────────────────
-TENODERA_IDLE_TIMEOUT=900          # Session idle timeout in seconds (default: 900)
-TENODERA_MAX_STARTUPS=20           # Max failed logins per IP in 5-min window (default: 20, min: 1)
-
-# ── Logging ──────────────────────────────────────────────
-RUST_LOG=tenodera_gateway=info     # Log filter (e.g. debug, info, warn)
-```
-
-Edit and restart: `sudo systemctl restart tenodera`
-
-### TLS (recommended)
-
-The gateway **requires TLS by default**. The quickest way to generate a
-self-signed certificate (testing only):
-
-```bash
-cd panel && sudo make tls-selfsigned
-```
-
-This generates a 10-year self-signed cert in `/etc/tenodera/tls/`, sets the
-correct ownership (`root:tenodera-gw`) and permissions (`640`) for the service
-user, then restarts the gateway automatically.
-
-To use your own certificate, set in `tenodera.cnf`:
-
-```
-TENODERA_TLS_CERT=/etc/ssl/your-domain/cert.pem
-TENODERA_TLS_KEY=/etc/ssl/your-domain/key.pem
-```
-
-The gateway starts as root, reads the cert and key, then drops to the unprivileged
-`tenodera-gw` user — the same pattern as nginx and Zabbix. No permission changes
-to your existing certificates are required.
-
-### Plaintext HTTP (development only)
-
-```
-TENODERA_ALLOW_UNENCRYPTED=1
-```
-
-> **Warning:** Without TLS, passwords and session tokens are sent in cleartext.
-
-See [SECURITY.md](SECURITY.md) for security recommendations before deploying to production.
-
-## Usage
-
-Log in with any PAM system user on the gateway host. The panel uses system
-credentials (local accounts or LDAP/SSSD). Users in the `sudo`, `wheel`, or
-`admin` group get **Admin** access (full read/write). All other users are
-granted **read-only** access -- they can monitor but cannot execute write
-operations.
-
-### Adding remote hosts
-
-Run the agent installer on each host you want to manage:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
-On the panel host itself, `--gateway` can be omitted — it defaults to `http://127.0.0.1:9090`.
+The agent connects outbound to the gateway — no inbound ports needed on the managed host.
+The host appears in the panel UI automatically on first connection.
 
-The agent connects outbound to the gateway and registers itself by hostname — no UI
-pre-registration, no tokens, no SSH keys, no open ports on the managed host.
-
-The host appears in the panel UI as soon as the agent connects. Open the host selector
-(top-left) and click **Manage hosts…** to see all connected hosts. Select a host to
-start managing it.
+For the **panel host itself** (no `--gateway` needed — defaults to localhost):
 
 ```bash
-# Service management (gateway host)
-sudo systemctl status tenodera
-sudo systemctl restart tenodera
-journalctl -u tenodera -f
-
-# Service management (managed hosts)
-sudo systemctl status tenodera-agent
-sudo systemctl restart tenodera-agent
-journalctl -u tenodera-agent -f
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash
 ```
 
-### Health endpoints
+> See [DOCS.md](DOCS.md) for TLS setup, configuration reference, multi-host guide, and more.
 
-```
-GET /api/health        → { status, sessions, uptime_secs, version }
-GET /api/health/ready  → 200 OK | 503 Service Unavailable (agent binary check)
-```
+## Uninstall
 
-Use `/api/health/ready` as a readiness probe in load balancers or container
-orchestration.
+```bash
+# Panel host (removes gateway, agent, UI, config, services):
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh \
+  | sudo bash -s -- --uninstall
 
-## Architecture
-
-```
-                  [ Browser ]
-                       |
-                       | HTTPS / WSS  (channel-multiplexed JSON)
-                       |
-                  [ Gateway ]   Axum HTTP/WS · PAM auth · session management
-                 /      |      \
-   outbound WS  /       |       \  outbound WS
-               /        |        \
-        [ Agent ]  [ Agent ]  [ Agent ]   ...
-          host-1      host-2     localhost
-          (srv01)     (srv02)   (panel host)
-```
-
-Agents work like **Zabbix active agents**: each one connects outbound to the
-gateway over a persistent WebSocket, announces its hostname in a `Hello`
-handshake, and is auto-registered on first connect — no tokens, no pre-registration,
-no inbound ports required on managed hosts.
-
-- **Gateway** authenticates users via PAM, serves the React UI, and routes
-  channel-multiplexed JSON between browser sessions and the appropriate agent.
-- **Agent** is a lightweight systemd service deployed on each managed host.
-  It connects outbound to the gateway, handles 39 operation types (system info,
-  services, packages, terminal, DNS, certificates, …), and reconnects automatically with
-  exponential backoff on disconnect.
-- **Protocol** is a shared Rust crate defining the message types used by
-  both gateway and agent.
-
-The agent announces its protocol version via a `Hello/HelloAck` handshake on connect.
-The gateway checks compatibility and includes a warning in `HelloAck` if versions differ,
-but allows the connection to continue. Current protocol version: **1**.
-
-## Project Structure
-
-```
-panel/                   Central server (gateway + UI)
-  crates/gateway/        Axum HTTP/WS gateway, PAM auth, reverse-WS agent registry
-  ui/                    React 19 + TypeScript SPA (Vite 6)
-  Makefile               Build & install
-
-agent/                   Standalone agent binary (deployed to managed hosts)
-  src/handlers/          28 handler modules (39 registered handlers)
-  Makefile               Build & install
-
-protocol/                Shared message types (Rust library crate)
+# Managed hosts (agent only):
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+  | sudo bash -s -- --uninstall
 ```
 
 ## Screenshots
 
 <details>
-<summary>Click to expand screenshots</summary>
-
-### Login
-![Login](src/login.webp)
+<summary>Click to expand</summary>
 
 ### Dashboard
 ![Dashboard](src/dashboard.webp)
@@ -321,68 +94,16 @@ protocol/                Shared message types (Rust library crate)
 ### Services
 ![Services](src/services.webp)
 
-### Users
-![Users](src/users.webp)
-
-### User Groups
-![User Groups](src/us_groups.webp)
-
-### Create User
-![Create User](src/c_user.webp)
+### Networking
+![Networking](src/net_overview.webp)
 
 ### Packages
 ![Packages](src/packages.webp)
 
-### Package Search
-![Package Search](src/pack_search.webp)
-
-### Package Repositories
-![Package Repositories](src/pack_repo.webp)
-
-### Storage
-![Storage](src/storage.webp)
-
-### Networking Overview
-![Networking Overview](src/net_overview.webp)
-
-### Networking Interfaces
-![Networking Interfaces](src/net_inter.webp)
-
-### Networking Firewall
-![Networking Firewall](src/net_firewall.webp)
-
-### Networking Logs
-![Networking Logs](src/net_logs.webp)
-
-### Files
-![Files](src/files.webp)
-
-### Journal
-![Journal](src/journal.webp)
-
-### Log Files
-![Log Files](src/log_f.webp)
-
-### Kernel Dump
-![Kernel Dump](src/kdump.webp)
-
-### Containers
-![Containers](src/virtual_machines.webp)
+### Users
+![Users](src/users.webp)
 
 </details>
-
-## Development
-
-```bash
-# Gateway
-cd panel && cargo clippy && cargo build
-
-# Frontend (dev server with HMR, proxies /api to :9090)
-cd panel/ui && npm ci && npm run dev
-
-# Agent
-cd agent && cargo clippy && cargo build
-```
 
 ## License
 
