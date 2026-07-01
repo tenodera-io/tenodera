@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/tenodera-gateway
-EnvironmentFile=-/etc/tenodera/gateway.env
+EnvironmentFile=-/etc/tenodera/tenodera.cnf
 
 # The gateway starts as root so it can read TLS cert/key files from their
 # standard system location (e.g. /etc/ssl/...) regardless of permissions,

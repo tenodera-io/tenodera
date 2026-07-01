@@ -63,18 +63,18 @@ install: $(AGENT_BIN)
 	@echo "==> Installing systemd service..."
 	sudo cp systemd/tenodera-agent.service $(SYSTEMDDIR)/
 	sudo systemctl daemon-reload
-	@if [ ! -f $(CONFDIR)/agent.env ]; then \
+	@if [ ! -f $(CONFDIR)/agent.cnf ]; then \
 		printf 'TENODERA_GATEWAY_URL=$(GATEWAY_URL)\n# Uncomment if gateway uses a self-signed TLS cert:\n# TENODERA_AGENT_ACCEPT_INSECURE=1\n' \
-			| sudo tee $(CONFDIR)/agent.env > /dev/null; \
-		sudo chmod 640 $(CONFDIR)/agent.env; \
-		echo "    Created $(CONFDIR)/agent.env ($(GATEWAY_URL))"; \
+			| sudo tee $(CONFDIR)/agent.cnf > /dev/null; \
+		sudo chmod 640 $(CONFDIR)/agent.cnf; \
+		echo "    Created $(CONFDIR)/agent.cnf ($(GATEWAY_URL))"; \
 	else \
-		echo "    $(CONFDIR)/agent.env already exists — skipping (preserving your config)"; \
+		echo "    $(CONFDIR)/agent.cnf already exists — skipping (preserving your config)"; \
 	fi
 	sudo systemctl enable --now tenodera-agent
 	@echo ""
 	@echo "✓ tenodera-agent installed and running"
-	@echo "  Config:  $(CONFDIR)/agent.env"
+	@echo "  Config:  $(CONFDIR)/agent.cnf"
 	@echo "  Logs:    journalctl -u tenodera-agent -f"
 	@echo "  Gateway: $(GATEWAY_URL)"
 
@@ -87,7 +87,7 @@ uninstall:
 	-sudo rm -f $(SYSTEMDDIR)/tenodera-agent.service
 	-sudo systemctl daemon-reload
 	-sudo rm -f $(BINDIR)/tenodera-agent
-	-sudo rm -f $(CONFDIR)/agent.env
+	-sudo rm -f $(CONFDIR)/agent.cnf
 	-sudo rmdir $(CONFDIR) 2>/dev/null || true
 	-sudo rm -f /var/log/tenodera_audit.log
 	@echo "Done."

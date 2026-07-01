@@ -49,10 +49,13 @@ if [ "${1:-}" = "--uninstall" ]; then
   info "Uninstalling Tenodera (panel + agent)..."
 
   # Stop and remove services
-  systemctl stop tenodera-gateway 2>/dev/null || true
-  systemctl disable tenodera-gateway 2>/dev/null || true
-  rm -f /etc/systemd/system/tenodera-gateway.service
-  rm -rf /etc/systemd/system/tenodera-gateway.service.d
+  systemctl stop tenodera 2>/dev/null || true
+  systemctl disable tenodera 2>/dev/null || true
+  rm -f /etc/systemd/system/tenodera.service
+  rm -rf /etc/systemd/system/tenodera.service.d
+  systemctl stop tenodera-agent 2>/dev/null || true
+  systemctl disable tenodera-agent 2>/dev/null || true
+  rm -f /etc/systemd/system/tenodera-agent.service
   systemctl daemon-reload
 
   # Kill any running processes
@@ -169,16 +172,16 @@ CONF_DIR="/etc/tenodera"
 # ── Configure and start local agent ──────────────────────────────────────────
 # The agent connects to the local gateway over plain HTTP and auto-registers.
 # To enable HTTPS: generate a cert (cd panel && sudo make tls-selfsigned),
-# then update /etc/tenodera/gateway.env and /etc/tenodera/agent.env.
+# then update /etc/tenodera/tenodera.cnf and /etc/tenodera/agent.cnf.
 
-if [ ! -f "${CONF_DIR}/agent.env" ]; then
+if [ ! -f "${CONF_DIR}/agent.cnf" ]; then
   info "Writing agent config..."
-  cat > "${CONF_DIR}/agent.env" <<EOF
+  cat > "${CONF_DIR}/agent.cnf" <<EOF
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
 # Uncomment if you switch gateway to HTTPS with a self-signed cert:
 # TENODERA_AGENT_ACCEPT_INSECURE=1
 EOF
-  chmod 640 "${CONF_DIR}/agent.env"
+  chmod 640 "${CONF_DIR}/agent.cnf"
 fi
 
 if systemctl is-active --quiet tenodera-agent 2>/dev/null; then
@@ -191,9 +194,9 @@ fi
 
 echo ""
 echo "  Panel:     http://$(hostname -I | awk '{print $1}'):9090"
-echo "  Service:   systemctl status tenodera-gateway"
-echo "  Logs:      journalctl -u tenodera-gateway -f"
-echo "  Config:    /etc/tenodera/gateway.env"
+echo "  Service:   systemctl status tenodera"
+echo "  Logs:      journalctl -u tenodera -f"
+echo "  Config:    /etc/tenodera/tenodera.cnf"
 echo ""
 echo "  Log in with any PAM user that has sudo privileges."
 echo "  This host will appear in the UI as soon as the agent connects (a few seconds)."

@@ -41,7 +41,7 @@ async fn read_host_config() -> Value {
         .map(|f| f as u64)
         .unwrap_or(0);
 
-    let env_path = "/etc/tenodera/agent.env";
+    let env_path = "/etc/tenodera/agent.cnf";
     let content = match fs::read_to_string(env_path).await {
         Ok(c) => c,
         Err(_) => return json!({ "roles": [], "hostname": hostname, "uptime_secs": uptime_secs }),
@@ -113,7 +113,7 @@ impl ChannelHandler for HostActionHandler {
 async fn set_role(data: &Value, password: &str) -> Value {
     let role = data.get("role").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
 
-    let env_path = "/etc/tenodera/agent.env";
+    let env_path = "/etc/tenodera/agent.cnf";
     let content = fs::read_to_string(env_path).await.unwrap_or_default();
 
     let mut lines: Vec<String> = content

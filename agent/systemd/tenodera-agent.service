@@ -7,7 +7,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=/usr/local/bin/tenodera-agent
-EnvironmentFile=-/etc/tenodera/agent.env
+EnvironmentFile=-/etc/tenodera/agent.cnf
 
 Restart=on-failure
 RestartSec=5

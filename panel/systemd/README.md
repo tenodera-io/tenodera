@@ -2,9 +2,9 @@
 
 systemd unit file for running the Tenodera gateway as a system service.
 
-## tenodera-gateway.service
+## tenodera.service
 
-Installed to `/etc/systemd/system/tenodera-gateway.service` by `make install`.
+Installed to `/etc/systemd/system/tenodera.service` by `make install`.
 
 ### Security Hardening
 
@@ -46,17 +46,17 @@ Beyond systemd hardening, the gateway enforces:
 
 ### Configuration
 
-All gateway settings are in `/etc/tenodera/gateway.env`. The service file
+All gateway settings are in `/etc/tenodera/tenodera.cnf`. The service file
 loads this via `EnvironmentFile=`, so changes take effect after a restart:
 
 ```bash
-sudo nano /etc/tenodera/gateway.env
-sudo systemctl restart tenodera-gateway
+sudo nano /etc/tenodera/tenodera.cnf
+sudo systemctl restart tenodera
 ```
 
 #### TLS (recommended for production)
 
-Uncomment and set the TLS paths in `gateway.env`:
+Uncomment and set the TLS paths in `tenodera.cnf`:
 
 ```
 TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
@@ -71,7 +71,7 @@ And remove or comment out the unencrypted line:
 
 #### Plaintext HTTP (development only)
 
-The default `gateway.env` created by `make install` enables plaintext:
+The default `tenodera.cnf` created by `make install` enables plaintext:
 
 ```
 TENODERA_ALLOW_UNENCRYPTED=1
@@ -87,13 +87,13 @@ TENODERA_BIND_PORT=9090
 Then restart:
 
 ```bash
-sudo systemctl restart tenodera-gateway
+sudo systemctl restart tenodera
 ```
 
 ### Logs
 
 ```bash
-journalctl -u tenodera-gateway -f
+journalctl -u tenodera -f
 ```
 
 ### Audit Log

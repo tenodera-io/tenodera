@@ -113,24 +113,24 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 		sudo chmod 640 $(CONFDIR)/hosts.json; \
 		echo "    $(CONFDIR)/hosts.json already exists — skipping"; \
 	fi
-	@if [ ! -f $(CONFDIR)/gateway.env ]; then \
-		printf '# Tenodera Gateway Configuration\n# See: systemctl cat tenodera-gateway\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to agent binary\nTENODERA_AGENT_BIN=/usr/local/bin/tenodera-agent\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS — optional. Uncomment and set cert/key paths to enable HTTPS.\n# Generate a self-signed cert: sudo make tls-selfsigned\n#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\n#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# HTTP mode (plain, no TLS) — enabled by default.\n# Comment out after configuring TLS above to switch to HTTPS.\nTENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
-			| sudo tee $(CONFDIR)/gateway.env > /dev/null; \
-		sudo chown root:tenodera-gw $(CONFDIR)/gateway.env; \
-		sudo chmod 640 $(CONFDIR)/gateway.env; \
-		echo "    Created $(CONFDIR)/gateway.env (HTTP mode — configure TLS for production)"; \
+	@if [ ! -f $(CONFDIR)/tenodera.cnf ]; then \
+		printf '# Tenodera Panel Configuration\n# See: systemctl cat tenodera\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to agent binary\nTENODERA_AGENT_BIN=/usr/local/bin/tenodera-agent\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS — optional. Uncomment and set cert/key paths to enable HTTPS.\n# Generate a self-signed cert: sudo make tls-selfsigned\n#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\n#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# HTTP mode (plain, no TLS) — enabled by default.\n# Comment out after configuring TLS above to switch to HTTPS.\nTENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
+			| sudo tee $(CONFDIR)/tenodera.cnf > /dev/null; \
+		sudo chown root:tenodera-gw $(CONFDIR)/tenodera.cnf; \
+		sudo chmod 640 $(CONFDIR)/tenodera.cnf; \
+		echo "    Created $(CONFDIR)/tenodera.cnf (HTTP mode — configure TLS for production)"; \
 	else \
-		sudo chown root:tenodera-gw $(CONFDIR)/gateway.env; \
-		sudo chmod 640 $(CONFDIR)/gateway.env; \
-		echo "    $(CONFDIR)/gateway.env already exists — skipping (preserving your config)"; \
+		sudo chown root:tenodera-gw $(CONFDIR)/tenodera.cnf; \
+		sudo chmod 640 $(CONFDIR)/tenodera.cnf; \
+		echo "    $(CONFDIR)/tenodera.cnf already exists — skipping (preserving your config)"; \
 	fi
-	@if [ ! -f $(CONFDIR)/agent.env ]; then \
+	@if [ ! -f $(CONFDIR)/agent.cnf ]; then \
 		printf 'TENODERA_GATEWAY_URL=http://127.0.0.1:9090\n# Uncomment if you switch gateway to HTTPS with a self-signed cert:\n# TENODERA_AGENT_ACCEPT_INSECURE=1\n' \
-			| sudo tee $(CONFDIR)/agent.env > /dev/null; \
-		sudo chmod 640 $(CONFDIR)/agent.env; \
-		echo "    Created $(CONFDIR)/agent.env (http://127.0.0.1:9090)"; \
+			| sudo tee $(CONFDIR)/agent.cnf > /dev/null; \
+		sudo chmod 640 $(CONFDIR)/agent.cnf; \
+		echo "    Created $(CONFDIR)/agent.cnf (http://127.0.0.1:9090)"; \
 	else \
-		echo "    $(CONFDIR)/agent.env already exists — skipping (preserving your config)"; \
+		echo "    $(CONFDIR)/agent.cnf already exists — skipping (preserving your config)"; \
 	fi
 	@echo "==> Installing PAM service config..."
 	@if [ -f /etc/pam.d/common-auth ]; then \
@@ -144,24 +144,24 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	sudo chown root:root /var/log/tenodera_audit.log
 	sudo chmod 622 /var/log/tenodera_audit.log
 	@echo "==> Installing systemd services..."
-	sudo cp systemd/tenodera-gateway.service $(SYSTEMDDIR)/
+	sudo cp systemd/tenodera.service $(SYSTEMDDIR)/
 	sudo systemctl daemon-reload
-	sudo systemctl enable --now tenodera-gateway
+	sudo systemctl enable --now tenodera
 	@echo "==> Installing logrotate config..."
 	sudo install -m 644 logrotate/tenodera /etc/logrotate.d/tenodera
 	@echo ""
 	@echo "✓ Tenodera Panel installed"
-	@echo "  Service: systemctl status tenodera-gateway"
-	@echo "  Logs:    journalctl -u tenodera-gateway -f"
+	@echo "  Service: systemctl status tenodera"
+	@echo "  Logs:    journalctl -u tenodera -f"
 	@echo ""
 	@echo "  Agent must be installed separately on managed hosts."
 	@echo "  See ../agent/ or use: make install in the agent/ directory on each host."
 	@echo ""
 	@echo "  Login with any PAM user (system credentials)."
-	@echo "  Configuration: $(CONFDIR)/gateway.env"
+	@echo "  Configuration: $(CONFDIR)/tenodera.cnf"
 	@echo ""
 	@echo "  Panel:  http://$$(hostname -I | awk '{print $$1}'):9090"
-	@echo "  Running in HTTP mode. To enable HTTPS: sudo make tls-selfsigned, then update $(CONFDIR)/gateway.env."
+	@echo "  Running in HTTP mode. To enable HTTPS: sudo make tls-selfsigned, then update $(CONFDIR)/tenodera.cnf."
 
 $(GATEWAY_BIN):
 	$(MAKE) build-backend
@@ -176,10 +176,10 @@ ui/dist/index.html:
 
 uninstall:
 	@echo "==> Stopping and removing Tenodera Panel..."
-	-sudo systemctl stop tenodera-gateway
-	-sudo systemctl disable tenodera-gateway
-	-sudo rm -f $(SYSTEMDDIR)/tenodera-gateway.service
-	-sudo rm -rf $(SYSTEMDDIR)/tenodera-gateway.service.d
+	-sudo systemctl stop tenodera
+	-sudo systemctl disable tenodera
+	-sudo rm -f $(SYSTEMDDIR)/tenodera.service
+	-sudo rm -rf $(SYSTEMDDIR)/tenodera.service.d
 	-sudo systemctl stop tenodera-agent 2>/dev/null || true
 	-sudo systemctl disable tenodera-agent 2>/dev/null || true
 	-sudo rm -f $(SYSTEMDDIR)/tenodera-agent.service
@@ -211,11 +211,11 @@ tls-selfsigned:
 	@echo "  Cert: $(CONFDIR)/tls/cert.pem"
 	@echo "  Key:  $(CONFDIR)/tls/key.pem"
 	@echo ""
-	@echo "  To enable HTTPS, edit $(CONFDIR)/gateway.env:"
+	@echo "  To enable HTTPS, edit $(CONFDIR)/tenodera.cnf:"
 	@echo "    1. Uncomment TENODERA_TLS_CERT and TENODERA_TLS_KEY"
 	@echo "    2. Comment out TENODERA_ALLOW_UNENCRYPTED=1"
-	@echo "    3. sudo systemctl restart tenodera-gateway"
-	@echo "    4. Update /etc/tenodera/agent.env: change http:// → https://"
+	@echo "    3. sudo systemctl restart tenodera"
+	@echo "    4. Update /etc/tenodera/agent.cnf: change http:// → https://"
 	@echo "       and set TENODERA_AGENT_ACCEPT_INSECURE=1"
 	@echo "    5. sudo systemctl restart tenodera-agent"
 	@echo ""
@@ -227,9 +227,9 @@ tls-selfsigned:
 VERSION ?= $(shell . "$$HOME/.cargo/env" 2>/dev/null || true; cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])" 2>/dev/null || echo "0.1.0")
 
 package-deb: build
-	@echo "==> Building Debian package (tenodera-gateway v$(VERSION))..."
+	@echo "==> Building Debian package (tenodera v$(VERSION))..."
 	@command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb not found — install dpkg"; exit 1; }
-	$(eval PKGDIR := /tmp/tenodera-gateway-deb-$(VERSION))
+	$(eval PKGDIR := /tmp/tenodera-deb-$(VERSION))
 	@rm -rf $(PKGDIR) && mkdir -p \
 		$(PKGDIR)/DEBIAN \
 		$(PKGDIR)/usr/bin \
@@ -240,26 +240,26 @@ package-deb: build
 	@install -m 755 target/release/tenodera-gateway $(PKGDIR)/usr/bin/
 	@install -m 4750 target/release/tenodera-pam-helper $(PKGDIR)/usr/bin/
 	@cp -r ui/dist/. $(PKGDIR)/usr/share/tenodera/ui/
-	@install -m 644 systemd/tenodera-gateway.service $(PKGDIR)/lib/systemd/system/
+	@install -m 644 systemd/tenodera.service $(PKGDIR)/lib/systemd/system/
 	@install -m 644 logrotate/tenodera $(PKGDIR)/etc/logrotate.d/tenodera
 	@install -m 644 pam.d/tenodera $(PKGDIR)/etc/pam.d/tenodera
-	@printf 'Package: tenodera-gateway\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel gateway\n The gateway serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
+	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
 	@printf '#!/bin/sh\ngetent group tenodera-gw >/dev/null || groupadd -r tenodera-gw\ngetent passwd tenodera-gw >/dev/null || \\\n    useradd -r -s /sbin/nologin -M -d /nonexistent -g tenodera-gw \\\n    -c "Tenodera Gateway" tenodera-gw\nexit 0\n' > $(PKGDIR)/DEBIAN/preinst
 	@chmod 755 $(PKGDIR)/DEBIAN/preinst
-	@dpkg-deb --build $(PKGDIR) tenodera-gateway_$(VERSION)_amd64.deb
+	@dpkg-deb --build $(PKGDIR) tenodera_$(VERSION)_amd64.deb
 	@rm -rf $(PKGDIR)
-	@echo "✓ Package: tenodera-gateway_$(VERSION)_amd64.deb"
+	@echo "✓ Package: tenodera_$(VERSION)_amd64.deb"
 
 package-rpm: build
-	@echo "==> Building RPM package (tenodera-gateway v$(VERSION))..."
+	@echo "==> Building RPM package (tenodera v$(VERSION))..."
 	@command -v rpmbuild >/dev/null 2>&1 || { echo "ERROR: rpmbuild not found — install rpm-build"; exit 1; }
 	@mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-	@cp ../packaging/tenodera-gateway.spec ~/rpmbuild/SPECS/
+	@cp ../packaging/tenodera.spec ~/rpmbuild/SPECS/
 	@cp target/release/tenodera-gateway target/release/tenodera-pam-helper ~/rpmbuild/BUILD/
 	@cp -r . ~/rpmbuild/BUILD/panel
 	@cp -r ui/dist ~/rpmbuild/BUILD/panel/ui/
-	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-gateway.spec
-	@find ~/rpmbuild/RPMS -name "tenodera-gateway-*.rpm" -exec cp {} . \;
+	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera.spec
+	@find ~/rpmbuild/RPMS -name "tenodera-*.rpm" -exec cp {} . \;
 	@echo "✓ RPM package built"
 
 # ── Clean ─────────────────────────────────────────────────

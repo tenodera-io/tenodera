@@ -10,7 +10,7 @@ impl AgentConfig {
         load_env_file();
 
         let gateway_url = std::env::var("TENODERA_GATEWAY_URL")
-            .map_err(|_| anyhow::anyhow!("TENODERA_GATEWAY_URL not set in environment or /etc/tenodera/agent.env"))?;
+            .map_err(|_| anyhow::anyhow!("TENODERA_GATEWAY_URL not set in environment or /etc/tenodera/agent.cnf"))?;
 
         let accept_insecure = std::env::var("TENODERA_AGENT_ACCEPT_INSECURE")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -89,7 +89,7 @@ mod tests {
 }
 
 fn load_env_file() {
-    let path = "/etc/tenodera/agent.env";
+    let path = "/etc/tenodera/agent.cnf";
     let Ok(content) = std::fs::read_to_string(path) else { return };
     for line in content.lines() {
         let line = line.trim();

@@ -15,7 +15,7 @@ pub struct GatewayConfig {
     /// TLS private key file path (PEM).
     pub tls_key: Option<String>,
     /// Publicly reachable URL of this gateway (used in install commands).
-    /// Set TENODERA_EXTERNAL_URL in gateway.env, e.g. https://panel.example.com
+    /// Set TENODERA_EXTERNAL_URL in tenodera.cnf, e.g. https://panel.example.com
     pub external_url: Option<String>,
 }
 

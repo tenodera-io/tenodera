@@ -73,7 +73,7 @@ pub async fn find_or_register_by_hostname(hostname: &str, is_local: bool) -> Hos
             config.hosts[i].hostname = hostname.to_string();
             changed = true;
         }
-        // Update is_local if it changed (e.g. agent.env switched to localhost URL)
+        // Update is_local if it changed (e.g. agent.cnf switched to localhost URL)
         if config.hosts[i].is_local != is_local {
             config.hosts[i].is_local = is_local;
             changed = true;

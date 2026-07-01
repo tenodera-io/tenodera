@@ -75,7 +75,7 @@ curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-ag
   | sudo bash -s -- --gateway https://<your-panel-host>:9090 --accept-insecure
 ```
 
-The installer builds the agent binary, writes `/etc/tenodera/agent.env`, installs a systemd
+The installer builds the agent binary, writes `/etc/tenodera/agent.cnf`, installs a systemd
 service, and starts it. The agent connects outbound to the gateway — no inbound ports needed
 on the managed host. The host is registered automatically on first connection, identified by
 its hostname.
@@ -111,7 +111,7 @@ Or from source: `cd panel && sudo make uninstall` / `cd agent && sudo make unins
 
 ### Agent configuration
 
-The agent config lives at `/etc/tenodera/agent.env` on each managed host:
+The agent config lives at `/etc/tenodera/agent.cnf` on each managed host:
 
 ```bash
 TENODERA_GATEWAY_URL=http://<panel-host>:9090    # Gateway WebSocket endpoint (http:// or https://)
@@ -133,7 +133,7 @@ Edit and restart: `sudo systemctl restart tenodera-agent`
 After install, the gateway config is at:
 
 ```
-/etc/tenodera/gateway.env
+/etc/tenodera/tenodera.cnf
 ```
 
 Example with all available options:
@@ -165,7 +165,7 @@ TENODERA_MAX_STARTUPS=20           # Max failed logins per IP in 5-min window (d
 RUST_LOG=tenodera_gateway=info     # Log filter (e.g. debug, info, warn)
 ```
 
-Edit and restart: `sudo systemctl restart tenodera-gateway`
+Edit and restart: `sudo systemctl restart tenodera`
 
 ### TLS (recommended)
 
@@ -180,7 +180,7 @@ This generates a 10-year self-signed cert in `/etc/tenodera/tls/`, sets the
 correct ownership (`root:tenodera-gw`) and permissions (`640`) for the service
 user, then restarts the gateway automatically.
 
-To use your own certificate, set in `gateway.env`:
+To use your own certificate, set in `tenodera.cnf`:
 
 ```
 TENODERA_TLS_CERT=/etc/ssl/your-domain/cert.pem
@@ -229,9 +229,9 @@ start managing it.
 
 ```bash
 # Service management (gateway host)
-sudo systemctl status tenodera-gateway
-sudo systemctl restart tenodera-gateway
-journalctl -u tenodera-gateway -f
+sudo systemctl status tenodera
+sudo systemctl restart tenodera
+journalctl -u tenodera -f
 
 # Service management (managed hosts)
 sudo systemctl status tenodera-agent

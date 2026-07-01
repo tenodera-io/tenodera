@@ -28,7 +28,7 @@ the `AgentRegistry`.
 |---------|---------|-------------|
 | `SystemInfoHandler` | `system.info` | Hostname, OS, uptime, kernel |
 | `SystemPubkeyHandler` | `system.pubkey` | Host SSH public key |
-| `HostConfigHandler` | `host.config` | Host roles, hostname, uptime from agent.env |
+| `HostConfigHandler` | `host.config` | Host roles, hostname, uptime from agent.cnf |
 | `HostActionHandler` | `host.action` | Set role or restart host (admin only) |
 | `SystemdUnitsHandler` | `systemd.units` | List all systemd units |
 | `HardwareInfoHandler` | `hardware.info` | CPU, cores, MHz, temperature sensors |
@@ -83,7 +83,7 @@ the `AgentRegistry`.
 
 ## Configuration
 
-The agent reads `/etc/tenodera/agent.env` at startup:
+The agent reads `/etc/tenodera/agent.cnf` at startup:
 
 ```bash
 TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint (required)
@@ -97,7 +97,7 @@ TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint (r
 
 Roles can be changed at runtime from the panel's **Management** page (admin only)
 via the `host.action` / `set_role` handler — this rewrites the `role=` lines in
-`agent.env` using `sudo tee` without restarting the agent.
+`agent.cnf` using `sudo tee` without restarting the agent.
 
 ## Privilege Model
 
