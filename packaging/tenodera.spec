@@ -3,15 +3,14 @@ Version:        %{version}
 Release:        1%{?dist}
 Summary:        Tenodera gateway — web UI and control plane
 License:        MIT
-URL:            https://github.com/ultherego/Tenodera_Admin_Panel
+URL:            https://github.com/ultherego/Tenodera
 
 BuildRequires:  rust cargo nodejs npm clang-devel pam-devel openssl-devel
-Requires:       openssh-clients
 Requires(pre):  shadow-utils
 
 %description
 Tenodera gateway serves the web administration panel and routes
-requests to bridge agents on managed hosts via SSH.
+requests to Tenodera agents on managed hosts via WebSocket.
 
 %pre
 getent group tenodera-gw >/dev/null || groupadd -r tenodera-gw
