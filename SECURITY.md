@@ -63,7 +63,7 @@ The gateway service runs with:
 - `ProtectHome=yes`
 - Dedicated unprivileged service user (`tenodera-gw`)
 
-The agent service runs as a separate unprivileged user (`tenodera-brdg`) and uses `sudo -S` only for operations that require elevated privileges, with the password supplied by the authenticated user.
+The agent binary is installed setuid root and runs as root under systemd. For terminal sessions it drops to the authenticated user's UID/GID via `setuid()`/`setgid()` before spawning the shell. For other privileged operations (package install, service restart, firewall changes, etc.) it invokes `sudo -S` with the password supplied by the authenticated user — so the operation runs under the user's own sudo privileges, not unconditionally as root.
 
 ### Input Validation
 

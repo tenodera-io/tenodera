@@ -1,7 +1,7 @@
-Name:           tenodera-gateway
+Name:           tenodera
 Version:        %{version}
 Release:        1%{?dist}
-Summary:        Tenodera gateway — web UI and control plane
+Summary:        Tenodera Panel — web administration panel (gateway + UI)
 License:        MIT
 URL:            https://github.com/ultherego/Tenodera
 
@@ -22,7 +22,7 @@ exit 0
 %install
 install -D -m 755 %{_builddir}/tenodera-gateway %{buildroot}%{_bindir}/tenodera-gateway
 install -D -m 4750 -o root -g tenodera-gw %{_builddir}/tenodera-pam-helper %{buildroot}%{_bindir}/tenodera-pam-helper
-install -D -m 644 %{_builddir}/panel/systemd/tenodera-gateway.service %{buildroot}%{_unitdir}/tenodera-gateway.service
+install -D -m 644 %{_builddir}/panel/systemd/tenodera.service %{buildroot}%{_unitdir}/tenodera.service
 install -D -m 644 %{_builddir}/panel/logrotate/tenodera %{buildroot}%{_sysconfdir}/logrotate.d/tenodera
 install -D -m 644 %{_builddir}/panel/pam.d/tenodera %{buildroot}%{_sysconfdir}/pam.d/tenodera
 # UI assets
@@ -30,18 +30,18 @@ install -d %{buildroot}%{_datadir}/tenodera/ui
 cp -r %{_builddir}/panel/ui/dist/. %{buildroot}%{_datadir}/tenodera/ui/
 
 %post
-%systemd_post tenodera-gateway.service
+%systemd_post tenodera.service
 
 %preun
-%systemd_preun tenodera-gateway.service
+%systemd_preun tenodera.service
 
 %postun
-%systemd_postun_with_restart tenodera-gateway.service
+%systemd_postun_with_restart tenodera.service
 
 %files
 %{_bindir}/tenodera-gateway
 %{_bindir}/tenodera-pam-helper
-%{_unitdir}/tenodera-gateway.service
+%{_unitdir}/tenodera.service
 %{_sysconfdir}/logrotate.d/tenodera
 %{_sysconfdir}/pam.d/tenodera
 %{_datadir}/tenodera/ui/
