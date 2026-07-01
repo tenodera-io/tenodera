@@ -687,13 +687,14 @@ Query the systemd journal on the selected host.
 
 ### 8.11 Log Files
 
-Browse and search files in `/var/log` on the selected host.
+Browse and search plain-text log files in `/var/log` on the selected host.
 
 **File list**
 
-- Lists all files in `/var/log` (recursively)
-- Shows filename, size, last-modified time
-- Filter by filename
+- Lists all files in `/var/log` recursively
+- Shows filename, full path, size, last-modified time
+- Filter list by filename
+- Files owned by root that are not world-readable require the superuser password to be active
 
 **Tail view**
 
@@ -708,11 +709,48 @@ Full-text search within the selected file:
 | Query | Search keyword or phrase |
 | Before | Context lines before each match (default: 3) |
 | After | Context lines after each match (default: 3) |
-| Max results | Maximum number of matching lines to return (default: 100) |
-| Date from / to | Filter by date range |
-| Time from / to | Filter by time range within the selected dates |
+| Max results | Maximum number of matching lines returned (default: 100) |
+| Date from / to | Filter entries by date range |
+| Time from / to | Filter entries by time range within the selected dates |
 
-Results show matched lines highlighted, with surrounding context lines. Total match count displayed.
+Results show matched lines highlighted with surrounding context. Total match count displayed.
+
+When a date/time range is set without a keyword the page switches to **date filter** mode — all lines within the time window are returned without a keyword match requirement.
+
+**Common log files in `/var/log`**
+
+| File / Directory | Description |
+|-----------------|-------------|
+| `syslog` or `messages` | General system messages (Debian/Ubuntu: `syslog`; RHEL/Fedora: `messages`) |
+| `auth.log` or `secure` | Authentication events: SSH logins, sudo usage, PAM (Debian: `auth.log`; RHEL: `secure`) |
+| `kern.log` | Kernel messages: hardware events, module loads, OOM killer |
+| `dmesg` | Kernel ring buffer from boot |
+| `boot.log` | Boot-time service startup messages |
+| `journal/` | systemd journal binary files — use the **Logs** page to read these, not Log Files |
+| `nginx/access.log`, `nginx/error.log` | nginx web server logs |
+| `apache2/access.log`, `apache2/error.log` | Apache web server logs |
+| `mysql/error.log` or `mariadb/error.log` | Database error log |
+| `audit/audit.log` | Linux Audit daemon log (auditd) |
+| `tenodera_audit.log` | Tenodera panel audit log (see below) |
+
+**Tenodera audit log** (`/var/log/tenodera_audit.log`)
+
+Tenodera writes its own structured audit log with one entry per line.
+
+Events logged:
+- **Login attempt** — username, source IP, success or failure reason
+- **Logout** — username, session duration
+- **Privilege escalation** — superuser password activation (username, host)
+
+Log rotation is configured at `/etc/logrotate.d/tenodera`:
+
+| Setting | Value |
+|---------|-------|
+| Frequency | Daily |
+| Rotations kept | 3 |
+| Max size | 1 GB (rotated early if exceeded) |
+| Compression | gzip (`delaycompress` — previous rotation is compressed on the next run) |
+| Method | `copytruncate` — file is copied then truncated; no service restart required after rotation |
 
 ---
 
