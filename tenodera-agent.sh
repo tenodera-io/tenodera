@@ -159,8 +159,8 @@ cat > "${CONF_DIR}/agent.cnf" <<EOF
 
 TENODERA_GATEWAY_URL=${GATEWAY_URL}
 
-# Skip TLS certificate verification — required when gateway uses a self-signed cert.
-# Harmless when gateway_url starts with http:// (plain HTTP, no TLS).
+# HTTPS/WSS: change TENODERA_GATEWAY_URL to https:// above. No other setting needed
+# for CA-signed certs (e.g. Let's Encrypt). Uncomment below ONLY for self-signed certs.
 ${INSECURE_LINE}
 EOF
 

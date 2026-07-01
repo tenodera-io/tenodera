@@ -114,8 +114,14 @@ Or from source: `cd panel && sudo make uninstall` / `cd agent && sudo make unins
 The agent config lives at `/etc/tenodera/agent.cnf` on each managed host:
 
 ```bash
-TENODERA_GATEWAY_URL=http://<panel-host>:9090    # Gateway WebSocket endpoint (http:// or https://)
-# TENODERA_AGENT_ACCEPT_INSECURE=1              # Uncomment when gateway uses a self-signed TLS cert
+# Protocol: http:// = plain WebSocket (ws://); https:// = encrypted WebSocket (wss://).
+# To use HTTPS with a CA-signed cert (e.g. Let's Encrypt): just change to https://.
+# To use HTTPS with a self-signed cert: change to https:// AND uncomment ACCEPT_INSECURE.
+TENODERA_GATEWAY_URL=http://<panel-host>:9090
+
+# Uncomment ONLY when using https:// with a self-signed certificate.
+# Not needed for http:// or for https:// with a trusted CA-signed certificate.
+# TENODERA_AGENT_ACCEPT_INSECURE=1
 
 # Optional: one or more roles assigned to this host (comma or space separated).
 # Roles are used to group hosts in the Management page.

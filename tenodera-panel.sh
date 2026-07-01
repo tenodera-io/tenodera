@@ -178,7 +178,7 @@ if [ ! -f "${CONF_DIR}/agent.cnf" ]; then
   info "Writing agent config..."
   cat > "${CONF_DIR}/agent.cnf" <<EOF
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
-# Uncomment if you switch gateway to HTTPS with a self-signed cert:
+# HTTPS: change URL to https:// above. Uncomment below only for self-signed certs.
 # TENODERA_AGENT_ACCEPT_INSECURE=1
 EOF
   chmod 640 "${CONF_DIR}/agent.cnf"
