@@ -170,7 +170,10 @@ chmod 600 "${CONF_DIR}/agent.env"
 
 info "Enabling and starting tenodera-agent service..."
 systemctl daemon-reload
-systemctl enable --now tenodera-agent
+systemctl enable tenodera-agent
+# Always restart (not just enable --now) so the freshly-written agent.env
+# is loaded even when make install already started the service with defaults.
+systemctl restart tenodera-agent
 
 # ── Verify ────────────────────────────────────────────────────────
 
