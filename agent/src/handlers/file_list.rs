@@ -50,6 +50,13 @@ async fn list_as_user(path: &str, user: &str) -> serde_json::Value {
         Ok(p) => p,
         Err(e) => return serde_json::json!({ "error": format!("cannot resolve path: {e}") }),
     };
+
+    // Limited access is confined to the user's home directory.
+    let home = Path::new("/home").join(user);
+    if !canonical.starts_with(&home) {
+        return serde_json::json!({ "error": "Limited access: restricted to your home directory" });
+    }
+
     let resolved = canonical.to_string_lossy();
 
     let out = run_cmd(&[

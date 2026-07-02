@@ -103,8 +103,15 @@ async fn read_file(path: &str, user: &str, password: &str, offset: usize) -> ser
 
     // Decide execution context
     let as_user = password.is_empty();
-    if as_user && !is_valid_username(user) {
-        return json!({ "error": "invalid user context" });
+    if as_user {
+        if !is_valid_username(user) {
+            return json!({ "error": "invalid user context" });
+        }
+        // Limited access is confined to the user's home directory.
+        let home = std::path::Path::new("/home").join(user);
+        if !canonical.starts_with(&home) {
+            return json!({ "error": "Limited access: restricted to your home directory" });
+        }
     }
 
     // Count total lines
@@ -178,6 +185,18 @@ async fn write_as_user(path: &str, content: &str, user: &str) -> serde_json::Val
         return json!({ "error": "invalid user context" });
     }
 
+    // Limited access is confined to the user's home directory.
+    let canonical = match std::path::Path::new(path).parent()
+        .and_then(|p| p.canonicalize().ok())
+    {
+        Some(dir) => dir.join(std::path::Path::new(path).file_name().unwrap_or_default()),
+        None      => std::path::PathBuf::from(path),
+    };
+    let home = std::path::Path::new("/home").join(user);
+    if !canonical.starts_with(&home) {
+        return json!({ "error": "Limited access: restricted to your home directory" });
+    }
+
     use base64::Engine;
     let b64    = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
     let script = format!(
@@ -207,6 +226,16 @@ async fn write_as_user(path: &str, content: &str, user: &str) -> serde_json::Val
 async fn delete_as_user(path: &str, user: &str) -> serde_json::Value {
     if !is_valid_username(user) {
         return json!({ "error": "invalid user context" });
+    }
+
+    // Limited access is confined to the user's home directory.
+    let canonical = match std::path::Path::new(path).canonicalize() {
+        Ok(p)  => p,
+        Err(_) => return json!({ "error": "file not found" }),
+    };
+    let home = std::path::Path::new("/home").join(user);
+    if !canonical.starts_with(&home) {
+        return json!({ "error": "Limited access: restricted to your home directory" });
     }
 
     match tokio::process::Command::new("sudo")

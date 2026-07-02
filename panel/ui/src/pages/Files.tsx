@@ -47,6 +47,7 @@ export function Files({ user }: FilesProps) {
   const [showSugg, setShowSugg]       = useState(false);
   const [selIdx, setSelIdx]           = useState(-1);
   const [modal, setModal]             = useState<ModalState>(null);
+  const [navError, setNavError]       = useState<string | undefined>();
 
   const inputRef      = useRef<HTMLInputElement>(null);
   const suggestRef    = useRef<HTMLDivElement>(null);
@@ -63,12 +64,15 @@ export function Files({ user }: FilesProps) {
     request('file.list', opts).then((results) => {
       const data = results[0] as { path: string; entries: FileEntry[]; error?: string } | undefined;
       if (data?.entries) {
+        setNavError(undefined);
         setEntries(data.entries);
         setCurrentPath(data.path);
         setPathInput(data.path);
         setShowSugg(false);
+      } else if (data?.error) {
+        setNavError(data.error);
       }
-    });
+    }).catch((e: unknown) => setNavError(String(e)));
   }, [request]);
 
   const fetchSuggestions = useCallback((inputPath: string) => {
@@ -119,6 +123,7 @@ export function Files({ user }: FilesProps) {
   };
 
   const navigateUp = () => {
+    if (!su.active && currentPath === homeDir) return;
     const parent = currentPath.split('/').slice(0, -1).join('/') || '/';
     fetchDir(parent);
   };
@@ -303,19 +308,25 @@ export function Files({ user }: FilesProps) {
 
       {/* Path bar */}
       <div style={S.pathBar}>
-        <button onClick={navigateUp} style={S.upBtn}>↑</button>
+        <button
+          onClick={navigateUp}
+          style={{ ...S.upBtn, opacity: (!su.active && currentPath === homeDir) ? 0.35 : 1 }}
+          disabled={!su.active && currentPath === homeDir}
+          title={!su.active ? 'Limited access: home directory only' : undefined}
+        >↑</button>
         <div style={S.inputWrap}>
           <input
             ref={inputRef}
             type="text"
             value={pathInput}
-            onChange={(e) => handlePathChange(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => pathInput.includes('/') && fetchSuggestions(pathInput)}
-            style={S.pathInput}
+            readOnly={!su.active}
+            onChange={(e) => { if (su.active) handlePathChange(e.target.value); }}
+            onKeyDown={(e) => { if (su.active) handleKeyDown(e); }}
+            onFocus={() => { if (su.active && pathInput.includes('/')) fetchSuggestions(pathInput); }}
+            style={{ ...S.pathInput, cursor: su.active ? undefined : 'default', opacity: su.active ? 1 : 0.7 }}
             spellCheck={false}
           />
-          {showSugg && suggestions.length > 0 && (
+          {su.active && showSugg && suggestions.length > 0 && (
             <div ref={suggestRef} style={S.suggestions}>
               {suggestions.map((s, i) => (
                 <div
@@ -330,9 +341,15 @@ export function Files({ user }: FilesProps) {
             </div>
           )}
         </div>
-        <button onClick={() => fetchDir(pathInput)} style={S.goBtn}>Go</button>
+        {su.active
+          ? <button onClick={() => fetchDir(pathInput)} style={S.goBtn}>Go</button>
+          : <span style={S.limitedBadge} title="Activate Administrative access to browse the full filesystem">Limited</span>
+        }
         <button onClick={openCreate} style={S.newBtn}>+ New File</button>
       </div>
+      {navError && (
+        <div style={{ ...S.errorBox, marginBottom: '0.75rem' }}>{navError}</div>
+      )}
 
       {/* File table */}
       <table style={S.table}>
@@ -650,7 +667,8 @@ const S: Record<string, React.CSSProperties> = {
   inputWrap:  { flex: 1, position: 'relative' },
   pathInput:  { width: '100%', padding: '0.45rem 0.6rem', borderRadius: 4, border: '1px solid var(--c-blue)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontFamily: 'monospace', boxSizing: 'border-box', fontSize: '0.9rem' },
   goBtn:      { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: '#fff', cursor: 'pointer' },
-  newBtn:     { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-green)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' },
+  newBtn:       { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-green)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' },
+  limitedBadge: { padding: '0.3rem 0.7rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'transparent', color: 'var(--text-3)', fontSize: '0.78rem', whiteSpace: 'nowrap' },
   suggestions: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderTop: 'none', borderRadius: '0 0 4px 4px', maxHeight: 240, overflowY: 'auto', zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,.3)' },
   suggItem:   { padding: '0.4rem 0.6rem', fontFamily: 'monospace', fontSize: '0.85rem', cursor: 'pointer' },
 
