@@ -116,6 +116,12 @@ impl ChannelHandler for ContainersHandler {
             }
             "stats_all" => stats_all(rt, password).await,
             "volumes_list" => volumes_list(rt, password).await,
+            "volume_inspect" => {
+                let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
+                volume_inspect(rt, name, owner, password).await
+            }
+            "volume_create" => volume_create(rt, data, password).await,
             "volume_remove" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
@@ -123,11 +129,28 @@ impl ChannelHandler for ContainersHandler {
             }
             "volume_prune" => volume_prune(rt, password).await,
             "networks_list" => networks_list(rt, password).await,
+            "network_inspect" => {
+                let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
+                network_inspect(rt, id, owner, password).await
+            }
+            "network_create" => network_create(rt, data, password).await,
+            "network_connect" => {
+                let network = data.get("network").and_then(|v| v.as_str()).unwrap_or("");
+                let container = data.get("container").and_then(|v| v.as_str()).unwrap_or("");
+                network_connect(rt, network, container, password).await
+            }
+            "network_disconnect" => {
+                let network = data.get("network").and_then(|v| v.as_str()).unwrap_or("");
+                let container = data.get("container").and_then(|v| v.as_str()).unwrap_or("");
+                network_disconnect(rt, network, container, password).await
+            }
             "network_remove" => {
                 let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
                 network_remove(rt, id, owner, password).await
             }
+            "network_prune" => network_prune(rt, password).await,
             "container_prune" => container_prune(rt, password).await,
             "image_prune" => image_prune(rt, password).await,
             "system_prune" => system_prune(rt, password).await,
@@ -137,7 +160,8 @@ impl ChannelHandler for ContainersHandler {
         // Audit mutating container actions
         match action {
             "start" | "stop" | "restart" | "remove" | "remove_image" | "pull" | "create"
-            | "volume_remove" | "volume_prune" | "network_remove"
+            | "volume_create" | "volume_remove" | "volume_prune"
+            | "network_create" | "network_connect" | "network_disconnect" | "network_remove" | "network_prune"
             | "container_prune" | "image_prune" | "system_prune"
             | "service_start" | "service_stop" | "service_restart" => {
                 let target = data.get("id")
@@ -1087,4 +1111,200 @@ async fn system_prune(rt: &str, password: &str) -> serde_json::Value {
         return serde_json::json!({ "error": "password required" });
     }
     sudo_cmd(password, &[rt, "system", "prune", "-f"]).await
+}
+
+// ── Network inspect / create / connect ────────────────────
+
+async fn network_inspect(rt: &str, id: &str, owner: &str, password: &str) -> serde_json::Value {
+    if id.is_empty() {
+        return serde_json::json!({ "error": "no network id" });
+    }
+    if !is_valid_container_ref(id) {
+        return serde_json::json!({ "error": "invalid network id" });
+    }
+    if owner == "root" && !password.is_empty() {
+        run_sudo_cmd(password, rt, &["network", "inspect", "--", id]).await
+    } else {
+        run_cmd(rt, &["network", "inspect", "--", id]).await
+    }
+}
+
+async fn network_create(rt: &str, data: &serde_json::Value, password: &str) -> serde_json::Value {
+    let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    if name.is_empty() {
+        return serde_json::json!({ "error": "no network name" });
+    }
+    if !is_valid_container_ref(name) {
+        return serde_json::json!({ "error": "invalid network name" });
+    }
+
+    let mut sub_args: Vec<String> = vec!["network".into(), "create".into()];
+
+    if let Some(driver) = data.get("driver").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if !is_valid_network_driver(driver) {
+            return serde_json::json!({ "error": "invalid network driver" });
+        }
+        sub_args.push("--driver".into());
+        sub_args.push(driver.into());
+    }
+
+    if let Some(subnet) = data.get("subnet").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if !is_valid_cidr(subnet) {
+            return serde_json::json!({ "error": "invalid subnet — use CIDR, e.g. 192.168.1.0/24" });
+        }
+        sub_args.push("--subnet".into());
+        sub_args.push(subnet.into());
+    }
+
+    if let Some(gateway) = data.get("gateway").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if !is_valid_ip(gateway) {
+            return serde_json::json!({ "error": "invalid gateway IP address" });
+        }
+        sub_args.push("--gateway".into());
+        sub_args.push(gateway.into());
+    }
+
+    if data.get("internal").and_then(|v| v.as_bool()).unwrap_or(false) {
+        sub_args.push("--internal".into());
+    }
+    if data.get("ipv6").and_then(|v| v.as_bool()).unwrap_or(false) {
+        sub_args.push("--ipv6".into());
+    }
+
+    sub_args.push(name.into());
+
+    if password.is_empty() {
+        let refs: Vec<&str> = sub_args.iter().map(|s| s.as_str()).collect();
+        run_cmd_result(rt, &refs).await
+    } else {
+        let mut full: Vec<String> = vec![rt.into()];
+        full.extend(sub_args);
+        let refs: Vec<&str> = full.iter().map(|s| s.as_str()).collect();
+        sudo_cmd(password, &refs).await
+    }
+}
+
+async fn network_connect(rt: &str, network: &str, container: &str, password: &str) -> serde_json::Value {
+    if network.is_empty() || !is_valid_container_ref(network) {
+        return serde_json::json!({ "error": "invalid network name" });
+    }
+    if container.is_empty() || !is_valid_container_ref(container) {
+        return serde_json::json!({ "error": "invalid container id" });
+    }
+    if password.is_empty() {
+        run_cmd_result(rt, &["network", "connect", "--", network, container]).await
+    } else {
+        sudo_cmd(password, &[rt, "network", "connect", "--", network, container]).await
+    }
+}
+
+async fn network_disconnect(rt: &str, network: &str, container: &str, password: &str) -> serde_json::Value {
+    if network.is_empty() || !is_valid_container_ref(network) {
+        return serde_json::json!({ "error": "invalid network name" });
+    }
+    if container.is_empty() || !is_valid_container_ref(container) {
+        return serde_json::json!({ "error": "invalid container id" });
+    }
+    if password.is_empty() {
+        run_cmd_result(rt, &["network", "disconnect", "--", network, container]).await
+    } else {
+        sudo_cmd(password, &[rt, "network", "disconnect", "--", network, container]).await
+    }
+}
+
+// ── Volume inspect / create ────────────────────────────────
+
+async fn volume_inspect(rt: &str, name: &str, owner: &str, password: &str) -> serde_json::Value {
+    if name.is_empty() {
+        return serde_json::json!({ "error": "no volume name" });
+    }
+    if !is_valid_container_ref(name) {
+        return serde_json::json!({ "error": "invalid volume name" });
+    }
+    if owner == "root" && !password.is_empty() {
+        run_sudo_cmd(password, rt, &["volume", "inspect", "--", name]).await
+    } else {
+        run_cmd(rt, &["volume", "inspect", "--", name]).await
+    }
+}
+
+async fn volume_create(rt: &str, data: &serde_json::Value, password: &str) -> serde_json::Value {
+    let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
+    if name.is_empty() {
+        return serde_json::json!({ "error": "no volume name" });
+    }
+    if !is_valid_container_ref(name) {
+        return serde_json::json!({ "error": "invalid volume name" });
+    }
+
+    let mut sub_args: Vec<String> = vec!["volume".into(), "create".into()];
+
+    if let Some(driver) = data.get("driver").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+        if !is_valid_volume_driver_name(driver) {
+            return serde_json::json!({ "error": "invalid volume driver name" });
+        }
+        sub_args.push("--driver".into());
+        sub_args.push(driver.into());
+    }
+
+    if let Some(labels) = data.get("labels").and_then(|v| v.as_array()) {
+        for label in labels {
+            let key = label.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            let value = label.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            if !key.is_empty() {
+                if !is_valid_label_key(key) {
+                    return serde_json::json!({ "error": format!("invalid label key: {key}") });
+                }
+                sub_args.push("--label".into());
+                sub_args.push(format!("{key}={value}"));
+            }
+        }
+    }
+
+    sub_args.push("--name".into());
+    sub_args.push(name.into());
+
+    if password.is_empty() {
+        let refs: Vec<&str> = sub_args.iter().map(|s| s.as_str()).collect();
+        run_cmd_result(rt, &refs).await
+    } else {
+        let mut full: Vec<String> = vec![rt.into()];
+        full.extend(sub_args);
+        let refs: Vec<&str> = full.iter().map(|s| s.as_str()).collect();
+        sudo_cmd(password, &refs).await
+    }
+}
+
+// ── Additional validators ──────────────────────────────────
+
+fn is_valid_network_driver(driver: &str) -> bool {
+    matches!(driver, "bridge" | "overlay" | "host" | "none" | "macvlan" | "ipvlan" | "null")
+}
+
+fn is_valid_cidr(cidr: &str) -> bool {
+    !cidr.is_empty()
+        && cidr.len() <= 43
+        && cidr.chars().all(|c| c.is_ascii_alphanumeric() || ".:/%".contains(c))
+        && cidr.contains('/')
+        && !cidr.starts_with('/')
+}
+
+fn is_valid_ip(ip: &str) -> bool {
+    !ip.is_empty()
+        && ip.len() <= 39
+        && ip.chars().all(|c| c.is_ascii_alphanumeric() || ".:".contains(c))
+}
+
+fn is_valid_label_key(key: &str) -> bool {
+    !key.is_empty()
+        && key.len() <= 128
+        && !key.starts_with('-')
+        && key.chars().all(|c| c.is_alphanumeric() || "-_./".contains(c))
+}
+
+fn is_valid_volume_driver_name(driver: &str) -> bool {
+    !driver.is_empty()
+        && driver.len() <= 64
+        && !driver.starts_with('-')
+        && driver.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c))
 }
