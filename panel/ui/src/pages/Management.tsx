@@ -50,9 +50,25 @@ function EnrollmentToken() {
     ? `curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway ${gatewayUrl} --token ${token}`
     : '';
 
+  const copyToClipboard = (text: string) => {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Fallback for plain HTTP contexts
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok ? Promise.resolve() : Promise.reject(new Error('execCommand failed'));
+  };
+
   const copy = async (text: string, which: 'token' | 'cmd') => {
     try {
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       setCopied(which);
       setTimeout(() => setCopied(null), 1800);
     } catch {
@@ -61,6 +77,9 @@ function EnrollmentToken() {
   };
 
   const maskedToken = token.length > 8 ? token.slice(0, 4) + '••••••••••••••••••••••••' + token.slice(-4) : token;
+  const displayCmd = info.token
+    ? installCmd.replace(token, revealed ? token : maskedToken)
+    : '';
 
   return (
     <div style={S.tokenSection}>
@@ -81,7 +100,7 @@ function EnrollmentToken() {
         <div style={{ marginTop: '0.5rem' }}>
           <div style={{ ...S.muted, marginBottom: '0.25rem', fontSize: '0.72rem' }}>Install command for remote hosts:</div>
           <div style={S.cmdRow}>
-            <code style={S.cmdCode}>{installCmd}</code>
+            <code style={S.cmdCode}>{displayCmd}</code>
             <button style={S.btnSmall} onClick={() => copy(installCmd, 'cmd')}>
               {copied === 'cmd' ? '✓ Copied' : 'Copy'}
             </button>
