@@ -26,6 +26,10 @@ pub enum Message {
         /// (loopback URL). Used to mark the panel host in the UI.
         #[serde(default)]
         is_local: bool,
+        /// PSK enrollment token — must match TENODERA_AGENT_TOKEN on the gateway.
+        /// Absent on agents that pre-date token enforcement.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        token: Option<String>,
     },
 
     /// Gateway → Agent: acknowledge and report own version.
@@ -238,14 +242,15 @@ mod tests {
 
     #[test]
     fn hello_roundtrip() {
-        let msg = Message::Hello { version: 1, hostname: "srv01".into(), is_local: false };
+        let msg = Message::Hello { version: 1, hostname: "srv01".into(), is_local: false, token: Some("abc".into()) };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"hello\""), "tag missing: {json}");
         let rt: Message = serde_json::from_str(&json).unwrap();
-        let Message::Hello { version, hostname, is_local } = rt else { panic!() };
+        let Message::Hello { version, hostname, is_local, token } = rt else { panic!() };
         assert_eq!(version, 1);
         assert_eq!(hostname, "srv01");
         assert!(!is_local);
+        assert_eq!(token.as_deref(), Some("abc"));
     }
 
     #[test]

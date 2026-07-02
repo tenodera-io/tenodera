@@ -26,10 +26,11 @@ pub async fn agent_ws_upgrade(
 ) -> impl IntoResponse {
     let registry = state.agent_registry.clone();
     let remote_ip = addr.ip().to_string();
-    ws.on_upgrade(move |socket| handle_agent_socket(registry, socket, remote_ip))
+    let agent_token = state.config.agent_token.clone();
+    ws.on_upgrade(move |socket| handle_agent_socket(registry, socket, remote_ip, agent_token))
 }
 
-async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_ip: String) {
+async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_ip: String, agent_token: Option<String>) {
     let (mut sink, mut stream) = socket.split();
 
     // ── Hello/HelloAck handshake ──────────────────────────────────────────
@@ -37,7 +38,24 @@ async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_
         match stream.next().await {
             Some(Ok(Message::Text(text))) => {
                 match serde_json::from_str::<message::Message>(&text) {
-                    Ok(message::Message::Hello { version, hostname, is_local }) => {
+                    Ok(message::Message::Hello { version, hostname, is_local, token }) => {
+                        // PSK enforcement: reject if gateway has a token configured
+                        // and the agent either omitted it or provided a wrong value.
+                        if let Some(ref expected) = agent_token {
+                            let provided = token.as_deref().unwrap_or("");
+                            if !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+                                tracing::warn!(
+                                    remote_ip = %remote_ip,
+                                    hostname = %hostname,
+                                    "agent rejected: invalid enrollment token"
+                                );
+                                return;
+                            }
+                        } else {
+                            tracing::warn!(
+                                "TENODERA_AGENT_TOKEN not configured — agent accepted without token verification"
+                            );
+                        }
                         break (version, hostname, is_local);
                     }
                     Ok(other) => {
@@ -154,4 +172,14 @@ async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_
     registry.unregister(&host.id).await;
     writer_handle.abort();
     tracing::info!(host = %host.id, "agent disconnected");
+}
+
+/// Constant-time byte comparison — prevents timing attacks on token verification.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() { return false; }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
 }

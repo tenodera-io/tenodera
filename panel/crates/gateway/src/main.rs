@@ -25,6 +25,7 @@ use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 use crate::agent_registry::AgentRegistry;
+use crate::auth::Role;
 use crate::config::GatewayConfig;
 use crate::rate_limit::LoginRateLimiter;
 use crate::session::SessionStore;
@@ -137,6 +138,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/agent", get(agent_ws::agent_ws_upgrade))
         .route("/api/hosts", axum::routing::get(hosts_list))
         .route("/api/hosts/{id}", axum::routing::delete(hosts_remove).patch(hosts_patch))
+        .route("/api/agent-token", get(agent_token_info))
         .route("/api/health", get(health))
         .route("/api/health/ready", get(health_ready))
         // Serve built frontend from ui/dist (production)
@@ -273,6 +275,31 @@ async fn health_ready(
     };
     let code = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
     (code, Json(ReadyResponse { ready, agent_bin: bin, error }))
+}
+
+/// GET /api/agent-token — return the PSK enrollment token (admin only).
+/// Used by the Management page to display the token and pre-fill install commands.
+async fn agent_token_info(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> impl axum::response::IntoResponse {
+    let bearer = match extract_bearer_token(&headers) {
+        Some(t) => t,
+        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response(),
+    };
+    let session = match state.sessions.get(&bearer).await {
+        Some(s) => s,
+        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response(),
+    };
+    if session.role != Role::Admin {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "admin required"}))).into_response();
+    }
+    let gateway_url = state.config.external_url.clone()
+        .unwrap_or_else(|| format!("http://{}", state.config.bind_addr));
+    Json(serde_json::json!({
+        "token": state.config.agent_token,
+        "gateway_url": gateway_url,
+    })).into_response()
 }
 
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {

@@ -73,6 +73,7 @@ async fn run_session(config: &AgentConfig, hostname: &str) -> anyhow::Result<()>
         version: PROTOCOL_VERSION,
         hostname: hostname.to_string(),
         is_local: config.is_local(),
+        token: config.agent_token.clone(),
     })?;
     ws_sink.send(tokio_tungstenite::tungstenite::Message::Text(hello.into())).await?;
 

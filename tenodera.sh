@@ -169,6 +169,20 @@ ok "Tenodera installed successfully!"
 
 CONF_DIR="/etc/tenodera"
 
+# ── Generate PSK enrollment token ─────────────────────────────────────────────
+
+if ! grep -q "^TENODERA_AGENT_TOKEN=" "${CONF_DIR}/tenodera.cnf" 2>/dev/null; then
+  info "Generating PSK enrollment token..."
+  TOKEN=$(openssl rand -hex 32)
+  printf '\n# PSK enrollment token — agents must present this in their Hello message\nTENODERA_AGENT_TOKEN=%s\n' "${TOKEN}" >> "${CONF_DIR}/tenodera.cnf"
+  ok "Token generated and saved to ${CONF_DIR}/tenodera.cnf"
+  info "Restarting gateway to apply enrollment token..."
+  systemctl restart tenodera
+else
+  TOKEN=$(grep "^TENODERA_AGENT_TOKEN=" "${CONF_DIR}/tenodera.cnf" | cut -d= -f2-)
+  info "Using existing enrollment token from ${CONF_DIR}/tenodera.cnf"
+fi
+
 # ── Configure and start local agent ──────────────────────────────────────────
 # The agent connects to the local gateway over plain HTTP and auto-registers.
 # To enable HTTPS: generate a cert (cd panel && sudo make tls-selfsigned),
@@ -180,8 +194,14 @@ if [ ! -f "${CONF_DIR}/agent.cnf" ]; then
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
 # HTTPS: change URL to https:// above. Uncomment below only for self-signed certs.
 # TENODERA_AGENT_ACCEPT_INSECURE=1
+TENODERA_AGENT_TOKEN=${TOKEN}
 EOF
   chmod 640 "${CONF_DIR}/agent.cnf"
+fi
+
+# Ensure the enrollment token is present in the local agent config
+if ! grep -q "^TENODERA_AGENT_TOKEN=" "${CONF_DIR}/agent.cnf" 2>/dev/null; then
+  printf 'TENODERA_AGENT_TOKEN=%s\n' "${TOKEN}" >> "${CONF_DIR}/agent.cnf"
 fi
 
 if systemctl is-active --quiet tenodera-agent 2>/dev/null; then
@@ -201,6 +221,9 @@ echo ""
 echo "  Log in with any PAM user that has sudo privileges."
 echo "  This host will appear in the UI as soon as the agent connects (a few seconds)."
 echo ""
+echo "  Enrollment token (copy from Management tab or use directly):"
+echo "  ${TOKEN}"
+echo ""
 echo "  Install agent on remote managed hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://HOST:9090"
+echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://$(hostname -I | awk '{print $1}'):9090 --token ${TOKEN}"
 echo ""
