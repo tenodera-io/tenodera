@@ -1212,6 +1212,14 @@ async fn network_disconnect(rt: &str, network: &str, container: &str, password: 
     }
 }
 
+async fn network_prune(rt: &str, password: &str) -> serde_json::Value {
+    if password.is_empty() {
+        run_cmd_result(rt, &["network", "prune", "--force"]).await
+    } else {
+        sudo_cmd(password, &[rt, "network", "prune", "--force"]).await
+    }
+}
+
 // ── Volume inspect / create ────────────────────────────────
 
 async fn volume_inspect(rt: &str, name: &str, owner: &str, password: &str) -> serde_json::Value {
