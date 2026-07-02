@@ -197,6 +197,16 @@ pub async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> V
     }
 }
 
+/// Validate that a string is a safe Unix username (no shell metacharacters).
+/// Values are passed as Command arguments (no shell involved), but validated
+/// as a defence-in-depth measure.
+pub fn is_valid_username(user: &str) -> bool {
+    !user.is_empty()
+        && user.len() <= 64
+        && !user.starts_with('-')
+        && user.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+}
+
 /// Return a "permission denied" error JSON if the caller's role is `readonly`.
 ///
 /// Usage in write handlers:

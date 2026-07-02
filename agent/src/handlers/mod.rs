@@ -3,6 +3,7 @@ pub mod system_info;
 pub mod system_pubkey;
 pub mod systemd_units;
 pub mod file_list;
+pub mod file_ops;
 pub mod journal_query;
 pub mod terminal_pty;
 pub mod metrics_stream;

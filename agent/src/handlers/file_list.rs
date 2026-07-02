@@ -5,7 +5,7 @@ use tenodera_protocol::message::Message;
 use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
-use crate::util::run_cmd;
+use crate::util::{run_cmd, is_valid_username};
 
 pub struct FileListHandler;
 
@@ -142,16 +142,6 @@ fn parse_ls_output(out: &str) -> Vec<serde_json::Value> {
         entries.push(serde_json::json!({ "name": name, "type": ftype, "size": size }));
     }
     entries
-}
-
-/// Validate that a string is a safe Unix username (no shell metacharacters).
-/// Sufficient because the value is passed as a Command argument, not through
-/// a shell — but we validate anyway as a defence-in-depth measure.
-fn is_valid_username(user: &str) -> bool {
-    !user.is_empty()
-        && user.len() <= 64
-        && !user.starts_with('-')
-        && user.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
 }
 
 /// Extract the filename from an `ls -la` output line.

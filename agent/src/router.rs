@@ -7,7 +7,7 @@ use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::handlers::{certs, containers, cron, disk_usage, dns, file_list, hardware_info, host_config, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats, networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify, system_info, system_pubkey, systemd_timers, systemd_units, terminal_pty, top_processes, users};
+use crate::handlers::{certs, containers, cron, disk_usage, dns, file_list, file_ops, hardware_info, host_config, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats, networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify, system_info, system_pubkey, systemd_timers, systemd_units, terminal_pty, top_processes, users};
 
 /// Active streaming channel state.
 struct ActiveChannel {
@@ -51,6 +51,9 @@ impl Router {
         self.register(Arc::new(systemd_units::SystemdUnitsHandler));
         self.register(Arc::new(systemd_units::SystemdManageHandler));
         self.register(Arc::new(file_list::FileListHandler));
+        self.register(Arc::new(file_ops::FileReadHandler));
+        self.register(Arc::new(file_ops::FileWriteHandler));
+        self.register(Arc::new(file_ops::FileDeleteHandler));
         self.register(Arc::new(journal_query::JournalQueryHandler));
         self.register(Arc::new(terminal_pty::TerminalPtyHandler::new()));
         self.register(Arc::new(metrics_stream::MetricsStreamHandler));
