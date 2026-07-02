@@ -410,20 +410,27 @@ async fn trust_remove(data: &Value, password: &str) -> Value {
         _ => return json!({ "error": "missing path" }),
     };
 
-    // Safety: only allow removing from known trust store paths
+    // Canonicalize to resolve symlinks before applying the prefix check.
+    // A string-based starts_with would allow a symlink inside the trust store
+    // directory pointing outside it (e.g. to /etc/shadow) to pass the check.
+    let canonical = match std::fs::canonicalize(&path) {
+        Ok(p) => p,
+        Err(_) => return json!({ "error": "path not found or not accessible" }),
+    };
+    let canonical_str = canonical.to_string_lossy();
     let allowed_prefixes = [
         "/usr/local/share/ca-certificates/",
         "/etc/pki/ca-trust/source/anchors/",
         "/etc/ca-certificates/trust-source/anchors/",
     ];
-    if !allowed_prefixes.iter().any(|pfx| path.starts_with(pfx)) {
+    if !allowed_prefixes.iter().any(|pfx| canonical_str.starts_with(pfx)) {
         return json!({ "error": "path not in a known trust store directory" });
     }
-    if path.contains("..") {
-        return json!({ "error": "invalid path" });
-    }
 
-    let rm = sudo_action(password, &["rm", "-f", &path]).await;
+    // Remove the canonical path — not the user-supplied string — to prevent
+    // a TOCTOU race where the path is swapped to a symlink after canonicalization.
+    let canonical_path = canonical.to_string_lossy().into_owned();
+    let rm = sudo_action(password, &["rm", "-f", &canonical_path]).await;
     if rm.get("error").is_some() { return rm; }
 
     match detect_distro().await {
@@ -454,6 +461,22 @@ async fn parse_pem_input(data: &Value) -> Value {
         let tmp_der = format!("/tmp/tenodera-import-{}.der", std::process::id());
         let tmp_pem = format!("/tmp/tenodera-import-{}.pem", std::process::id());
 
+        // Pre-create temp files with mode 0o600 — user-supplied data may include
+        // private key material; world-readable temp files are not acceptable.
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            for p in [&tmp_der, &tmp_pem] {
+                if let Err(e) = std::fs::OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(0o600)
+                    .open(p)
+                {
+                    return json!({ "error": format!("failed to create temp file: {e}") });
+                }
+            }
+        }
+
         // Decode base64 and write DER
         use base64::Engine;
         let der_bytes = match base64::engine::general_purpose::STANDARD.decode(raw.replace(['\n', '\r', ' '], "")) {
@@ -480,6 +503,17 @@ async fn parse_pem_input(data: &Value) -> Value {
 
     // Write pem to temp and parse
     let tmp = format!("/tmp/tenodera-parse-{}.pem", std::process::id());
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        if let Err(e) = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&tmp)
+        {
+            return json!({ "error": format!("failed to create temp file: {e}") });
+        }
+    }
     if fs::write(&tmp, &pem).await.is_err() {
         return json!({ "error": "failed to write temp file" });
     }
@@ -605,6 +639,21 @@ async fn generate_selfsigned(data: &Value) -> Value {
     let tmp = format!("/tmp/tenodera-selfsigned-{}", std::process::id());
     let key_path  = format!("{tmp}.key");
     let cert_path = format!("{tmp}.crt");
+
+    // Pre-create the key file with mode 0o600 before openssl writes to it.
+    // Without this, openssl creates it with the process umask (0022 → world-readable)
+    // and the private key would be briefly readable by other local users.
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        if let Err(e) = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(&key_path)
+        {
+            return json!({ "error": format!("failed to create temp key file: {e}") });
+        }
+    }
 
     let days_str = days.to_string();
     let bits_str = bits.to_string();
