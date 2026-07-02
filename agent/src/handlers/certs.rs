@@ -515,26 +515,39 @@ async fn verify_host(data: &Value) -> Value {
         (host, "443".to_string())
     };
 
-    // Basic hostname safety check
-    if hostname.is_empty() || hostname.contains(['/', '\\', '\n', '\r']) {
+    // Strict hostname validation — allow only safe characters, reject all shell metacharacters.
+    // Covers DNS names, IPv4, and bracketed IPv6 addresses.
+    let valid_hostname = !hostname.is_empty()
+        && hostname.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '[' | ']' | ':'));
+    if !valid_hostname {
         return json!({ "error": "invalid hostname" });
     }
 
-    let connect = format!("{hostname}:{port}");
+    // Validate port is a valid number (avoids injecting arbitrary strings).
+    let port_num: u16 = match port.parse::<u16>() {
+        Ok(p) if p > 0 => p,
+        _ => return json!({ "error": "invalid port" }),
+    };
 
-    // Use openssl s_client for structured output
-    let out = tokio::process::Command::new("sh")
-        .args(["-c", &format!(
-            "echo | openssl s_client -connect {connect} -verify_return_error -brief 2>&1 | head -30"
-        )])
+    let connect = format!("{hostname}:{port_num}");
+
+    // Invoke openssl directly — no sh -c, no shell metacharacter injection possible.
+    // stdin = null causes openssl to receive EOF and close the connection after the handshake.
+    let out = tokio::process::Command::new("openssl")
+        .args(["s_client", "-connect", &connect, "-verify_return_error", "-brief"])
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .output()
         .await;
 
     let output = match out {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string()
-            + &String::from_utf8_lossy(&o.stderr),
+        Ok(o) => {
+            let combined = String::from_utf8_lossy(&o.stdout).to_string()
+                + &String::from_utf8_lossy(&o.stderr);
+            // Limit to first 30 lines (replaces the former | head -30).
+            combined.lines().take(30).collect::<Vec<_>>().join("\n")
+        }
         Err(e) => return json!({ "error": e.to_string() }),
     };
 
