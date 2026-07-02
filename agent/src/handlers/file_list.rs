@@ -127,14 +127,14 @@ async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
 fn parse_ls_output(out: &str) -> Vec<serde_json::Value> {
     let mut entries = Vec::new();
     for line in out.lines().skip(1) {
-        let parts: Vec<&str> = line.splitn(8, char::is_whitespace)
-            .filter(|s| !s.is_empty())
-            .collect();
-        if parts.len() < 7 { continue; }
-        let perms = parts[0];
-        let size_str = parts[3];
         let name = extract_filename(line);
         if name.is_empty() || name == "." || name == ".." { continue; }
+        // split_whitespace collapses padding spaces so multi-space size alignment
+        // doesn't consume the splitn budget: perms[0] links[1] user[2] group[3] size[4]
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 5 { continue; }
+        let perms    = parts[0];
+        let size_str = parts[4];
         let ftype = if perms.starts_with('d') { "directory" }
             else if perms.starts_with('l') { "symlink" }
             else { "file" };
