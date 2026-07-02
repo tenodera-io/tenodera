@@ -100,7 +100,12 @@ impl ChannelHandler for FileDeleteHandler {
         let data = if password.is_empty() {
             delete_as_user(path, user).await
         } else {
-            sudo_action(password, &["rm", "--", path]).await
+            let args: &[&str] = if std::path::Path::new(path).is_dir() {
+                &["rm", "-r", "--", path]
+            } else {
+                &["rm", "--", path]
+            };
+            sudo_action(password, args).await
         };
         ok_msgs(channel, data)
     }
@@ -296,8 +301,14 @@ async fn delete_as_user(path: &str, user: &str) -> serde_json::Value {
         return json!({ "error": "Limited access: restricted to your home directory" });
     }
 
+    let rm_args: &[&str] = if canonical.is_dir() {
+        &["-n", "-u", user, "--", "rm", "-r", "--", path]
+    } else {
+        &["-n", "-u", user, "--", "rm", "--", path]
+    };
+
     match tokio::process::Command::new("sudo")
-        .args(["-n", "-u", user, "--", "rm", "--", path])
+        .args(rm_args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
