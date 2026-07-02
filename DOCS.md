@@ -1193,7 +1193,11 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 - TLS required by default; WebSocket Origin validation; CSRF protection on mutating requests
 - Security headers: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
 - **PSK agent authentication** — every agent must present `TENODERA_AGENT_TOKEN` in its `Hello` message; verified with constant-time comparison to prevent timing attacks; agents without a valid token are rejected before registration
-- Gateway injects `_user` and `_role` into every message — agent never trusts client-supplied identity
+- Gateway injects `_user` and `_role` into every Open message; `_role` is re-injected into every subsequent Data message on the same channel (including streaming channels) — agent never trusts client-supplied identity
+- Missing `_role` in a handler payload is treated as unauthorized, not as admin — any message that bypasses gateway injection is denied by default
+- Certificate and TLS operations (`openssl s_client`, key generation) invoke `openssl` directly via argument arrays — no `sh -c`, no shell metacharacter injection possible
+- Temporary files in `/tmp` created by certificate handlers use 64-bit random suffixes (from `/dev/urandom`) and are created with `O_EXCL` + mode `0o600` — prevents predictable-path symlink attacks and world-readable private key exposure
+- Trust store removal (`trust_remove`) canonicalizes the supplied path via `fs::canonicalize()` before checking the allowed-prefix list — symlinks inside the trust store directory cannot redirect `rm` to arbitrary paths
 - Audit log: all logins, logouts, and privilege escalations → `/var/log/tenodera_audit.log`
 - systemd hardening: `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`
 
