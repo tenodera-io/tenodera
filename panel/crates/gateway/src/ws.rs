@@ -173,8 +173,10 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
     // channel_id → sender for that agent
     let mut channel_routes: HashMap<ChannelId, mpsc::Sender<message::Message>> = HashMap::new();
-    // host_id → proxy sender for the remote agent session
-    let mut remote_senders: HashMap<String, mpsc::Sender<message::Message>> = HashMap::new();
+    // host_id → (proxy sender, conn liveness token) for the remote agent session.
+    // The Weak<()> becomes non-upgradeable when the AgentConn is replaced (reconnect)
+    // or removed (disconnect), allowing stale-connection detection without a round-trip.
+    let mut remote_senders: HashMap<String, (mpsc::Sender<message::Message>, std::sync::Weak<()>)> = HashMap::new();
 
     let mut session_check = tokio::time::interval(std::time::Duration::from_secs(5));
     session_check.tick().await;
@@ -213,9 +215,17 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                     .map(|s| s.to_string());
 
                                 let target_sender = if let Some(ref hid) = host_id {
-                                    if let Some(sender) = remote_senders.get(hid) {
-                                        sender.clone()
+                                    // Use cached sender only if its liveness token is still alive
+                                    // (token is dropped when the AgentConn is replaced on reconnect).
+                                    let valid_cached = remote_senders.get(hid)
+                                        .and_then(|(tx, weak)| weak.upgrade().map(|_| tx.clone()));
+
+                                    if let Some(sender) = valid_cached {
+                                        sender
                                     } else {
+                                        // Stale or no entry — remove old entry and reconnect.
+                                        remote_senders.remove(hid);
+
                                         if remote_senders.len() >= MAX_REMOTE_AGENTS {
                                             let close = message::Message::Close {
                                                 channel: channel.clone(),
@@ -227,7 +237,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                         }
 
                                         match state.agent_registry.connect_session(hid, &s_prefix).await {
-                                            Some((proxy_tx, from_rx)) => {
+                                            Some((proxy_tx, from_rx, conn_token)) => {
                                                 audit::log(&user, "agent_connect", hid, true, "remote agent connected via registry");
                                                 spawn_agent_forwarder(
                                                     format!("remote:{hid}"),
@@ -235,7 +245,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                                     sink.clone(),
                                                     close_tx.clone(),
                                                 );
-                                                remote_senders.insert(hid.clone(), proxy_tx.clone());
+                                                remote_senders.insert(hid.clone(), (proxy_tx.clone(), conn_token));
                                                 proxy_tx
                                             }
                                             None => {
@@ -276,6 +286,18 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
                                 if target_sender.send(open_msg).await.is_err() {
                                     channel_routes.remove(&channel_key);
+                                    // Proxy task died (race: conn dropped between Weak check and send).
+                                    // Evict stale entry and immediately tell the client so it doesn't
+                                    // wait 30 s for a request timeout.
+                                    if let Some(ref hid) = host_id {
+                                        remote_senders.remove(hid);
+                                    }
+                                    let close = message::Message::Close {
+                                        channel: channel_key,
+                                        problem: Some("host-offline".into()),
+                                    };
+                                    let mut s = sink.lock().await;
+                                    let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
                                 }
                             }
                             Ok(parsed) => {

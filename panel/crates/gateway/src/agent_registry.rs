@@ -15,6 +15,10 @@ struct AgentConn {
     subscribers: Arc<RwLock<HashMap<String, mpsc::Sender<Message>>>>,
     /// Remote IP address of the agent connection.
     remote_ip: Option<String>,
+    /// Lifetime token: held exclusively by this AgentConn.
+    /// Weak references in WS sessions can detect when this conn is dropped
+    /// (agent disconnected / reconnected with a new conn).
+    _token: Arc<()>,
 }
 
 /// Registry of currently-connected agent WebSocket connections.
@@ -30,15 +34,17 @@ impl AgentRegistry {
     }
 
     /// Register a newly-connected agent.
-    /// Returns the subscriber map so the agent WS reader can route responses.
+    /// Returns the subscriber map so the agent WS reader can route responses,
+    /// plus a Weak token that user WS sessions can hold to detect stale connections.
     pub async fn register(
         &self,
         host_id: String,
         to_agent: mpsc::Sender<Message>,
         remote_ip: Option<String>,
     ) -> Arc<RwLock<HashMap<String, mpsc::Sender<Message>>>> {
+        let token = Arc::new(());
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
-        let conn = Arc::new(AgentConn { to_agent, subscribers: subscribers.clone(), remote_ip });
+        let conn = Arc::new(AgentConn { to_agent, subscribers: subscribers.clone(), remote_ip, _token: token });
         self.inner.write().await.insert(host_id, conn);
         subscribers
     }
@@ -61,16 +67,21 @@ impl AgentRegistry {
 
     /// Subscribe a user WS session to an agent connection.
     ///
-    /// Returns a `(tx, rx)` pair:
+    /// Returns `(tx, rx, conn_token)`:
     /// - `tx`: proxy sender — transparently prefixes channel IDs with `session_prefix`
     ///   so multiple sessions can share the same agent without channel ID collisions.
     /// - `rx`: receives agent responses for this session (prefix stripped).
+    /// - `conn_token`: a `Weak<()>` that is valid as long as this specific agent
+    ///   connection is registered. Callers can store this and call `upgrade()` later
+    ///   to detect whether the agent has disconnected or reconnected since the session
+    ///   was established (a reconnect replaces the AgentConn, dropping the old token).
     pub async fn connect_session(
         &self,
         host_id: &str,
         session_id: &str,
-    ) -> Option<(mpsc::Sender<Message>, mpsc::Receiver<Message>)> {
+    ) -> Option<(mpsc::Sender<Message>, mpsc::Receiver<Message>, std::sync::Weak<()>)> {
         let conn = self.inner.read().await.get(host_id)?.clone();
+        let conn_token = Arc::downgrade(&conn._token);
 
         let prefix = session_prefix(session_id);
 
@@ -92,7 +103,7 @@ impl AgentRegistry {
             }
         });
 
-        Some((proxy_tx, sub_rx))
+        Some((proxy_tx, sub_rx, conn_token))
     }
 }
 
