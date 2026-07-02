@@ -52,19 +52,16 @@ Log in at `http://<host>:9090` with any PAM system user.
 
 ### Agent (managed hosts)
 
+Get the enrollment token and ready-to-use install command from **Management → Enrollment Token** in the UI (admin only), then run it on the managed host:
+
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <token>
 ```
 
-The agent connects outbound to the gateway — no inbound ports needed on the managed host.
-The host appears in the panel UI automatically on first connection.
+The token is generated automatically when the panel is installed and is required for every agent connection. The agent connects outbound — no inbound ports needed on the managed host. The host appears in the panel UI automatically on first connection.
 
-For the **panel host itself** (no `--gateway` needed — defaults to localhost):
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash
-```
+For the **panel host itself** the token is injected automatically — no manual step needed.
 
 > See [DOCS.md](DOCS.md) for TLS setup, configuration reference, multi-host guide, and more.
 

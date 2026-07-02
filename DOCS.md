@@ -107,6 +107,7 @@ The installer:
 8. Installs and enables `tenodera.service` (systemd)
 9. Compiles and installs the local agent (`tenodera-agent`)
 10. Writes `/etc/tenodera/agent.cnf` and enables `tenodera-agent.service`
+11. Generates a PSK enrollment token (`openssl rand -hex 32`) and appends `TENODERA_AGENT_TOKEN` to both `tenodera.cnf` and `agent.cnf` — the local agent picks it up automatically
 
 After install, log in at `http://<host>:9090` with any PAM system user.
 
@@ -114,31 +115,32 @@ After install, log in at `http://<host>:9090` with any PAM system user.
 
 ### 3.2 Agent (managed hosts)
 
-Install on each Linux server you want to manage:
+The easiest way is to copy the ready-to-use install command from **Management → Enrollment Token** in the UI (admin only) — the token is already included. Or construct it manually:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <enrollment-token>
 ```
 
-Replace `<panel-host>` with the IP address or hostname of your panel server.
+Replace `<panel-host>` with the panel IP/hostname and `<enrollment-token>` with the value shown in Management. The token is required — agents without it are rejected by the gateway.
 
-**On the panel host itself** (agent already installed by panel installer, but if reinstalling separately):
+**On the panel host itself** the token is injected automatically by `tenodera.sh`. If reinstalling the agent separately:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash
+# Read the token first, then pass it:
+TOKEN=$(sudo grep '^TENODERA_AGENT_TOKEN=' /etc/tenodera/tenodera.cnf | cut -d= -f2-)
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+  | sudo bash -s -- --token "$TOKEN"
 ```
-
-No `--gateway` argument needed — defaults to `http://127.0.0.1:9090`.
 
 The installer:
 1. Installs build dependencies (Rust, gcc, pkg-config)
 2. Compiles `tenodera-agent` from source
 3. Installs the binary with setuid root (`-m 4755`)
-4. Writes `/etc/tenodera/agent.cnf`
+4. Writes `/etc/tenodera/agent.cnf` (including `TENODERA_AGENT_TOKEN`)
 5. Installs and enables `tenodera-agent.service`
 
-The host appears in the panel UI automatically within seconds of the agent starting. No manual registration, no tokens, no SSH keys required.
+The host appears in the panel UI automatically within seconds of the agent starting. No SSH keys, no open inbound ports required.
 
 ### 3.3 Build from source
 
@@ -190,6 +192,12 @@ TENODERA_UI_DIR=/usr/share/tenodera/ui            # Built UI assets directory
 # ── Security ──────────────────────────────────────────────────────────────────
 TENODERA_IDLE_TIMEOUT=900        # Session idle timeout in seconds (default: 900 = 15 min)
 TENODERA_MAX_STARTUPS=20         # Max failed logins per IP per 5-min window (default: 20)
+
+# PSK enrollment token — agents must present this value in their Hello message.
+# Generated automatically by tenodera.sh at install time (openssl rand -hex 32).
+# If absent, all agents are accepted without verification (not recommended).
+# View and copy the ready-to-use install command from Management → Enrollment Token.
+TENODERA_AGENT_TOKEN=<64-hex-char token>
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 RUST_LOG=tenodera_gateway=info   # Log filter: error | warn | info | debug | trace
@@ -318,6 +326,11 @@ The agent reads `/etc/tenodera/agent.cnf` at startup (if environment variables a
 # https:// → encrypted WebSocket (wss://)
 TENODERA_GATEWAY_URL=http://<panel-host>:9090
 
+# PSK enrollment token — must match TENODERA_AGENT_TOKEN in gateway tenodera.cnf.
+# Written automatically by tenodera-agent.sh --token <value>.
+# Obtain the token from Management → Enrollment Token in the UI.
+TENODERA_AGENT_TOKEN=<64-hex-char token>
+
 # Skip TLS certificate verification.
 # Uncomment ONLY when using https:// with a self-signed certificate.
 # Not needed for http:// or for https:// with a CA-signed certificate.
@@ -376,12 +389,14 @@ Tenodera is designed to manage multiple servers from a single panel. Each manage
 
 **Adding a host:**
 
+Go to **Management → Enrollment Token** (admin only) and click **Copy** next to the install command — it has the gateway URL and token pre-filled. Or build it manually:
+
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <enrollment-token>
 ```
 
-The host appears in the panel immediately when the agent connects — no pre-registration needed.
+The host appears in the panel immediately when the agent connects — no pre-registration needed. The enrollment token is verified at the WebSocket handshake level before the host is registered.
 
 **Switching between hosts:**
 
@@ -956,6 +971,20 @@ Generate a self-signed TLS certificate:
 
 An admin-only panel for managing all connected agents from a single view.
 
+**Enrollment Token**
+
+Displayed at the top of the Management page. Shows the PSK token that every agent must present when connecting to the gateway.
+
+| Control | Description |
+|---------|-------------|
+| Token field | Token value, masked by default (`9563••••••••40d0`) |
+| Reveal / Hide | Toggle between masked and full display |
+| Copy (token) | Copies the raw 64-character hex token to the clipboard |
+| Install command | Full `curl … tenodera-agent.sh … --gateway … --token …` command — also masked when hidden |
+| Copy (command) | Copies the complete install command with gateway URL and token pre-filled |
+
+The token is generated automatically at panel install time (`openssl rand -hex 32`) and stored in `/etc/tenodera/tenodera.cnf`. It does not rotate automatically — to rotate it, replace `TENODERA_AGENT_TOKEN` in `tenodera.cnf`, restart the gateway (`systemctl restart tenodera`), and update `agent.cnf` on every managed host, then restart each agent.
+
 **Host list**
 
 Shows all hosts that have ever connected to this gateway:
@@ -1163,6 +1192,7 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 - Passwords stored as `Zeroizing<String>`, overwritten on drop; core dumps disabled
 - TLS required by default; WebSocket Origin validation; CSRF protection on mutating requests
 - Security headers: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
+- **PSK agent authentication** — every agent must present `TENODERA_AGENT_TOKEN` in its `Hello` message; verified with constant-time comparison to prevent timing attacks; agents without a valid token are rejected before registration
 - Gateway injects `_user` and `_role` into every message — agent never trusts client-supplied identity
 - Audit log: all logins, logouts, and privilege escalations → `/var/log/tenodera_audit.log`
 - systemd hardening: `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`
@@ -1226,6 +1256,28 @@ After editing `agent.cnf`, always restart:
 ```bash
 sudo systemctl restart tenodera-agent
 ```
+
+### Agent rejected — invalid enrollment token
+
+Gateway logs show `agent rejected: invalid enrollment token`. Causes:
+
+- Agent was installed without `--token` or with a wrong token
+- `TENODERA_AGENT_TOKEN` in `agent.cnf` on the managed host does not match the gateway's token
+
+Fix: check the gateway token:
+
+```bash
+sudo grep TENODERA_AGENT_TOKEN /etc/tenodera/tenodera.cnf
+```
+
+Then update the agent's config on the managed host:
+
+```bash
+sudo sed -i "s|^TENODERA_AGENT_TOKEN=.*|TENODERA_AGENT_TOKEN=<correct-token>|" /etc/tenodera/agent.cnf
+sudo systemctl restart tenodera-agent
+```
+
+Or reinstall the agent using the command from **Management → Enrollment Token**.
 
 ### Login fails
 
