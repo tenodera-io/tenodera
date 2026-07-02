@@ -114,14 +114,37 @@ impl ChannelHandler for ContainersHandler {
             "service_restart" => {
                 service_action_sudo(rt, "restart", password).await
             }
+            "stats_all" => stats_all(rt, password).await,
+            "volumes_list" => volumes_list(rt, password).await,
+            "volume_remove" => {
+                let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
+                volume_remove(rt, name, owner, password).await
+            }
+            "volume_prune" => volume_prune(rt, password).await,
+            "networks_list" => networks_list(rt, password).await,
+            "network_remove" => {
+                let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
+                network_remove(rt, id, owner, password).await
+            }
+            "container_prune" => container_prune(rt, password).await,
+            "image_prune" => image_prune(rt, password).await,
+            "system_prune" => system_prune(rt, password).await,
             _ => serde_json::json!({ "type": "error", "error": format!("unknown action: {action}") }),
         };
 
         // Audit mutating container actions
         match action {
             "start" | "stop" | "restart" | "remove" | "remove_image" | "pull" | "create"
+            | "volume_remove" | "volume_prune" | "network_remove"
+            | "container_prune" | "image_prune" | "system_prune"
             | "service_start" | "service_stop" | "service_restart" => {
-                let target = data.get("id").or(data.get("image")).and_then(|v| v.as_str()).unwrap_or("");
+                let target = data.get("id")
+                    .or(data.get("name"))
+                    .or(data.get("image"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let ok = result.get("error").is_none();
                 crate::audit::log(user, &format!("container.{action}"), target, ok, "");
             }
@@ -915,4 +938,153 @@ fn is_valid_restart_policy(policy: &str) -> bool {
         || policy.starts_with("on-failure:")
             && policy.strip_prefix("on-failure:")
                 .is_some_and(|n| !n.is_empty() && n.parse::<u32>().is_ok())
+}
+
+// ── Stats ──────────────────────────────────────────────────
+
+async fn stats_all(rt: &str, password: &str) -> serde_json::Value {
+    let args = ["stats", "--no-stream", "--format", "{{json .}}"];
+    let items = if !password.is_empty() {
+        run_sudo_cmd_parsed(password, rt, &args).await
+    } else {
+        run_cmd_parsed(rt, &args).await
+    };
+    serde_json::Value::Array(items)
+}
+
+// ── Volumes ────────────────────────────────────────────────
+
+async fn volumes_list(rt: &str, password: &str) -> serde_json::Value {
+    let user_vols = run_cmd_parsed(rt, &["volume", "ls", "--format", "{{json .}}"]).await;
+    let mut seen = std::collections::HashSet::new();
+    let mut merged: Vec<serde_json::Value> = Vec::new();
+
+    for mut v in user_vols {
+        let name = v.get("Name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+        if !name.is_empty() {
+            seen.insert(name);
+        }
+        v.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
+        merged.push(v);
+    }
+
+    if !password.is_empty() {
+        let root_vols = run_sudo_cmd_parsed(password, rt, &["volume", "ls", "--format", "{{json .}}"]).await;
+        for mut v in root_vols {
+            let name = v.get("Name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+            if !name.is_empty() && seen.contains(&name) {
+                continue;
+            }
+            if !name.is_empty() {
+                seen.insert(name);
+            }
+            v.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
+            merged.push(v);
+        }
+    }
+
+    serde_json::Value::Array(merged)
+}
+
+async fn volume_remove(rt: &str, name: &str, owner: &str, password: &str) -> serde_json::Value {
+    if name.is_empty() {
+        return serde_json::json!({ "error": "no volume name" });
+    }
+    if !is_valid_container_ref(name) {
+        return serde_json::json!({ "error": "invalid volume name" });
+    }
+    if owner == "root" {
+        if password.is_empty() {
+            return serde_json::json!({ "error": "password required for root volumes" });
+        }
+        sudo_cmd(password, &[rt, "volume", "rm", "--", name]).await
+    } else {
+        run_cmd_result(rt, &["volume", "rm", "--", name]).await
+    }
+}
+
+async fn volume_prune(rt: &str, password: &str) -> serde_json::Value {
+    if password.is_empty() {
+        run_cmd_result(rt, &["volume", "prune", "-f"]).await
+    } else {
+        sudo_cmd(password, &[rt, "volume", "prune", "-f"]).await
+    }
+}
+
+// ── Networks ───────────────────────────────────────────────
+
+async fn networks_list(rt: &str, password: &str) -> serde_json::Value {
+    let user_nets = run_cmd_parsed(rt, &["network", "ls", "--format", "{{json .}}"]).await;
+    let mut seen = std::collections::HashSet::new();
+    let mut merged: Vec<serde_json::Value> = Vec::new();
+
+    for mut n in user_nets {
+        let id = n.get("ID").or(n.get("Id")).or(n.get("id"))
+            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+        if !id.is_empty() {
+            seen.insert(id);
+        }
+        n.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
+        merged.push(n);
+    }
+
+    if !password.is_empty() {
+        let root_nets = run_sudo_cmd_parsed(password, rt, &["network", "ls", "--format", "{{json .}}"]).await;
+        for mut n in root_nets {
+            let id = n.get("ID").or(n.get("Id")).or(n.get("id"))
+                .and_then(|v| v.as_str()).unwrap_or("").to_string();
+            if !id.is_empty() && seen.contains(&id) {
+                continue;
+            }
+            if !id.is_empty() {
+                seen.insert(id);
+            }
+            n.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
+            merged.push(n);
+        }
+    }
+
+    serde_json::Value::Array(merged)
+}
+
+async fn network_remove(rt: &str, id: &str, owner: &str, password: &str) -> serde_json::Value {
+    if id.is_empty() {
+        return serde_json::json!({ "error": "no network id" });
+    }
+    if !is_valid_container_ref(id) {
+        return serde_json::json!({ "error": "invalid network id" });
+    }
+    if owner == "root" {
+        if password.is_empty() {
+            return serde_json::json!({ "error": "password required for root networks" });
+        }
+        sudo_cmd(password, &[rt, "network", "rm", "--", id]).await
+    } else {
+        run_cmd_result(rt, &["network", "rm", "--", id]).await
+    }
+}
+
+// ── Prune ─────────────────────────────────────────────────
+
+async fn container_prune(rt: &str, password: &str) -> serde_json::Value {
+    if password.is_empty() {
+        run_cmd_result(rt, &["container", "prune", "-f"]).await
+    } else {
+        sudo_cmd(password, &[rt, "container", "prune", "-f"]).await
+    }
+}
+
+async fn image_prune(rt: &str, password: &str) -> serde_json::Value {
+    if password.is_empty() {
+        run_cmd_result(rt, &["image", "prune", "-f"]).await
+    } else {
+        sudo_cmd(password, &[rt, "image", "prune", "-f"]).await
+    }
+}
+
+async fn system_prune(rt: &str, password: &str) -> serde_json::Value {
+    if password.is_empty() {
+        return serde_json::json!({ "error": "password required" });
+    }
+    sudo_cmd(password, &[rt, "system", "prune", "-f"]).await
 }
