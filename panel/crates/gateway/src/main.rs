@@ -24,8 +24,9 @@ use serde::{Deserialize, Serialize};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
+use axum::response::IntoResponse;
+
 use crate::agent_registry::AgentRegistry;
-use crate::auth::Role;
 use crate::config::GatewayConfig;
 use crate::rate_limit::LoginRateLimiter;
 use crate::session::SessionStore;
@@ -291,7 +292,7 @@ async fn agent_token_info(
         Some(s) => s,
         None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response(),
     };
-    if session.role != Role::Admin {
+    if session.role != crate::session::Role::Admin {
         return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "admin required"}))).into_response();
     }
     let gateway_url = state.config.external_url.clone()
