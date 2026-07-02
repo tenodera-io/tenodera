@@ -35,6 +35,7 @@ type ModalState =
   | { kind: 'view';   path: string; content: string; totalLines: number; offset: number; loading: boolean; error?: string; binary?: boolean; mime?: string }
   | { kind: 'edit';   path: string; draft: string; saving: boolean; error?: string }
   | { kind: 'create'; newPath: string; draft: string; saving: boolean; error?: string }
+  | { kind: 'mkdir';  newPath: string; creating: boolean; error?: string }
   | { kind: 'delete'; path: string; name: string; deleting: boolean; error?: string }
   | null;
 
@@ -267,6 +268,34 @@ export function Files({ user }: FilesProps) {
     });
   };
 
+  // ── Mkdir ────────────────────────────────────────────────────────────────
+
+  const openMkdir = () => {
+    const base = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+    setModal({ kind: 'mkdir', newPath: base, creating: false });
+  };
+
+  const saveMkdir = () => {
+    if (modal?.kind !== 'mkdir') return;
+    const { newPath } = modal;
+    const cur = suRef.current;
+    setModal(m => m?.kind === 'mkdir' ? { ...m, creating: true, error: undefined } : m);
+
+    const opts: Record<string, unknown> = { path: newPath };
+    if (cur.active && cur.password) opts.password = cur.password;
+    request('file.mkdir', opts).then((results) => {
+      const data = results[0] as WriteResult | undefined;
+      if (data?.error) {
+        setModal(m => m?.kind === 'mkdir' ? { ...m, creating: false, error: data.error } : m);
+      } else {
+        setModal(null);
+        fetchDir(currentPath);
+      }
+    }).catch((e: unknown) => {
+      setModal(m => m?.kind === 'mkdir' ? { ...m, creating: false, error: String(e) } : m);
+    });
+  };
+
   // ── Delete ───────────────────────────────────────────────────────────────
 
   const openDelete = (entry: FileEntry) => {
@@ -348,6 +377,7 @@ export function Files({ user }: FilesProps) {
           ? <button onClick={() => fetchDir(pathInput)} style={S.goBtn}>Go</button>
           : <span style={S.limitedBadge} title="Activate Administrative access to browse the full filesystem">Limited</span>
         }
+        <button onClick={openMkdir} style={S.mkdirBtn}>+ New Folder</button>
         <button onClick={openCreate} style={S.newBtn}>+ New File</button>
       </div>
       {navError && (
@@ -432,6 +462,16 @@ export function Files({ user }: FilesProps) {
                 onDraftChange={(v) => setModal(m => m?.kind === 'edit' ? { ...m, draft: v } : m)}
                 onSave={saveEdit}
                 onCancel={() => openFile(modal.path)}
+              />
+            )}
+
+            {/* ── Directory Creator ── */}
+            {modal.kind === 'mkdir' && (
+              <MkdirModal
+                modal={modal}
+                onPathChange={(v) => setModal(m => m?.kind === 'mkdir' ? { ...m, newPath: v } : m)}
+                onSave={saveMkdir}
+                onCancel={() => setModal(null)}
               />
             )}
 
@@ -619,6 +659,40 @@ function CreateModal({ modal, onPathChange, onDraftChange, onSave, onCancel }: {
   );
 }
 
+function MkdirModal({ modal, onPathChange, onSave, onCancel }: {
+  modal: Extract<ModalState, { kind: 'mkdir' }>;
+  onPathChange: (v: string) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <div style={S.modalHeader}>
+        <span style={S.modalTitle}>New Folder</span>
+        <button style={S.closeBtn} onClick={onCancel}>✕</button>
+      </div>
+      <div style={{ ...S.modalBody, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <label style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>Path</label>
+        <input
+          type="text"
+          value={modal.newPath}
+          onChange={(e) => onPathChange(e.target.value)}
+          style={S.pathInput}
+          spellCheck={false}
+          autoFocus
+        />
+      </div>
+      {modal.error && <div style={S.errorBox}>{modal.error}</div>}
+      <div style={S.modalFooter}>
+        <button style={S.cancelBtn} onClick={onCancel}>Cancel</button>
+        <button style={{ ...S.saveBtn, opacity: modal.creating ? 0.6 : 1 }} onClick={onSave} disabled={modal.creating}>
+          {modal.creating ? 'Creating…' : 'Create'}
+        </button>
+      </div>
+    </>
+  );
+}
+
 function DeleteModal({ modal, onConfirm, onCancel }: {
   modal: Extract<ModalState, { kind: 'delete' }>;
   onConfirm: () => void;
@@ -671,6 +745,7 @@ const S: Record<string, React.CSSProperties> = {
   inputWrap:  { flex: 1, position: 'relative' },
   pathInput:  { width: '100%', padding: '0.45rem 0.6rem', borderRadius: 4, border: '1px solid var(--c-blue)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontFamily: 'monospace', boxSizing: 'border-box', fontSize: '0.9rem' },
   goBtn:      { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: 'var(--badge-fg)', cursor: 'pointer' },
+  mkdirBtn:     { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-yellow)', color: 'var(--badge-fg)', cursor: 'pointer', whiteSpace: 'nowrap' },
   newBtn:       { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-green)', color: 'var(--badge-fg)', cursor: 'pointer', whiteSpace: 'nowrap' },
   limitedBadge: { padding: '0.3rem 0.7rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'transparent', color: 'var(--text-3)', fontSize: '0.78rem', whiteSpace: 'nowrap' },
   suggestions: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderTop: 'none', borderRadius: '0 0 4px 4px', maxHeight: 240, overflowY: 'auto', zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,.3)' },

@@ -58,6 +58,30 @@ impl ChannelHandler for FileWriteHandler {
     }
 }
 
+// ── file.mkdir ─────────────────────────────────────────────────────────────
+
+pub struct FileMkdirHandler;
+
+#[async_trait]
+impl ChannelHandler for FileMkdirHandler {
+    fn payload_type(&self) -> &str { "file.mkdir" }
+
+    async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
+        let path     = get_str(options, "path");
+        let password = get_str(options, "password");
+        let user     = get_str(options, "_user");
+
+        if path.is_empty() { return err_msgs(channel, "path required"); }
+
+        let data = if password.is_empty() {
+            mkdir_as_user(path, user).await
+        } else {
+            sudo_action(password, &["mkdir", "--", path]).await
+        };
+        ok_msgs(channel, data)
+    }
+}
+
 // ── file.delete ────────────────────────────────────────────────────────────
 
 pub struct FileDeleteHandler;
@@ -207,6 +231,40 @@ async fn write_as_user(path: &str, content: &str, user: &str) -> serde_json::Val
 
     match tokio::process::Command::new("sudo")
         .args(["-n", "-u", user, "--", "sh", "-c", &script])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => json!({ "ok": true }),
+        Ok(out) => {
+            let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            json!({ "error": if msg.is_empty() { "Permission denied".to_string() } else { msg } })
+        }
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
+/// Create directory `path` as the requesting user via `sudo -n -u <user>`.
+/// Limited access confined to the user's home directory.
+async fn mkdir_as_user(path: &str, user: &str) -> serde_json::Value {
+    if !is_valid_username(user) {
+        return json!({ "error": "invalid user context" });
+    }
+
+    // Directory doesn't exist yet — canonicalize the parent.
+    let p = std::path::Path::new(path);
+    let canonical = match p.parent().and_then(|parent| parent.canonicalize().ok()) {
+        Some(dir) => dir.join(p.file_name().unwrap_or_default()),
+        None      => std::path::PathBuf::from(path),
+    };
+    let home = std::path::Path::new("/home").join(user);
+    if !canonical.starts_with(&home) {
+        return json!({ "error": "Limited access: restricted to your home directory" });
+    }
+
+    match tokio::process::Command::new("sudo")
+        .args(["-n", "-u", user, "--", "mkdir", "--", path])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()

@@ -54,6 +54,7 @@ impl Router {
         self.register(Arc::new(file_ops::FileReadHandler));
         self.register(Arc::new(file_ops::FileWriteHandler));
         self.register(Arc::new(file_ops::FileDeleteHandler));
+        self.register(Arc::new(file_ops::FileMkdirHandler));
         self.register(Arc::new(journal_query::JournalQueryHandler));
         self.register(Arc::new(terminal_pty::TerminalPtyHandler::new()));
         self.register(Arc::new(metrics_stream::MetricsStreamHandler));
