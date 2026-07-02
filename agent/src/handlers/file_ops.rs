@@ -44,12 +44,16 @@ impl ChannelHandler for FileWriteHandler {
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
         let path     = get_str(options, "path");
         let password = get_str(options, "password");
+        let user     = get_str(options, "_user");
         let content  = get_str(options, "content");
 
-        if path.is_empty()     { return err_msgs(channel, "path required"); }
-        if password.is_empty() { return err_msgs(channel, "password required"); }
+        if path.is_empty() { return err_msgs(channel, "path required"); }
 
-        let data = sudo_stdin_write(password, &["tee", "--", path], content).await;
+        let data = if password.is_empty() {
+            write_as_user(path, content, user).await
+        } else {
+            sudo_stdin_write(password, &["tee", "--", path], content).await
+        };
         ok_msgs(channel, data)
     }
 }
@@ -65,11 +69,15 @@ impl ChannelHandler for FileDeleteHandler {
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
         let path     = get_str(options, "path");
         let password = get_str(options, "password");
+        let user     = get_str(options, "_user");
 
-        if path.is_empty()     { return err_msgs(channel, "path required"); }
-        if password.is_empty() { return err_msgs(channel, "password required"); }
+        if path.is_empty() { return err_msgs(channel, "path required"); }
 
-        let data = sudo_action(password, &["rm", "--", path]).await;
+        let data = if password.is_empty() {
+            delete_as_user(path, user).await
+        } else {
+            sudo_action(password, &["rm", "--", path]).await
+        };
         ok_msgs(channel, data)
     }
 }
@@ -161,6 +169,60 @@ fn is_text_mime(mime: &str) -> bool {
             | "application/x-python"
     ) || mime.ends_with("+xml")
         || mime.ends_with("+json")
+}
+
+/// Write `content` to `path` as the requesting user via `sudo -n -u <user>`.
+/// Linux filesystem write permissions apply — no root escalation.
+async fn write_as_user(path: &str, content: &str, user: &str) -> serde_json::Value {
+    if !is_valid_username(user) {
+        return json!({ "error": "invalid user context" });
+    }
+
+    use base64::Engine;
+    let b64    = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
+    let script = format!(
+        "printf '{}' | base64 -d | tee -- {}",
+        b64,
+        crate::util::shell_escape(path),
+    );
+
+    match tokio::process::Command::new("sudo")
+        .args(["-n", "-u", user, "--", "sh", "-c", &script])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => json!({ "ok": true }),
+        Ok(out) => {
+            let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            json!({ "error": if msg.is_empty() { "Permission denied".to_string() } else { msg } })
+        }
+        Err(e) => json!({ "error": e.to_string() }),
+    }
+}
+
+/// Delete `path` as the requesting user via `sudo -n -u <user>`.
+/// Linux filesystem write permissions apply — no root escalation.
+async fn delete_as_user(path: &str, user: &str) -> serde_json::Value {
+    if !is_valid_username(user) {
+        return json!({ "error": "invalid user context" });
+    }
+
+    match tokio::process::Command::new("sudo")
+        .args(["-n", "-u", user, "--", "rm", "--", path])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+    {
+        Ok(out) if out.status.success() => json!({ "ok": true }),
+        Ok(out) => {
+            let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+            json!({ "error": if msg.is_empty() { "Permission denied".to_string() } else { msg } })
+        }
+        Err(e) => json!({ "error": e.to_string() }),
+    }
 }
 
 /// Run a command via `sudo -S`, returning raw stdout.

@@ -214,10 +214,11 @@ export function Files({ user }: FilesProps) {
     if (modal?.kind !== 'edit') return;
     const { path, draft } = modal;
     const cur = suRef.current;
-    if (!cur.active || !cur.password) return;
     setModal(m => m?.kind === 'edit' ? { ...m, saving: true, error: undefined } : m);
 
-    request('file.write', { path, content: draft, password: cur.password }).then((results) => {
+    const opts: Record<string, unknown> = { path, content: draft };
+    if (cur.active && cur.password) opts.password = cur.password;
+    request('file.write', opts).then((results) => {
       const data = results[0] as WriteResult | undefined;
       if (data?.error) {
         setModal(m => m?.kind === 'edit' ? { ...m, saving: false, error: data.error } : m);
@@ -241,10 +242,11 @@ export function Files({ user }: FilesProps) {
     if (modal?.kind !== 'create') return;
     const { newPath, draft } = modal;
     const cur = suRef.current;
-    if (!cur.active || !cur.password) return;
     setModal(m => m?.kind === 'create' ? { ...m, saving: true, error: undefined } : m);
 
-    request('file.write', { path: newPath, content: draft, password: cur.password }).then((results) => {
+    const opts: Record<string, unknown> = { path: newPath, content: draft };
+    if (cur.active && cur.password) opts.password = cur.password;
+    request('file.write', opts).then((results) => {
       const data = results[0] as WriteResult | undefined;
       if (data?.error) {
         setModal(m => m?.kind === 'create' ? { ...m, saving: false, error: data.error } : m);
@@ -268,10 +270,11 @@ export function Files({ user }: FilesProps) {
     if (modal?.kind !== 'delete') return;
     const { path } = modal;
     const cur = suRef.current;
-    if (!cur.active || !cur.password) return;
     setModal(m => m?.kind === 'delete' ? { ...m, deleting: true, error: undefined } : m);
 
-    request('file.delete', { path, password: cur.password }).then((results) => {
+    const opts: Record<string, unknown> = { path };
+    if (cur.active && cur.password) opts.password = cur.password;
+    request('file.delete', opts).then((results) => {
       const data = results[0] as WriteResult | undefined;
       if (data?.error) {
         setModal(m => m?.kind === 'delete' ? { ...m, deleting: false, error: data.error } : m);
@@ -328,9 +331,7 @@ export function Files({ user }: FilesProps) {
           )}
         </div>
         <button onClick={() => fetchDir(pathInput)} style={S.goBtn}>Go</button>
-        {su.active && (
-          <button onClick={openCreate} style={S.newBtn}>+ New File</button>
-        )}
+        <button onClick={openCreate} style={S.newBtn}>+ New File</button>
       </div>
 
       {/* File table */}
@@ -340,7 +341,7 @@ export function Files({ user }: FilesProps) {
             <th style={S.th}>Name</th>
             <th style={S.th}>Type</th>
             <th style={S.th}>Size</th>
-            <th style={{ ...S.th, width: su.active ? 160 : 60 }}>Actions</th>
+            <th style={{ ...S.th, width: 120 }}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -375,12 +376,10 @@ export function Files({ user }: FilesProps) {
                     }}
                   >View</button>
                 )}
-                {su.active && (
-                  <button
-                    style={{ ...S.actionBtn, ...S.delBtn, marginLeft: 4 }}
-                    onClick={() => openDelete(entry)}
-                  >Delete</button>
-                )}
+                <button
+                  style={{ ...S.actionBtn, ...S.delBtn, marginLeft: 4 }}
+                  onClick={() => openDelete(entry)}
+                >Delete</button>
               </td>
             </tr>
           ))}
@@ -396,7 +395,6 @@ export function Files({ user }: FilesProps) {
             {modal.kind === 'view' && (
               <ViewerModal
                 modal={modal}
-                suActive={su.active}
                 onClose={() => setModal(null)}
                 onEdit={startEdit}
                 onChangePage={changePage}
@@ -445,9 +443,8 @@ export function Files({ user }: FilesProps) {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function ViewerModal({ modal, suActive, onClose, onEdit, onChangePage }: {
+function ViewerModal({ modal, onClose, onEdit, onChangePage }: {
   modal: Extract<ModalState, { kind: 'view' }>;
-  suActive: boolean;
   onClose: () => void;
   onEdit: () => void;
   onChangePage: (offset: number) => void;
@@ -469,7 +466,7 @@ function ViewerModal({ modal, suActive, onClose, onEdit, onChangePage }: {
       <div style={S.modalHeader}>
         <span style={S.modalTitle} title={path}>{name}</span>
         <div style={{ display: 'flex', gap: 8 }}>
-          {suActive && !binary && !error && !loading && (
+          {!binary && !error && !loading && (
             <button style={S.editBtn} onClick={onEdit}>Edit</button>
           )}
           <button style={S.closeBtn} onClick={onClose}>✕</button>
