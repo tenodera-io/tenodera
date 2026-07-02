@@ -75,48 +75,20 @@ async fn list_as_user(path: &str, user: &str) -> serde_json::Value {
 }
 
 /// List directory as root using the user's admin password.
-/// Fast-paths through `std::fs::read_dir` when the process can already read
-/// the target (avoids an extra subprocess for directories accessible as root).
+/// Always uses `ls -laH` (same as list_as_user) for consistent field output.
 async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
     let am_root = unsafe { libc::geteuid() } == 0;
 
-    let dir = Path::new(path);
-    if let Ok(canonical) = dir.canonicalize()
-        && std::fs::read_dir(&canonical).is_ok()
-    {
-        let resolved = canonical.to_string_lossy().to_string();
-        let entries: Vec<serde_json::Value> = match std::fs::read_dir(&canonical) {
-            Ok(rd) => rd.filter_map(|e| e.ok()).map(|entry| {
-                let meta = entry.path().symlink_metadata().ok();
-                serde_json::json!({
-                    "name": entry.file_name().to_string_lossy(),
-                    "type": meta.as_ref().map(|m| {
-                        if m.is_symlink() { "symlink" }
-                        else if m.is_dir() { "directory" }
-                        else { "file" }
-                    }).unwrap_or("unknown"),
-                    "size": meta.as_ref().map(|m| m.len()).unwrap_or(0),
-                })
-            }).collect(),
-            Err(e) => return serde_json::json!({ "error": format!("cannot read directory: {e}") }),
-        };
-        return serde_json::json!({ "path": resolved, "entries": entries });
-    }
-
-    let resolved = if am_root {
-        run_cmd(&["readlink", "-f", "--", path]).await
-    } else {
-        sudo_cmd(password, &["readlink", "-f", "--", path]).await
+    let canonical = match Path::new(path).canonicalize() {
+        Ok(p) => p,
+        Err(e) => return serde_json::json!({ "error": format!("cannot resolve path: {e}") }),
     };
-    let resolved = resolved.trim();
-    if resolved.is_empty() || resolved.starts_with("error:") {
-        return serde_json::json!({ "error": format!("cannot resolve path: {path}") });
-    }
+    let resolved = canonical.to_string_lossy().to_string();
 
     let out = if am_root {
-        run_cmd(&["ls", "-laH", "--time-style=long-iso", "--", resolved]).await
+        run_cmd(&["ls", "-laH", "--time-style=long-iso", "--", &resolved]).await
     } else {
-        sudo_cmd(password, &["ls", "-laH", "--time-style=long-iso", "--", resolved]).await
+        sudo_cmd(password, &["ls", "-laH", "--time-style=long-iso", "--", &resolved]).await
     };
 
     if out.contains("Permission denied") || out.starts_with("error:") {
@@ -131,22 +103,31 @@ async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
 
 /// Parse `ls -laH --time-style=long-iso` output into JSON entry list.
 /// Skips `.` and `..`.  First line (total …) is also skipped.
+/// split_whitespace collapses padding spaces so multi-space size alignment
+/// doesn't consume the splitn budget: perms[0] links[1] user[2] group[3] size[4]
 fn parse_ls_output(out: &str) -> Vec<serde_json::Value> {
     let mut entries = Vec::new();
     for line in out.lines().skip(1) {
         let name = extract_filename(line);
         if name.is_empty() || name == "." || name == ".." { continue; }
-        // split_whitespace collapses padding spaces so multi-space size alignment
-        // doesn't consume the splitn budget: perms[0] links[1] user[2] group[3] size[4]
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() < 5 { continue; }
         let perms    = parts[0];
+        let user     = parts[2];
+        let group    = parts[3];
         let size_str = parts[4];
         let ftype = if perms.starts_with('d') { "directory" }
             else if perms.starts_with('l') { "symlink" }
             else { "file" };
         let size: u64 = size_str.parse().unwrap_or(0);
-        entries.push(serde_json::json!({ "name": name, "type": ftype, "size": size }));
+        entries.push(serde_json::json!({
+            "name":  name,
+            "type":  ftype,
+            "size":  size,
+            "perms": perms,
+            "user":  user,
+            "group": group,
+        }));
     }
     entries
 }

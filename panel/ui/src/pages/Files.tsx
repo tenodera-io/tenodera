@@ -7,6 +7,9 @@ interface FileEntry {
   name: string;
   type: 'file' | 'directory' | 'symlink' | 'unknown';
   size: number;
+  perms?: string;
+  user?: string;
+  group?: string;
 }
 
 interface ReadResult {
@@ -331,7 +334,7 @@ export function Files({ user }: FilesProps) {
               {suggestions.map((s, i) => (
                 <div
                   key={s}
-                  style={{ ...S.suggItem, background: i === selIdx ? 'var(--c-blue)' : 'transparent', color: i === selIdx ? '#fff' : 'var(--text-1)' }}
+                  style={{ ...S.suggItem, background: i === selIdx ? 'var(--c-blue)' : 'transparent', color: i === selIdx ? 'var(--badge-fg)' : 'var(--text-1)' }}
                   onMouseDown={() => { fetchDir(s); setShowSugg(false); }}
                   onMouseEnter={() => setSelIdx(i)}
                 >
@@ -356,7 +359,7 @@ export function Files({ user }: FilesProps) {
         <thead>
           <tr>
             <th style={S.th}>Name</th>
-            <th style={S.th}>Type</th>
+            <th style={S.th}>Permissions</th>
             <th style={S.th}>Size</th>
             <th style={{ ...S.th, width: 120 }}>Actions</th>
           </tr>
@@ -367,22 +370,23 @@ export function Files({ user }: FilesProps) {
               <td style={S.td}>
                 {entry.type === 'directory' ? (
                   <a href="#" onClick={(e) => { e.preventDefault(); navigateTo(entry.name); }} style={S.dirLink}>
-                    {entry.name}/
+                    <span style={S.entryIcon}>📁</span>{entry.name}/
                   </a>
+                ) : entry.type === 'symlink' ? (
+                  <span style={S.fileLink} onClick={() => { const p = currentPath === '/' ? `/${entry.name}` : `${currentPath}/${entry.name}`; openFile(p); }}>
+                    <span style={S.entryIcon}>🔗</span>{entry.name}
+                  </span>
                 ) : (
-                  <span
-                    style={S.fileLink}
-                    onClick={() => {
-                      const filePath = currentPath === '/' ? `/${entry.name}` : `${currentPath}/${entry.name}`;
-                      openFile(filePath);
-                    }}
-                  >
-                    {entry.name}
+                  <span style={S.fileLink} onClick={() => { const p = currentPath === '/' ? `/${entry.name}` : `${currentPath}/${entry.name}`; openFile(p); }}>
+                    <span style={S.entryIcon}>📄</span>{entry.name}
                   </span>
                 )}
               </td>
-              <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>{entry.type}</td>
-              <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>{formatSize(entry.size)}</td>
+              <td style={{ ...S.td, fontFamily: 'monospace', fontSize: '0.78rem', color: 'var(--text-2)', whiteSpace: 'nowrap' }}>
+                <span>{entry.perms ?? '—'}</span>
+                {entry.user && <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>{entry.user}:{entry.group}</span>}
+              </td>
+              <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>{formatSize(entry.size)}</td>
               <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
                 {entry.type !== 'directory' && (
                   <button
@@ -666,8 +670,8 @@ const S: Record<string, React.CSSProperties> = {
   upBtn:      { padding: '0.45rem 0.7rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'var(--bg-surface)', color: 'var(--text-1)', cursor: 'pointer' },
   inputWrap:  { flex: 1, position: 'relative' },
   pathInput:  { width: '100%', padding: '0.45rem 0.6rem', borderRadius: 4, border: '1px solid var(--c-blue)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontFamily: 'monospace', boxSizing: 'border-box', fontSize: '0.9rem' },
-  goBtn:      { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: '#fff', cursor: 'pointer' },
-  newBtn:       { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-green)', color: '#fff', cursor: 'pointer', whiteSpace: 'nowrap' },
+  goBtn:      { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: 'var(--badge-fg)', cursor: 'pointer' },
+  newBtn:       { padding: '0.45rem 0.9rem', borderRadius: 4, border: 'none', background: 'var(--c-green)', color: 'var(--badge-fg)', cursor: 'pointer', whiteSpace: 'nowrap' },
   limitedBadge: { padding: '0.3rem 0.7rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'transparent', color: 'var(--text-3)', fontSize: '0.78rem', whiteSpace: 'nowrap' },
   suggestions: { position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderTop: 'none', borderRadius: '0 0 4px 4px', maxHeight: 240, overflowY: 'auto', zIndex: 100, boxShadow: '0 4px 12px rgba(0,0,0,.3)' },
   suggItem:   { padding: '0.4rem 0.6rem', fontFamily: 'monospace', fontSize: '0.85rem', cursor: 'pointer' },
@@ -677,8 +681,9 @@ const S: Record<string, React.CSSProperties> = {
   th:       { textAlign: 'left', padding: '0.5rem 0.6rem', borderBottom: '1px solid var(--border-1)', color: 'var(--text-2)', fontSize: '0.75rem', textTransform: 'uppercase', fontWeight: 600 },
   row:      { transition: 'background 0.1s' },
   td:       { padding: '0.45rem 0.6rem', borderBottom: '1px solid var(--border-1)', fontSize: '0.9rem' },
-  dirLink:  { color: 'var(--c-blue)', fontWeight: 600, textDecoration: 'none' },
-  fileLink: { color: 'var(--text-1)', cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3 },
+  dirLink:   { color: 'var(--c-blue)', fontWeight: 600, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 },
+  fileLink:  { color: 'var(--text-1)', cursor: 'pointer', textDecoration: 'underline', textDecorationStyle: 'dotted', textUnderlineOffset: 3, display: 'inline-flex', alignItems: 'center', gap: 5 },
+  entryIcon: { fontSize: '1em', lineHeight: 1, flexShrink: 0 },
   actionBtn: { padding: '0.2rem 0.55rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.78rem' },
   delBtn:   { borderColor: 'var(--c-red)', color: 'var(--c-red)' },
 
@@ -702,7 +707,7 @@ const S: Record<string, React.CSSProperties> = {
   closeBtn:  { background: 'transparent', border: 'none', color: 'var(--text-2)', fontSize: '1.1rem', cursor: 'pointer', padding: '0.2rem 0.4rem', borderRadius: 4 },
   editBtn:   { padding: '0.3rem 0.8rem', borderRadius: 4, border: '1px solid var(--c-blue)', background: 'transparent', color: 'var(--c-blue)', cursor: 'pointer', fontSize: '0.85rem' },
   pageBtn:   { padding: '0.3rem 0.8rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'var(--bg-surface)', color: 'var(--text-1)', cursor: 'pointer', fontSize: '0.85rem' },
-  saveBtn:   { padding: '0.4rem 1rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: '#fff', cursor: 'pointer', fontSize: '0.9rem' },
+  saveBtn:   { padding: '0.4rem 1rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: 'var(--badge-fg)', cursor: 'pointer', fontSize: '0.9rem' },
   cancelBtn: { padding: '0.4rem 1rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.9rem' },
 
   // Editor
