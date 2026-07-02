@@ -102,6 +102,9 @@ impl Router {
                             channel.clone(),
                             ActiveChannel { shutdown_tx, handler: handler.clone() },
                         );
+                        // Store options so Data messages on this streaming channel
+                        // (e.g. terminal keyboard input) receive _user/_role injection.
+                        self.channel_options.insert(channel.clone(), options.clone());
 
                         let out_tx = self.out_tx.clone();
                         let ch = channel.clone();

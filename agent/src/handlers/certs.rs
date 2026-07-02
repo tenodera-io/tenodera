@@ -9,6 +9,20 @@ use crate::util::{require_admin, run_cmd, sudo_action, sudo_stdin_write, which};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
+/// Return a `/tmp/tenodera-<tag>-<random>.ext` path with a cryptographically
+/// random suffix drawn from /dev/urandom (16 hex chars = 64 bits of entropy).
+/// Using a random name instead of the PID prevents a local attacker from
+/// pre-placing a symlink at the predictable path to redirect writes.
+fn tmp_path(tag: &str, ext: &str) -> String {
+    let mut buf = [0u8; 8];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        use std::io::Read;
+        let _ = f.read_exact(&mut buf);
+    }
+    let rand: String = buf.iter().map(|b| format!("{b:02x}")).collect();
+    format!("/tmp/tenodera-{tag}-{rand}.{ext}")
+}
+
 // ── certs.list ─────────────────────────────────────────────────────────────────
 
 pub struct CertsListHandler;
@@ -391,7 +405,7 @@ async fn trust_add(data: &Value, password: &str) -> Value {
         }
         Distro::Arch => {
             // Write to temp, then trust anchor --store (handles saving + update atomically)
-            let tmp = format!("/tmp/tenodera-trust-{}.crt", std::process::id());
+            let tmp = tmp_path("trust", "crt");
             let write = sudo_stdin_write(password, &["tee", &tmp], pem).await;
             if write.get("error").is_some() { return write; }
             let result = sudo_action(password, &["trust", "anchor", "--store", &tmp]).await;
@@ -458,8 +472,8 @@ async fn parse_pem_input(data: &Value) -> Value {
         raw.clone()
     } else {
         // Treat as base64-encoded DER — convert to PEM
-        let tmp_der = format!("/tmp/tenodera-import-{}.der", std::process::id());
-        let tmp_pem = format!("/tmp/tenodera-import-{}.pem", std::process::id());
+        let tmp_der = tmp_path("import", "der");
+        let tmp_pem = tmp_path("import", "pem");
 
         // Pre-create temp files with mode 0o600 — user-supplied data may include
         // private key material; world-readable temp files are not acceptable.
@@ -502,7 +516,7 @@ async fn parse_pem_input(data: &Value) -> Value {
     }
 
     // Write pem to temp and parse
-    let tmp = format!("/tmp/tenodera-parse-{}.pem", std::process::id());
+    let tmp = tmp_path("parse", "pem");
     {
         use std::os::unix::fs::OpenOptionsExt;
         if let Err(e) = std::fs::OpenOptions::new()
@@ -635,23 +649,24 @@ async fn generate_selfsigned(data: &Value) -> Value {
     }
     let san_ext = format!("subjectAltName={}", san_parts.join(","));
 
-    // Write to temp files
-    let tmp = format!("/tmp/tenodera-selfsigned-{}", std::process::id());
-    let key_path  = format!("{tmp}.key");
-    let cert_path = format!("{tmp}.crt");
+    // Write to temp files with random names to prevent predictable-path symlink attacks.
+    let key_path  = tmp_path("selfsigned", "key");
+    let cert_path = tmp_path("selfsigned", "crt");
 
-    // Pre-create the key file with mode 0o600 before openssl writes to it.
-    // Without this, openssl creates it with the process umask (0022 → world-readable)
-    // and the private key would be briefly readable by other local users.
+    // Pre-create both temp files exclusively (O_EXCL) before openssl writes to them:
+    // - key: mode 0o600 — private key must never be world-readable
+    // - cert: mode 0o600 — consistent; also prevents a symlink race on the cert path
     {
         use std::os::unix::fs::OpenOptionsExt;
-        if let Err(e) = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&key_path)
-        {
-            return json!({ "error": format!("failed to create temp key file: {e}") });
+        for (path, mode) in [(&key_path, 0o600u32), (&cert_path, 0o600u32)] {
+            if let Err(e) = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(mode)
+                .open(path)
+            {
+                return json!({ "error": format!("failed to create temp file: {e}") });
+            }
         }
     }
 

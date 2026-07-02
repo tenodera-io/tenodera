@@ -215,8 +215,10 @@ pub fn is_valid_username(user: &str) -> bool {
 /// ```
 pub fn require_admin(data: &Value) -> Option<Value> {
     match data.get("_role").and_then(|v| v.as_str()) {
-        Some("admin") | None => None,
-        Some(_) => Some(serde_json::json!({ "error": "permission denied: readonly session" })),
+        Some("admin") => None,
+        // Absent _role is denied, not granted — the gateway always injects it;
+        // absence means an unexpected code path and must not silently grant admin.
+        _ => Some(serde_json::json!({ "error": "permission denied" })),
     }
 }
 
