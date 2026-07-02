@@ -724,12 +724,12 @@ export function Containers() {
                         <td style={S.td}><strong>{getContainerName(c)}</strong></td>
                         <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>{c.Image}</td>
                         <td style={S.td}>
-                          <span style={{ ...S.stateBadge, background: stateColor(c.State), color: stateColor(c.State) }}>
+                          <span style={{ ...S.stateBadge, background: stateColor(c.State) }}>
                             {c.State}
                           </span>
                         </td>
                         <td style={S.td}>
-                          <span style={{ ...S.stateBadge, background: ownerColor(owner), color: ownerColor(owner) }}>
+                          <span style={{ ...S.stateBadge, background: ownerColor(owner) }}>
                             {owner}
                           </span>
                         </td>
@@ -854,7 +854,7 @@ export function Containers() {
                       <tr key={id + owner + getImageName(img)} style={S.tr}>
                         <td style={S.td}><strong>{getImageName(img)}</strong></td>
                         <td style={S.td}>
-                          <span style={{ ...S.stateBadge, background: ownerColor(owner), color: ownerColor(owner) }}>
+                          <span style={{ ...S.stateBadge, background: ownerColor(owner) }}>
                             {owner}
                           </span>
                         </td>
@@ -928,7 +928,7 @@ export function Containers() {
                       <td style={S.td}><strong>{name}</strong></td>
                       <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>{v.Driver || '—'}</td>
                       <td style={S.td}>
-                        <span style={{ ...S.stateBadge, background: ownerColor(owner), color: ownerColor(owner) }}>
+                        <span style={{ ...S.stateBadge, background: ownerColor(owner) }}>
                           {owner}
                         </span>
                       </td>
@@ -1009,7 +1009,7 @@ export function Containers() {
                       <td style={S.td}><strong>{netName}</strong></td>
                       <td style={{ ...S.td, color: 'var(--text-2)', fontSize: '0.8rem' }}>{getNetworkDriver(n)}</td>
                       <td style={S.td}>
-                        <span style={{ ...S.stateBadge, background: ownerColor(owner), color: ownerColor(owner) }}>
+                        <span style={{ ...S.stateBadge, background: ownerColor(owner) }}>
                           {owner}
                         </span>
                       </td>
@@ -1244,6 +1244,7 @@ const S: Record<string, React.CSSProperties> = {
     borderRadius: 4,
     fontSize: '0.75rem',
     fontWeight: 600,
+    color: 'var(--badge-fg)',
   },
   tabs: {
     display: 'flex',
