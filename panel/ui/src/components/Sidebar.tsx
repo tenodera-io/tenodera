@@ -34,7 +34,6 @@ const NAV_SECTIONS = [
     items: [
       { path: '/logs', label: 'Logs', icon: '📜' },
       { path: '/log-files', label: 'Log Files', icon: '🗒️' },
-      { path: '/terminal', label: 'Terminal', icon: '🖥️' },
       { path: '/files', label: 'Files', icon: '📁' },
       { path: '/kdump', label: 'Kernel Dump', icon: '💥' },
     ],
@@ -135,12 +134,24 @@ export function Sidebar({
           </li>
         ))}
 
-        {/* Management — visible only when superuser is active */}
+        {/* Admin section — visible only when superuser is active */}
         {su.active && (
           <li>
             <div style={S.sectionDivider} />
             <div style={S.sectionLabel}>Admin</div>
             <ul style={S.sectionList}>
+              <li>
+                <NavLink
+                  to="/terminal"
+                  style={({ isActive }) => ({
+                    ...S.navLink,
+                    background: isActive ? 'var(--bg-surface)' : 'transparent',
+                    borderLeft: isActive ? '3px solid var(--c-purple)' : '3px solid transparent',
+                  })}
+                >
+                  <span style={S.navIcon}>🖥️</span>Terminal
+                </NavLink>
+              </li>
               <li>
                 <NavLink
                   to="/management"

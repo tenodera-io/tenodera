@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback, lazy, Suspense } from 'react';
-import { Routes, Route, useNavigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { connect, disconnect, onConnectionChange, request, type ConnectionState } from '../api/transport.ts';
 import { HostTransportProvider } from '../api/HostTransportContext.tsx';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
@@ -148,7 +148,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/services" element={<Services />} />
                       <Route path="/containers" element={<Containers />} />
                       <Route path="/logs" element={<Logs />} />
-                      <Route path="/terminal" element={<Terminal user={user} hostname={activeHost ? activeHost.name : hostname} />} />
+                      <Route path="/terminal" element={su.suActive ? <Terminal user={user} hostname={activeHost ? activeHost.name : hostname} /> : <Navigate to="/" />} />
                       <Route path="/storage" element={<Storage />} />
                       <Route path="/networking" element={<Networking />} />
                       <Route path="/packages" element={<Packages />} />
