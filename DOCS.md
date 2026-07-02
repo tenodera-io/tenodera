@@ -19,7 +19,7 @@
 7. [Multi-Host Management](#7-multi-host-management)
 8. [Feature Reference](#8-feature-reference)
    - 8.1 [Dashboard](#81-dashboard)
-   - 8.2 [Terminal](#82-terminal)
+   - 8.2 [Terminal (admin only)](#82-terminal-admin-only)
    - 8.3 [Services](#83-services)
    - 8.4 [Users & Groups](#84-users--groups)
    - 8.5 [Packages](#85-packages)
@@ -443,9 +443,9 @@ PID, process name, CPU %, memory %, user, state — sorted by CPU usage descendi
 
 ---
 
-### 8.2 Terminal
+### 8.2 Terminal (admin only)
 
-A full PTY (pseudo-terminal) running in the browser, powered by xterm.js.
+A full PTY (pseudo-terminal) running in the browser, powered by xterm.js. Visible only to admin users; hidden from read-only accounts.
 
 - Opens a shell as the **authenticated user** (the agent drops to the user's UID/GID via `setuid()`/`setgid()` before spawning the shell — no root shell is exposed)
 - 10 000-line scrollback buffer
@@ -661,15 +661,64 @@ Create a new container from an image.
 
 ### 8.9 Files
 
-A remote file browser for the selected host.
+A file manager for the selected host. Supports browsing, viewing, editing, creating, and deleting files. Access level depends on whether the superuser password is active.
+
+**Access modes**
+
+| Mode | When | Scope |
+|------|------|-------|
+| **Limited** | No superuser password active | Home directory only (`/home/<user>`) — cannot navigate above it |
+| **Administrative** | Superuser password active (padlock in top bar) | Full filesystem — root-owned paths accessible via sudo |
+
+The restriction is enforced at the agent level, not only in the browser. The agent rejects any file operation (list, read, write, delete) whose resolved path falls outside `/home/<user>` when no password is provided.
+
+**Navigation**
 
 - Opens at the authenticated user's home directory (`/home/<user>`)
-- **Path input** with autocomplete: as you type a path, matching subdirectories are suggested (up to 12 suggestions)
-- Navigate with keyboard (arrow keys, Enter) or mouse
-- File listing shows: name, type (file / directory / symlink / unknown), size
-- **Sudo mode**: if the superuser password is active, root-owned directories are accessible via sudo fallback
+- **↑ button** — navigate to parent directory; disabled in Limited mode when already at home directory root
+- **Path bar** — shows current path; read-only with a `Limited` badge in Limited mode; editable in Administrative mode
+- **Autocomplete** (Administrative mode) — typing a path suggests matching subdirectories (up to 12); navigate with arrow keys, Tab to complete, Enter to go
+- Entries sorted directories first, then alphabetically within each group
 
-> **Note:** The file browser is currently read-only (directory navigation and listing). File download/upload and editing are not yet implemented.
+**File listing**
+
+| Column | Description |
+|--------|-------------|
+| Name | 📁 directory / 📄 file / 🔗 symlink icon plus filename; click directory to navigate, click file to view |
+| Permissions | `drwxr-xr-x` permission string in monospace, followed by `owner:group` |
+| Size | Human-readable (B / KB / MB / GB) |
+| Actions | View (files only), Delete |
+
+**Viewing files**
+
+- Opens in a modal with line numbers
+- 200 lines per page; Prev / Next navigation for large files; shows current line range and page count
+- Binary files detected automatically via `file --mime-type` — shown as "Binary file — cannot display" with MIME type
+- **Edit** button in the viewer opens the inline editor
+
+**Editing files**
+
+- Inline textarea editor opens the current file content
+- Save writes back to the file; the viewer reopens with updated content on success
+- Error shown inline if the write is rejected (e.g. permission denied or outside home directory in Limited mode)
+
+**Creating files**
+
+- **+ New File** button opens the Create modal
+- Path field (pre-filled with current directory) and content textarea
+- In Limited mode the path must resolve within `/home/<user>`; the agent rejects paths outside it
+
+**Deleting files**
+
+- **Delete** button on any row opens a confirmation modal before action
+- In Limited mode only files within `/home/<user>` can be deleted; the agent enforces this after resolving symlinks
+- Admin delete uses `sudo rm` with the superuser password
+
+**Symlink safety**
+
+Symlink targets are resolved (canonicalized) before applying the home-directory restriction — a symlink inside `/home/<user>` pointing outside is blocked in Limited mode. Linux filesystem permissions provide a second layer of defence regardless.
+
+> **Note:** Directory deletion is not yet implemented — only files can be deleted from the UI. Use the Terminal for recursive directory removal.
 
 ---
 
