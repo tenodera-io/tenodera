@@ -630,23 +630,27 @@ function CreateModal({ modal, onPathChange, onDraftChange, onSave, onCancel }: {
         <span style={S.modalTitle}>New File</span>
         <button style={S.closeBtn} onClick={onCancel}>✕</button>
       </div>
-      <div style={{ ...S.modalBody, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <label style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>Path</label>
-        <input
-          type="text"
-          value={modal.newPath}
-          onChange={(e) => onPathChange(e.target.value)}
-          style={S.pathInput}
-          spellCheck={false}
-          autoFocus
-        />
-        <label style={{ fontSize: '0.8rem', color: 'var(--text-2)', marginTop: 4 }}>Content</label>
-        <textarea
-          style={{ ...S.textarea, minHeight: 260 }}
-          value={modal.draft}
-          onChange={(e) => onDraftChange(e.target.value)}
-          spellCheck={false}
-        />
+      <div style={{ ...S.modalBody, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={S.fieldGroup}>
+          <label style={S.fieldLabel}>Path</label>
+          <input
+            type="text"
+            value={modal.newPath}
+            onChange={(e) => onPathChange(e.target.value)}
+            style={S.modalInput}
+            spellCheck={false}
+            autoFocus
+          />
+        </div>
+        <div style={{ ...S.fieldGroup, flex: 1 }}>
+          <label style={S.fieldLabel}>Content</label>
+          <textarea
+            style={S.modalTextarea}
+            value={modal.draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            spellCheck={false}
+          />
+        </div>
       </div>
       {modal.error && <div style={S.errorBox}>{modal.error}</div>}
       <div style={S.modalFooter}>
@@ -671,16 +675,18 @@ function MkdirModal({ modal, onPathChange, onSave, onCancel }: {
         <span style={S.modalTitle}>New Folder</span>
         <button style={S.closeBtn} onClick={onCancel}>✕</button>
       </div>
-      <div style={{ ...S.modalBody, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <label style={{ fontSize: '0.8rem', color: 'var(--text-2)' }}>Path</label>
-        <input
-          type="text"
-          value={modal.newPath}
-          onChange={(e) => onPathChange(e.target.value)}
-          style={S.pathInput}
-          spellCheck={false}
-          autoFocus
-        />
+      <div style={{ ...S.modalBody, padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={S.fieldGroup}>
+          <label style={S.fieldLabel}>Path</label>
+          <input
+            type="text"
+            value={modal.newPath}
+            onChange={(e) => onPathChange(e.target.value)}
+            style={S.modalInput}
+            spellCheck={false}
+            autoFocus
+          />
+        </div>
       </div>
       {modal.error && <div style={S.errorBox}>{modal.error}</div>}
       <div style={S.modalFooter}>
@@ -785,8 +791,14 @@ const S: Record<string, React.CSSProperties> = {
   saveBtn:   { padding: '0.4rem 1rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: 'var(--badge-fg)', cursor: 'pointer', fontSize: '0.9rem' },
   cancelBtn: { padding: '0.4rem 1rem', borderRadius: 4, border: '1px solid var(--border-1)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.9rem' },
 
-  // Editor
+  // Editor (used in EditorModal — full-bleed, no border)
   textarea:  { width: '100%', minHeight: 360, resize: 'vertical', fontFamily: 'monospace', fontSize: '0.85rem', padding: '0.6rem', background: 'var(--bg-surface)', color: 'var(--text-1)', border: 'none', outline: 'none', lineHeight: 1.55, boxSizing: 'border-box' },
+
+  // Form fields (used in CreateModal / MkdirModal)
+  fieldGroup:    { display: 'flex', flexDirection: 'column' as const, gap: 6 },
+  fieldLabel:    { fontSize: '0.7rem', fontWeight: 600, textTransform: 'uppercase' as const, letterSpacing: '0.07em', color: 'var(--text-3)' },
+  modalInput:    { width: '100%', padding: '0.55rem 0.75rem', borderRadius: 6, border: '1px solid var(--border-1)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontFamily: 'monospace', fontSize: '0.9rem', boxSizing: 'border-box' as const, outline: 'none' },
+  modalTextarea: { width: '100%', minHeight: 260, resize: 'vertical' as const, fontFamily: 'monospace', fontSize: '0.85rem', padding: '0.65rem 0.75rem', background: 'var(--bg-surface)', color: 'var(--text-1)', border: '1px solid var(--border-1)', borderRadius: 6, outline: 'none', lineHeight: 1.6, boxSizing: 'border-box' as const },
 
   // Misc
   errorBox: { margin: '0 1rem', padding: '0.5rem 0.75rem', borderRadius: 4, background: 'rgba(var(--c-red-rgb,220,38,38),.15)', color: 'var(--c-red)', fontSize: '0.85rem' },
