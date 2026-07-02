@@ -12,6 +12,9 @@
 **/.vagrant/
 **/Vagrantfile
 
+# Local scripts (not for public repo)
+scripts/
+
 # Internal documents (not for public repo)
 AGENTS.md
 SECURITY_AUDIT.md
