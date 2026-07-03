@@ -374,7 +374,27 @@ async fn resolve_auth_path(
         }
     }
 
-    // Path 4: no token → pending
+    // Path 3b: loopback connection — auto-enroll without admin approval.
+    // If the agent connects from 127.0.0.1/::1 it is running on the same host
+    // as the gateway, which means the operator already has root on this machine
+    // and explicitly ran the panel installer. No further approval is needed.
+    if matches!(remote_ip, "127.0.0.1" | "::1") {
+        match hosts_config::register_host(hostname, pubkey_b64, true, None).await {
+            Ok(host) => {
+                tracing::info!(hostname, %fingerprint, "loopback agent auto-enrolled as local host");
+                return AuthPath::Authenticated(AuthenticatedAgent {
+                    host,
+                    remote_ip: remote_ip.to_string(),
+                });
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "failed to auto-enroll loopback host");
+                return AuthPath::Reject;
+            }
+        }
+    }
+
+    // Path 4: no token, not loopback → pending
     tracing::info!(hostname, %fingerprint, "new host without token — entering pending state");
     AuthPath::Pending("enrollment_required".to_string())
 }
