@@ -41,16 +41,19 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 
 ## Install
 
-### Panel (gateway + UI + local agent)
+### 1. Panel host
+
+Run on the machine that will host the panel:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh | sudo bash
 ```
 
-Installs build dependencies, compiles from source, installs systemd services, starts the panel on port 9090.
-Log in at `http://<host>:9090` with any PAM system user.
+Installs build dependencies, compiles from source (~3–4 min), installs systemd services, and starts the panel on port 9090. The local agent is installed and enrolled automatically.
 
-### Agent (managed hosts)
+Open `http://<host>:9090` and log in with any PAM system user that has `sudo` privileges.
+
+### 2. Remote hosts
 
 Run on each host you want to manage:
 
@@ -59,11 +62,20 @@ curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-ag
   | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
-The agent connects outbound — no inbound ports or SSH keys needed. On first connect it enters a **pending** state; approve it in the panel under **Hosts → Pending** to bring it online.
+The agent connects outbound — no inbound ports needed. On first connect it waits for approval; go to **Management → Pending** in the panel and click **Approve**.
 
-For unattended installs, generate a bootstrap token in **Hosts → Tokens** and pass `--token <token>` to skip the approval step.
+### 3. Unattended installs (optional)
 
-> See [DOCS.md](DOCS.md) for TLS setup, configuration reference, multi-host guide, and more.
+To skip the approval step, generate a bootstrap token first (**Management → Tokens**), then pass it to the installer:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <token>
+```
+
+The host enrolls immediately without manual approval.
+
+> See [DOCS.md](DOCS.md) for TLS setup, configuration reference, and more.
 
 ## Uninstall
 
