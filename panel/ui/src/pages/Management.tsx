@@ -340,6 +340,8 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
       style={{ ...S.hostCard, borderColor, background: cardBg ?? 'var(--bg-surface)', opacity: online ? 1 : 0.6, cursor: 'pointer' }}
       onClick={onSelect}
     >
+      <DistroName os_id={host.os_id} />
+
       {/* Hostname + badges */}
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.45rem', marginBottom: '0.55rem' }}>
         <span style={{
@@ -467,6 +469,43 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
   );
 }
 
+const DISTRO_MAP: Record<string, { label: string; color: string }> = {
+  debian:                 { label: 'Debian',   color: '#A80030' },
+  ubuntu:                 { label: 'Ubuntu',   color: '#E95420' },
+  fedora:                 { label: 'Fedora',   color: '#51A2DA' },
+  rhel:                   { label: 'RHEL',     color: '#EE0000' },
+  centos:                 { label: 'CentOS',   color: '#932279' },
+  rocky:                  { label: 'Rocky',    color: '#10B981' },
+  almalinux:              { label: 'Alma',     color: '#0F4266' },
+  arch:                   { label: 'Arch',     color: '#1793D1' },
+  manjaro:                { label: 'Manjaro',  color: '#35BF5C' },
+  alpine:                 { label: 'Alpine',   color: '#0D597F' },
+  'opensuse-leap':        { label: 'openSUSE', color: '#73BA25' },
+  'opensuse-tumbleweed':  { label: 'openSUSE', color: '#73BA25' },
+  opensuse:               { label: 'openSUSE', color: '#73BA25' },
+  gentoo:                 { label: 'Gentoo',   color: '#54487A' },
+  raspbian:               { label: 'Raspbian', color: '#A22846' },
+  pop:                    { label: 'Pop!_OS',  color: '#48B9C7' },
+  mint:                   { label: 'Mint',     color: '#87CF3E' },
+};
+
+function DistroName({ os_id }: { os_id?: string }) {
+  if (!os_id) return null;
+  const distro = DISTRO_MAP[os_id.toLowerCase()];
+  const label = distro?.label ?? os_id;
+  const color = distro?.color ?? 'var(--text-3)';
+  return (
+    <span style={{
+      position: 'absolute', top: '0.55rem', right: '0.65rem',
+      fontSize: '0.62rem', fontWeight: 700, color, opacity: 0.9,
+      letterSpacing: '0.04em', textTransform: 'uppercase',
+      pointerEvents: 'none',
+    }}>
+      {label}
+    </span>
+  );
+}
+
 function InfoRow({ label, value, valueStyle }: { label: string; value: string; valueStyle?: React.CSSProperties }) {
   return (
     <>
@@ -508,7 +547,7 @@ const S: Record<string, React.CSSProperties> = {
   hostGrid:      { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.65rem' },
 
   // Host sub-card — sits on top of bg-secondary, so uses bg-primary
-  hostCard:      { background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.8rem 0.9rem', transition: 'border-color 0.15s' },
+  hostCard:      { background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '0.8rem 0.9rem', transition: 'border-color 0.15s', position: 'relative' },
 
   badgeGreen:    { fontSize: '0.66rem', padding: '0.1rem 0.35rem', borderRadius: 3, background: 'color-mix(in srgb, var(--c-green) 13%, transparent)', color: 'var(--c-green)', border: '1px solid color-mix(in srgb, var(--c-green) 27%, transparent)', whiteSpace: 'nowrap' },
   badgeBlue:     { fontSize: '0.66rem', padding: '0.1rem 0.35rem', borderRadius: 3, background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)', color: 'var(--c-blue)', border: '1px solid color-mix(in srgb, var(--c-blue) 27%, transparent)', whiteSpace: 'nowrap' },

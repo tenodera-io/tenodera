@@ -8,6 +8,7 @@ export interface HostEntry {
   online: boolean;
   is_local: boolean;
   remote_ip?: string;
+  os_id?: string;
 }
 
 export type HostStatus = 'unknown' | 'ok' | 'error';

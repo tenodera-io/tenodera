@@ -64,6 +64,7 @@ async fn handle_agent_socket(
                         is_local,
                         public_key,
                         bootstrap_token,
+                        os_id,
                         ..
                     }) => {
                         if version < 2 {
@@ -83,7 +84,7 @@ async fn handle_agent_socket(
                                 return;
                             }
                         };
-                        break (hostname, is_local, public_key, bootstrap_token);
+                        break (hostname, is_local, public_key, bootstrap_token, os_id);
                     }
                     Ok(other) => {
                         tracing::warn!(%remote_ip, ?other, "expected Hello from agent");
@@ -104,7 +105,7 @@ async fn handle_agent_socket(
         }
     };
 
-    let (hostname, is_local, pubkey_b64, bootstrap_token) = hello;
+    let (hostname, is_local, pubkey_b64, bootstrap_token, os_id) = hello;
 
     // ── Send Challenge ────────────────────────────────────────────────────────
     let (nonce_bytes, nonce_b64) = generate_nonce();
@@ -153,6 +154,7 @@ async fn handle_agent_socket(
         is_local,
         &remote_ip,
         &fingerprint,
+        os_id.as_deref(),
         &bootstrap_registry,
         &registry,
     )
@@ -170,7 +172,7 @@ async fn handle_agent_socket(
 
             let (approve_tx, approve_rx) = oneshot::channel::<hosts_config::HostEntry>();
             let inserted = pending_registry
-                .insert(pubkey_b64.clone(), hostname.clone(), remote_ip.clone(), approve_tx)
+                .insert(pubkey_b64.clone(), hostname.clone(), remote_ip.clone(), os_id.clone(), approve_tx)
                 .await;
 
             if !inserted {
@@ -193,6 +195,13 @@ async fn handle_agent_socket(
 
         AuthPath::Reject => return,
     };
+
+    // ── Fill os_id if missing (write-once: only for hosts that predate this field) ──
+    if auth.host.os_id.is_none() {
+        if let Some(ref id) = os_id {
+            hosts_config::update_os_id(&auth.host.id, id).await;
+        }
+    }
 
     // ── HelloAck ──────────────────────────────────────────────────────────────
     let ack = serde_json::to_string(&message::Message::HelloAck {
@@ -285,6 +294,7 @@ async fn resolve_auth_path(
     is_local: bool,
     remote_ip: &str,
     fingerprint: &str,
+    os_id: Option<&str>,
     bootstrap_registry: &BootstrapRegistry,
     agent_registry: &AgentRegistry,
 ) -> AuthPath {
@@ -352,7 +362,7 @@ async fn resolve_auth_path(
         match bootstrap_registry.validate_and_consume(token_val, hostname).await {
             Some(_) => {
                 // Path 3: valid token → auto-enroll
-                match hosts_config::register_host(hostname, pubkey_b64, is_local, None).await {
+                match hosts_config::register_host(hostname, pubkey_b64, is_local, None, os_id.map(str::to_string)).await {
                     Ok(host) => {
                         tracing::info!(hostname, %fingerprint, "new host enrolled via bootstrap token");
                         return AuthPath::Authenticated(AuthenticatedAgent {
@@ -379,7 +389,7 @@ async fn resolve_auth_path(
     // as the gateway, which means the operator already has root on this machine
     // and explicitly ran the panel installer. No further approval is needed.
     if matches!(remote_ip, "127.0.0.1" | "::1") {
-        match hosts_config::register_host(hostname, pubkey_b64, true, None).await {
+        match hosts_config::register_host(hostname, pubkey_b64, true, None, os_id.map(str::to_string)).await {
             Ok(host) => {
                 tracing::info!(hostname, %fingerprint, "loopback agent auto-enrolled as local host");
                 return AuthPath::Authenticated(AuthenticatedAgent {

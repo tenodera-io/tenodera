@@ -28,6 +28,9 @@ pub struct HostEntry {
     /// ISO-8601 timestamp of the last agent disconnect.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_seen: Option<String>,
+    /// OS distribution ID from /etc/os-release (e.g. "debian", "ubuntu"). Written once on first connect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub os_id: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -99,6 +102,7 @@ pub async fn register_host(
     pubkey_b64: &str,
     is_local: bool,
     display_name: Option<String>,
+    os_id: Option<String>,
 ) -> anyhow::Result<HostEntry> {
     let mut config = load().await;
     let entry = HostEntry {
@@ -110,11 +114,23 @@ pub async fn register_host(
         is_local,
         display_name,
         last_seen: None,
+        os_id,
     };
     config.hosts.push(entry.clone());
     save(&config).await?;
     tracing::info!(hostname, "registered new host");
     Ok(entry)
+}
+
+/// Write os_id to an existing host entry (only if currently absent).
+pub async fn update_os_id(host_id: &str, os_id: &str) {
+    let mut config = load().await;
+    if let Some(h) = config.hosts.iter_mut().find(|h| h.id == host_id) {
+        if h.os_id.is_none() {
+            h.os_id = Some(os_id.to_string());
+            let _ = save(&config).await;
+        }
+    }
 }
 
 /// Replace the public key of an existing host (re-enrollment after key compromise).

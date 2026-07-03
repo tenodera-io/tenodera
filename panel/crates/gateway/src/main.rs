@@ -425,7 +425,7 @@ async fn pending_approve(
 
     let display_name = body.and_then(|b| b.0.display_name);
 
-    let Some((pubkey_b64, hostname, remote_ip)) = state
+    let Some((pubkey_b64, hostname, remote_ip, os_id)) = state
         .pending_registry
         .entry_for_fingerprint(&fingerprint_hex)
         .await
@@ -457,7 +457,7 @@ async fn pending_approve(
         }
         None => {
             // New host — register with its public key
-            match hosts_config::register_host(&hostname, &pubkey_b64, is_local, display_name).await {
+            match hosts_config::register_host(&hostname, &pubkey_b64, is_local, display_name, os_id).await {
                 Ok(h) => h,
                 Err(e) => {
                     tracing::error!(error = %e, "failed to register host during approval");

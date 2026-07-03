@@ -267,6 +267,7 @@ pub struct PendingEntry {
     pub fingerprint_display: String,
     pub remote_ip: String,
     pub connected_at: Instant,
+    pub os_id: Option<String>,
     pub(crate) approve_tx: Option<oneshot::Sender<HostEntry>>,
 }
 
@@ -286,6 +287,7 @@ impl PendingRegistry {
         pubkey_b64: String,
         hostname: String,
         remote_ip: String,
+        os_id: Option<String>,
         approve_tx: oneshot::Sender<HostEntry>,
     ) -> bool {
         let mut guard = self.inner.write().await;
@@ -303,6 +305,7 @@ impl PendingRegistry {
                 fingerprint_display,
                 remote_ip,
                 connected_at: Instant::now(),
+                os_id,
                 approve_tx: Some(approve_tx),
             },
         );
@@ -366,16 +369,16 @@ impl PendingRegistry {
             .map(|e| e.pubkey_b64.clone())
     }
 
-    /// Return (pubkey_b64, hostname, remote_ip) for a pending entry by fingerprint hex.
+    /// Return (pubkey_b64, hostname, remote_ip, os_id) for a pending entry by fingerprint hex.
     pub async fn entry_for_fingerprint(
         &self,
         fingerprint_hex: &str,
-    ) -> Option<(String, String, String)> {
+    ) -> Option<(String, String, String, Option<String>)> {
         let guard = self.inner.read().await;
         guard
             .values()
             .find(|e| e.fingerprint_hex == fingerprint_hex)
-            .map(|e| (e.pubkey_b64.clone(), e.hostname.clone(), e.remote_ip.clone()))
+            .map(|e| (e.pubkey_b64.clone(), e.hostname.clone(), e.remote_ip.clone(), e.os_id.clone()))
     }
 }
 

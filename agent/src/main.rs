@@ -91,6 +91,7 @@ async fn run_session(
         is_local: config.is_local(),
         public_key: Some(identity.public_key_b64()),
         bootstrap_token: config.bootstrap_token.clone(),
+        os_id: read_os_id(),
     })?;
     ws_sink
         .send(tokio_tungstenite::tungstenite::Message::Text(hello.into()))
@@ -362,4 +363,14 @@ impl rustls::client::danger::ServerCertVerifier for SkipVerify {
             rustls::SignatureScheme::ED448,
         ]
     }
+}
+
+fn read_os_id() -> Option<String> {
+    let content = std::fs::read_to_string("/etc/os-release").ok()?;
+    for line in content.lines() {
+        if let Some(val) = line.strip_prefix("ID=") {
+            return Some(val.trim_matches('"').to_lowercase());
+        }
+    }
+    None
 }

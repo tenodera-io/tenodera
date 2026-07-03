@@ -34,6 +34,9 @@ pub enum Message {
         /// Bootstrap enrollment token. Absent for already-enrolled agents.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         bootstrap_token: Option<String>,
+        /// OS distribution ID from /etc/os-release (e.g. "debian", "ubuntu", "arch").
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        os_id: Option<String>,
     },
 
     /// Gateway → Agent: issue authentication challenge.
