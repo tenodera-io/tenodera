@@ -31,6 +31,7 @@ const Cron        = lazy(() => import('./Cron.tsx').then(m => ({ default: m.Cron
 const DNS          = lazy(() => import('./DNS.tsx').then(m => ({ default: m.DNS })));
 const Certificates = lazy(() => import('./Certificates.tsx').then(m => ({ default: m.Certificates })));
 const Management   = lazy(() => import('./Management.tsx').then(m => ({ default: m.Management })));
+const ApiDocs      = lazy(() => import('./ApiDocs.tsx').then(m => ({ default: m.ApiDocs })));
 
 interface ShellProps {
   sessionId: string;
@@ -157,6 +158,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/dns" element={<DNS />} />
                       <Route path="/certificates" element={<Certificates />} />
                       <Route path="/management" element={<Management hosts={hosts} activeHost={activeHost} onSwitchHost={switchHost} onReloadHosts={loadHosts} />} />
+                      <Route path="/api-docs" element={su.suActive ? <ApiDocs /> : <Navigate to="/" />} />
                       <Route path="/files" element={<Files user={user} />} />
                       <Route path="/kdump" element={<Kdump />} />
                       <Route path="/log-files" element={<LogFiles />} />

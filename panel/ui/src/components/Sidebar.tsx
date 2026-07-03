@@ -164,6 +164,18 @@ export function Sidebar({
                   <span style={S.navIcon}>🗂️</span>Management
                 </NavLink>
               </li>
+              <li>
+                <NavLink
+                  to="/api-docs"
+                  style={({ isActive }) => ({
+                    ...S.navLink,
+                    background: isActive ? 'var(--bg-surface)' : 'transparent',
+                    borderLeft: isActive ? '3px solid var(--c-purple)' : '3px solid transparent',
+                  })}
+                >
+                  <span style={S.navIcon}>📡</span>API
+                </NavLink>
+              </li>
             </ul>
           </li>
         )}
