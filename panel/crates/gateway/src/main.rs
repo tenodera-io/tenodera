@@ -342,8 +342,16 @@ async fn token_create(
 
     let tls_active = state.config.tls_cert.is_some() && state.config.tls_key.is_some();
     let scheme = if tls_active { "https" } else { "http" };
-    let gateway_url = state.config.external_url.clone()
-        .unwrap_or_else(|| format!("{scheme}://{}", state.config.bind_addr));
+    let gateway_url = state.config.external_url.clone().unwrap_or_else(|| {
+        // Prefer the Host header (reflects actual hostname/port the client used)
+        // over bind_addr which may be 0.0.0.0.
+        let host = headers
+            .get("host")
+            .and_then(|v| v.to_str().ok())
+            .map(|h| h.to_string())
+            .unwrap_or_else(|| state.config.bind_addr.to_string());
+        format!("{scheme}://{host}")
+    });
 
     Json(serde_json::json!({
         "id": id,
