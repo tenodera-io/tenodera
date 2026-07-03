@@ -2,13 +2,14 @@
 # Tenodera Agent — remote host installer
 #
 # Usage:
-#   Install (local):  sudo bash tenodera-agent.sh
-#   Install (remote): sudo bash tenodera-agent.sh --gateway http://gw:9090
-#   Uninstall:        sudo bash tenodera-agent.sh --uninstall
+#   Install:   sudo bash tenodera-agent.sh --gateway http://gw:9090
+#   With token (skip pending approval):
+#              sudo bash tenodera-agent.sh --gateway http://gw:9090 --token <bootstrap-token>
+#   Uninstall: sudo bash tenodera-agent.sh --uninstall
 #
 # The agent connects outbound to the gateway — no SSH keys, no inbound ports needed.
-# The host is registered automatically on first connection (identified by hostname).
-# A PSK enrollment token is required: obtain it from the Management tab and pass --token.
+# First connection: the host enters a pending state. An admin approves it in the panel
+# (Hosts → Pending). Or generate a bootstrap token in Hosts → Tokens to skip approval.
 
 set -euo pipefail
 
@@ -44,7 +45,7 @@ fi
 
 GATEWAY_URL=""
 ACCEPT_INSECURE="0"
-AGENT_TOKEN=""
+BOOTSTRAP_TOKEN=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,6 +58,7 @@ while [[ $# -gt 0 ]]; do
       rm -f "${INSTALL_DIR}/tenodera-agent"
       rm -f "${CONF_DIR}/agent.cnf"
       rmdir "${CONF_DIR}" 2>/dev/null || true
+      rm -rf /var/lib/tenodera
       rm -f /var/log/tenodera_audit.log
       ok "tenodera-agent removed."
       exit 0
@@ -64,7 +66,7 @@ while [[ $# -gt 0 ]]; do
     --gateway)
       GATEWAY_URL="$2"; shift 2;;
     --token)
-      AGENT_TOKEN="$2"; shift 2;;
+      BOOTSTRAP_TOKEN="$2"; shift 2;;
     --accept-insecure)
       ACCEPT_INSECURE="1"; shift;;
     *)
@@ -157,11 +159,12 @@ else
   INSECURE_LINE="# TENODERA_AGENT_ACCEPT_INSECURE=1"
 fi
 
-if [ -n "$AGENT_TOKEN" ]; then
-  TOKEN_LINE="TENODERA_AGENT_TOKEN=${AGENT_TOKEN}"
+if [ -n "$BOOTSTRAP_TOKEN" ]; then
+  TOKEN_LINE="TENODERA_BOOTSTRAP_TOKEN=${BOOTSTRAP_TOKEN}"
+  info "Bootstrap token provided — host will be enrolled automatically without pending approval."
 else
-  TOKEN_LINE="# TENODERA_AGENT_TOKEN=<obtain from Management tab and pass --token>"
-  info "Warning: no --token provided — agent will be rejected by a token-configured gateway"
+  TOKEN_LINE="# TENODERA_BOOTSTRAP_TOKEN=<optional: generate in panel under Hosts → Tokens>"
+  info "No --token provided — host will enter pending state and require admin approval in the panel."
 fi
 
 cat > "${CONF_DIR}/agent.cnf" <<EOF
@@ -174,7 +177,8 @@ TENODERA_GATEWAY_URL=${GATEWAY_URL}
 # for CA-signed certs (e.g. Let's Encrypt). Uncomment below ONLY for self-signed certs.
 ${INSECURE_LINE}
 
-# PSK enrollment token — must match TENODERA_AGENT_TOKEN in gateway tenodera.cnf
+# Optional bootstrap token — skip pending approval on first connect.
+# Generate one in the panel under Hosts → Tokens.
 ${TOKEN_LINE}
 EOF
 
@@ -214,6 +218,10 @@ echo "  Config:  ${CONF_DIR}/agent.cnf"
 echo "  Logs:    journalctl -u tenodera-agent -f"
 echo "  Status:  systemctl status tenodera-agent"
 echo ""
-echo "  The agent will connect to: ${GATEWAY_URL}"
-echo "  The host should appear online in the panel within seconds."
+echo "  The agent is connecting to: ${GATEWAY_URL}"
+if [ -n "$BOOTSTRAP_TOKEN" ]; then
+  echo "  This host will be enrolled automatically (bootstrap token provided)."
+else
+  echo "  This host will enter pending state — approve it in the panel under Hosts → Pending."
+fi
 echo ""

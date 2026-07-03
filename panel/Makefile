@@ -74,6 +74,10 @@ build: build-backend build-frontend
 
 build-backend:
 	@echo "==> Building backend (gateway + pam-helper)..."
+	@# Ensure the protocol crate is reachable at ./protocol (symlink or copy)
+	@if [ ! -e protocol ] && [ -d ../protocol ]; then \
+		ln -s ../protocol ./protocol; \
+	fi
 	. "$$HOME/.cargo/env" 2>/dev/null || true; cargo build --release
 
 build-frontend:
@@ -103,16 +107,10 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	sudo chmod 750 $(CONFDIR)
 	sudo chown root:tenodera-gw $(CONFDIR)/tls
 	sudo chmod 750 $(CONFDIR)/tls
-	@if [ ! -f $(CONFDIR)/hosts.json ]; then \
-		echo '{"hosts":[]}' | sudo tee $(CONFDIR)/hosts.json > /dev/null; \
-		sudo chown tenodera-gw:tenodera-gw $(CONFDIR)/hosts.json; \
-		sudo chmod 640 $(CONFDIR)/hosts.json; \
-		echo "    Created $(CONFDIR)/hosts.json"; \
-	else \
-		sudo chown tenodera-gw:tenodera-gw $(CONFDIR)/hosts.json; \
-		sudo chmod 640 $(CONFDIR)/hosts.json; \
-		echo "    $(CONFDIR)/hosts.json already exists — skipping"; \
-	fi
+	@echo "==> Setting up gateway data directory..."
+	sudo mkdir -p /var/lib/tenodera-gw
+	sudo chown tenodera-gw:tenodera-gw /var/lib/tenodera-gw
+	sudo chmod 750 /var/lib/tenodera-gw
 	@if [ ! -f $(CONFDIR)/tenodera.cnf ]; then \
 		printf '# Tenodera Panel Configuration\n# See: systemctl cat tenodera\n\n# Bind address and port\nTENODERA_BIND_ADDR=0.0.0.0\nTENODERA_BIND_PORT=9090\n\n# Path to agent binary\nTENODERA_AGENT_BIN=/usr/local/bin/tenodera-agent\n\n# Path to built UI assets\nTENODERA_UI_DIR=/usr/share/tenodera/ui\n\n# TLS — optional. Uncomment and set cert/key paths to enable HTTPS.\n# Generate a self-signed cert: sudo make tls-selfsigned\n#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem\n#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem\n\n# HTTP mode (plain, no TLS) — enabled by default.\n# Comment out after configuring TLS above to switch to HTTPS.\nTENODERA_ALLOW_UNENCRYPTED=1\n\n# Log level (trace, debug, info, warn, error)\nRUST_LOG=info\n' \
 			| sudo tee $(CONFDIR)/tenodera.cnf > /dev/null; \
@@ -153,14 +151,16 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	@echo "✓ Tenodera Panel installed"
 	@echo "  Service: systemctl status tenodera"
 	@echo "  Logs:    journalctl -u tenodera -f"
+	@echo "  Panel:   http://$$(hostname -I | awk '{print $$1}'):9090"
 	@echo ""
-	@echo "  Agent must be installed separately on managed hosts."
-	@echo "  See ../agent/ or use: make install in the agent/ directory on each host."
+	@echo "  Login with any PAM user that has sudo privileges."
 	@echo ""
-	@echo "  Login with any PAM user (system credentials)."
-	@echo "  Configuration: $(CONFDIR)/tenodera.cnf"
+	@echo "  To add a remote host:"
+	@echo "  1. Run on the remote host:"
+	@echo "     curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://$$(hostname -I | awk '{print $$1}'):9090"
+	@echo "  2. In the panel, go to Hosts → Pending and approve the host."
+	@echo "     Or generate a bootstrap token (Hosts → Tokens) and pass --token to skip approval."
 	@echo ""
-	@echo "  Panel:  http://$$(hostname -I | awk '{print $$1}'):9090"
 	@echo "  Running in HTTP mode. To enable HTTPS: sudo make tls-selfsigned, then update $(CONFDIR)/tenodera.cnf."
 
 $(GATEWAY_BIN):
@@ -189,6 +189,7 @@ uninstall:
 	-sudo rm -f $(BINDIR)/tenodera-gateway $(BINDIR)/tenodera-pam-helper $(BINDIR)/tenodera-agent
 	-sudo rm -rf $(UIDIR)
 	-sudo rm -rf $(CONFDIR)
+	-sudo rm -rf /var/lib/tenodera-gw
 	-sudo rm -f /etc/logrotate.d/tenodera
 	-sudo rm -f /etc/pam.d/tenodera
 	-sudo rm -f /var/log/tenodera*

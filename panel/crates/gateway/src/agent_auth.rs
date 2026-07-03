@@ -366,3 +366,106 @@ impl PendingRegistry {
             .map(|e| e.pubkey_b64.clone())
     }
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ed25519_dalek::{SigningKey, Signer};
+    use rand_core::OsRng;
+    use tenodera_protocol::auth::build_challenge_payload;
+
+    fn make_key() -> SigningKey {
+        SigningKey::generate(&mut OsRng)
+    }
+
+    fn sign_challenge(key: &SigningKey, nonce: &[u8; 32], hostname: &str, gw_id: &str) -> String {
+        let payload = build_challenge_payload(nonce, hostname, gw_id);
+        let sig = key.sign(&payload);
+        base64::engine::general_purpose::STANDARD.encode(sig.to_bytes())
+    }
+
+    fn pubkey_b64(key: &SigningKey) -> String {
+        base64::engine::general_purpose::STANDARD.encode(key.verifying_key().as_bytes())
+    }
+
+    // ── Test 1: correct signature verifies ───────────────────────────────────
+
+    #[test]
+    fn valid_signature_accepted() {
+        let key = make_key();
+        let (nonce, _) = generate_nonce();
+        let sig_b64 = sign_challenge(&key, &nonce, "host1", "gw-uuid");
+        assert!(verify_signature(&pubkey_b64(&key), &sig_b64, &nonce, "host1", "gw-uuid"));
+    }
+
+    // ── Test 2: nonce replay — same sig with different nonce is rejected ──────
+
+    #[test]
+    fn nonce_replay_rejected() {
+        let key = make_key();
+        let (nonce_a, _) = generate_nonce();
+        let (nonce_b, _) = generate_nonce();
+        // Sign with nonce_a, verify with nonce_b → must fail
+        let sig = sign_challenge(&key, &nonce_a, "host1", "gw-uuid");
+        assert!(!verify_signature(&pubkey_b64(&key), &sig, &nonce_b, "host1", "gw-uuid"));
+    }
+
+    // ── Test 3: known hostname + wrong pubkey is rejected ────────────────────
+    // (This mirrors the Path 2 / ALERT path — the signature itself is valid
+    //  for the new key, but the stored key is different → mismatch)
+
+    #[test]
+    fn wrong_pubkey_rejected() {
+        let key_registered = make_key();
+        let key_attacker = make_key();
+        let (nonce, _) = generate_nonce();
+        // Attacker signs correctly with their own key
+        let sig = sign_challenge(&key_attacker, &nonce, "host1", "gw-uuid");
+        // Verification must use the *registered* key — should fail
+        assert!(!verify_signature(
+            &pubkey_b64(&key_registered),
+            &sig,
+            &nonce,
+            "host1",
+            "gw-uuid"
+        ));
+    }
+
+    // ── Test 4: bootstrap token single-use consumption ───────────────────────
+
+    #[tokio::test]
+    async fn single_use_token_consumed_on_first_use() {
+        let reg = BootstrapRegistry::new();
+        let (_id, value) = reg
+            .create(Duration::from_secs(3600), true, None, None, false)
+            .await;
+
+        // First use → valid
+        assert!(reg.validate_and_consume(&value, "any-host").await.is_some());
+        // Second use → token removed, must fail
+        assert!(reg.validate_and_consume(&value, "any-host").await.is_none());
+    }
+
+    // ── Test 5: re_enroll token is hostname-bound ─────────────────────────────
+
+    #[tokio::test]
+    async fn reenroll_token_rejected_for_wrong_hostname() {
+        let reg = BootstrapRegistry::new();
+        let (_id, value) = reg
+            .create(
+                Duration::from_secs(3600),
+                false,
+                None,
+                Some("allowed-host".to_string()),
+                true,
+            )
+            .await;
+
+        // Correct hostname → accepted
+        assert!(reg.validate_and_consume(&value, "allowed-host").await.is_some());
+        // Wrong hostname → rejected
+        assert!(reg.validate_and_consume(&value, "other-host").await.is_none());
+    }
+}

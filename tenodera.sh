@@ -67,9 +67,10 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -f "${INSTALL_DIR}/tenodera-pam-helper"
   rm -f "${INSTALL_DIR}/tenodera-agent"
 
-  # Remove UI assets, config, logs, PAM and sudoers rules
+  # Remove UI assets, config, data, logs, PAM rules
   rm -rf /usr/share/tenodera
   rm -rf /etc/tenodera
+  rm -rf /var/lib/tenodera-gw
   rm -f /etc/logrotate.d/tenodera
   rm -f /etc/pam.d/tenodera
   rm -f /var/log/tenodera*
@@ -168,62 +169,42 @@ rm -rf "$WORK_DIR"
 ok "Tenodera installed successfully!"
 
 CONF_DIR="/etc/tenodera"
+GW_IP=$(hostname -I | awk '{print $1}')
 
-# ── Generate PSK enrollment token ─────────────────────────────────────────────
-
-if ! grep -q "^TENODERA_AGENT_TOKEN=" "${CONF_DIR}/tenodera.cnf" 2>/dev/null; then
-  info "Generating PSK enrollment token..."
-  TOKEN=$(openssl rand -hex 32)
-  printf '\n# PSK enrollment token — agents must present this in their Hello message\nTENODERA_AGENT_TOKEN=%s\n' "${TOKEN}" >> "${CONF_DIR}/tenodera.cnf"
-  ok "Token generated and saved to ${CONF_DIR}/tenodera.cnf"
-  info "Restarting gateway to apply enrollment token..."
-  systemctl restart tenodera
-else
-  TOKEN=$(grep "^TENODERA_AGENT_TOKEN=" "${CONF_DIR}/tenodera.cnf" | cut -d= -f2-)
-  info "Using existing enrollment token from ${CONF_DIR}/tenodera.cnf"
-fi
-
-# ── Configure and start local agent ──────────────────────────────────────────
-# The agent connects to the local gateway over plain HTTP and auto-registers.
-# To enable HTTPS: generate a cert (cd panel && sudo make tls-selfsigned),
-# then update /etc/tenodera/tenodera.cnf and /etc/tenodera/agent.cnf.
+# ── Start local agent (connects to gateway, will enter pending on first boot) ─
 
 if [ ! -f "${CONF_DIR}/agent.cnf" ]; then
-  info "Writing agent config..."
+  info "Writing local agent config..."
   cat > "${CONF_DIR}/agent.cnf" <<EOF
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
 # HTTPS: change URL to https:// above. Uncomment below only for self-signed certs.
 # TENODERA_AGENT_ACCEPT_INSECURE=1
-TENODERA_AGENT_TOKEN=${TOKEN}
 EOF
   chmod 640 "${CONF_DIR}/agent.cnf"
 fi
 
-# Ensure the enrollment token is present in the local agent config
-if ! grep -q "^TENODERA_AGENT_TOKEN=" "${CONF_DIR}/agent.cnf" 2>/dev/null; then
-  printf 'TENODERA_AGENT_TOKEN=%s\n' "${TOKEN}" >> "${CONF_DIR}/agent.cnf"
-fi
-
 if systemctl is-active --quiet tenodera-agent 2>/dev/null; then
-  info "tenodera-agent already running — restarting to pick up new config"
+  info "tenodera-agent already running — restarting..."
   systemctl restart tenodera-agent
 else
-  info "Starting tenodera-agent on this host..."
+  info "Starting local tenodera-agent..."
   systemctl enable --now tenodera-agent
 fi
 
 echo ""
-echo "  Panel:     http://$(hostname -I | awk '{print $1}'):9090"
-echo "  Service:   systemctl status tenodera"
-echo "  Logs:      journalctl -u tenodera -f"
-echo "  Config:    /etc/tenodera/tenodera.cnf"
+echo "  Panel:   http://${GW_IP}:9090"
+echo "  Service: systemctl status tenodera"
+echo "  Logs:    journalctl -u tenodera -f"
 echo ""
 echo "  Log in with any PAM user that has sudo privileges."
-echo "  This host will appear in the UI as soon as the agent connects (a few seconds)."
 echo ""
-echo "  Enrollment token (copy from Management tab or use directly):"
-echo "  ${TOKEN}"
+echo "  This host's agent will appear under Hosts → Pending."
+echo "  Approve it in the panel to bring it online."
 echo ""
-echo "  Install agent on remote managed hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://$(hostname -I | awk '{print $1}'):9090 --token ${TOKEN}"
+echo "  To add remote hosts:"
+echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://${GW_IP}:9090"
+echo "  Then approve the host in the panel (Hosts → Pending)."
+echo ""
+echo "  For unattended installs, generate a bootstrap token in the panel (Hosts → Tokens)"
+echo "  and pass it with --token to skip the approval step."
 echo ""
