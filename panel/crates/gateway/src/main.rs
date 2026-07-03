@@ -340,8 +340,10 @@ async fn token_create(
         .create(ttl, body.single_use, body.max_uses, body.bound_hostname, body.re_enroll)
         .await;
 
+    let tls_active = state.config.tls_cert.is_some() && state.config.tls_key.is_some();
+    let scheme = if tls_active { "https" } else { "http" };
     let gateway_url = state.config.external_url.clone()
-        .unwrap_or_else(|| format!("https://{}", state.config.bind_addr));
+        .unwrap_or_else(|| format!("{scheme}://{}", state.config.bind_addr));
 
     Json(serde_json::json!({
         "id": id,
