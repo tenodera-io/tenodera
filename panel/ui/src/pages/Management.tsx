@@ -3,6 +3,7 @@ import { request as rawRequest } from '../api/transport.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { useToast } from '../contexts/ToastContext.tsx';
 import type { HostEntry } from '../hooks/useHosts.ts';
+import React from 'react';
 
 interface ManagementProps {
   hosts: HostEntry[];
@@ -23,93 +24,6 @@ interface HostWithConfig {
   error?: string;
 }
 
-interface AgentTokenInfo {
-  token: string | null;
-  gateway_url: string;
-}
-
-function EnrollmentToken() {
-  const [info, setInfo] = useState<AgentTokenInfo | null>(null);
-  const [revealed, setRevealed] = useState(false);
-  const [copied, setCopied] = useState<'token' | 'cmd' | null>(null);
-  const toast = useToast();
-
-  useEffect(() => {
-    const sessionId = sessionStorage.getItem('session_id') ?? '';
-    fetch('/api/agent-token', { headers: { Authorization: `Bearer ${sessionId}` } })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setInfo(d); })
-      .catch(() => {});
-  }, []);
-
-  if (!info) return null;
-
-  const token = info.token ?? '(not configured)';
-  const gatewayUrl = info.gateway_url;
-  const installCmd = info.token
-    ? `curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway ${gatewayUrl} --token ${token}`
-    : '';
-
-  const copyToClipboard = (text: string) => {
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text);
-    }
-    // Fallback for plain HTTP contexts
-    const ta = document.createElement('textarea');
-    ta.value = text;
-    ta.style.cssText = 'position:fixed;opacity:0;top:0;left:0';
-    document.body.appendChild(ta);
-    ta.focus();
-    ta.select();
-    const ok = document.execCommand('copy');
-    document.body.removeChild(ta);
-    return ok ? Promise.resolve() : Promise.reject(new Error('execCommand failed'));
-  };
-
-  const copy = async (text: string, which: 'token' | 'cmd') => {
-    try {
-      await copyToClipboard(text);
-      setCopied(which);
-      setTimeout(() => setCopied(null), 1800);
-    } catch {
-      toast.error('Copy failed');
-    }
-  };
-
-  const maskedToken = token.length > 8 ? token.slice(0, 4) + '••••••••••••••••••••••••' + token.slice(-4) : token;
-  const displayCmd = info.token
-    ? installCmd.replace(token, revealed ? token : maskedToken)
-    : '';
-
-  return (
-    <div style={S.tokenSection}>
-      <div style={S.tokenHeader}>
-        <span style={S.tokenLabel}>Enrollment Token</span>
-        <span style={S.muted}>Agents must present this token to connect</span>
-      </div>
-      <div style={S.tokenRow}>
-        <code style={S.tokenCode}>{revealed ? token : maskedToken}</code>
-        <button style={S.btnSmall} onClick={() => setRevealed(r => !r)}>{revealed ? 'Hide' : 'Reveal'}</button>
-        {info.token && (
-          <button style={S.btnSmall} onClick={() => copy(token, 'token')}>
-            {copied === 'token' ? '✓ Copied' : 'Copy'}
-          </button>
-        )}
-      </div>
-      {installCmd && (
-        <div style={{ marginTop: '0.5rem' }}>
-          <div style={{ ...S.muted, marginBottom: '0.25rem', fontSize: '0.72rem' }}>Install command for remote hosts:</div>
-          <div style={S.cmdRow}>
-            <code style={S.cmdCode}>{displayCmd}</code>
-            <button style={S.btnSmall} onClick={() => copy(installCmd, 'cmd')}>
-              {copied === 'cmd' ? '✓ Copied' : 'Copy'}
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: ManagementProps) {
   const su = useContext(SuperuserContext);
@@ -262,8 +176,6 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
         <button style={S.btn} onClick={fetchAll} disabled={loading}>↺ Refresh</button>
         {loading && <span style={S.muted}>Loading…</span>}
       </div>
-
-      <EnrollmentToken />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
         <input
@@ -530,8 +442,6 @@ function InfoRow({ label, value, valueStyle }: { label: string; value: string; v
   );
 }
 
-import React from 'react';
-
 const S: Record<string, React.CSSProperties> = {
   page:          { padding: '1.5rem', maxWidth: 1200, margin: '0 auto' },
   title:         { margin: 0, fontSize: '1.4rem' },
@@ -586,12 +496,4 @@ const S: Record<string, React.CSSProperties> = {
   tagRemove:     { background: 'none', border: 'none', color: 'var(--c-blue)', cursor: 'pointer', fontSize: '0.8rem', padding: 0, lineHeight: 1 },
   tagInput:      { border: 'none', outline: 'none', background: 'transparent', color: 'var(--text-1)', fontSize: '0.8rem', minWidth: 80, flex: 1 },
 
-  tokenSection:  { background: 'var(--bg-panel)', borderRadius: 10, padding: '0.9rem 1.25rem', marginBottom: '1rem' },
-  tokenHeader:   { display: 'flex', alignItems: 'baseline', gap: '0.75rem', marginBottom: '0.55rem' },
-  tokenLabel:    { fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-2)', textTransform: 'uppercase' as const, letterSpacing: '0.08em' },
-  tokenRow:      { display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' as const },
-  tokenCode:     { fontFamily: 'monospace', fontSize: '0.82rem', color: 'var(--text-1)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 5, padding: '0.25rem 0.55rem', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' as const },
-  cmdRow:        { display: 'flex', alignItems: 'flex-start', gap: '0.5rem' },
-  cmdCode:       { fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-2)', background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 5, padding: '0.3rem 0.6rem', flex: 1, wordBreak: 'break-all' as const },
-  btnSmall:      { padding: '0.2rem 0.55rem', fontSize: '0.75rem', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', whiteSpace: 'nowrap' as const, flexShrink: 0 },
 };
