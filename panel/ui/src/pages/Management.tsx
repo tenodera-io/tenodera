@@ -3,6 +3,7 @@ import { request as rawRequest } from '../api/transport.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { useToast } from '../contexts/ToastContext.tsx';
 import type { HostEntry } from '../hooks/useHosts.ts';
+import { PendingTab, TokensTab } from './Hosts.tsx';
 import React from 'react';
 
 interface ManagementProps {
@@ -25,8 +26,12 @@ interface HostWithConfig {
 }
 
 
+type ManagementTab = 'hosts' | 'pending' | 'tokens';
+
 export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: ManagementProps) {
   const su = useContext(SuperuserContext);
+  const [tab, setTab] = useState<ManagementTab>('hosts');
+  const [pendingCount, setPendingCount] = useState(0);
   const [results, setResults] = useState<HostWithConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -173,33 +178,62 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
     <div style={S.page}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
         <h2 style={S.title}>Management</h2>
-        <button style={S.btn} onClick={fetchAll} disabled={loading}>↺ Refresh</button>
-        {loading && <span style={S.muted}>Loading…</span>}
-      </div>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-        <input
-          style={S.searchInput}
-          type="search"
-          placeholder="Search by hostname, IP or role…"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-        />
-        {q && (
-          <span style={S.muted}>
-            {filtered.length} / {results.length} host{results.length !== 1 ? 's' : ''}
-          </span>
+        <div style={{ display: 'flex', gap: '0.35rem' }}>
+          {(['hosts', 'pending', 'tokens'] as ManagementTab[]).map(t => (
+            <button
+              key={t}
+              style={{ ...S.tabBtn, ...(tab === t ? S.tabActive : {}) }}
+              onClick={() => setTab(t)}
+            >
+              {t === 'hosts' ? 'Hosts' : t === 'pending'
+                ? `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}`
+                : 'Tokens'}
+            </button>
+          ))}
+        </div>
+        {tab === 'hosts' && (
+          <>
+            <button style={S.btn} onClick={fetchAll} disabled={loading}>↺ Refresh</button>
+            {loading && <span style={S.muted}>Loading…</span>}
+          </>
         )}
       </div>
 
-      {noResults && (
-        <p style={S.muted}>{q ? 'No hosts match your search.' : 'No hosts available.'}</p>
+      {tab === 'pending' && (
+        <PendingTab onCountChange={setPendingCount} onChange={onReloadHosts} />
       )}
 
-      <div style={S.groupStack}>
-        {sortedGroups.map(([role, items]) => renderGroup(role, items))}
-        {ungrouped.length > 0 && renderGroup('no role assigned', ungrouped)}
-      </div>
+      {tab === 'tokens' && (
+        <TokensTab />
+      )}
+
+      {tab === 'hosts' && (
+        <>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
+            <input
+              style={S.searchInput}
+              type="search"
+              placeholder="Search by hostname, IP or role…"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+            />
+            {q && (
+              <span style={S.muted}>
+                {filtered.length} / {results.length} host{results.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          {noResults && (
+            <p style={S.muted}>{q ? 'No hosts match your search.' : 'No hosts available.'}</p>
+          )}
+
+          <div style={S.groupStack}>
+            {sortedGroups.map(([role, items]) => renderGroup(role, items))}
+            {ungrouped.length > 0 && renderGroup('no role assigned', ungrouped)}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -447,6 +481,8 @@ const S: Record<string, React.CSSProperties> = {
   title:         { margin: 0, fontSize: '1.4rem' },
   btn:           { padding: '0.3rem 0.8rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-1)', cursor: 'pointer', fontSize: '0.83rem' },
   muted:         { color: 'var(--text-2)', fontSize: '0.85rem' },
+  tabBtn:        { padding: '0.3rem 0.7rem', borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.8rem' },
+  tabActive:     { background: 'var(--c-blue)', color: 'var(--bg-app)', borderColor: 'var(--c-blue)', fontWeight: 600 },
   searchInput:   { flex: 1, maxWidth: 360, padding: '0.4rem 0.75rem', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontSize: '0.85rem', outline: 'none' },
 
   // Outer stack — one role container per row

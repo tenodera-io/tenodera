@@ -232,7 +232,7 @@ function EnrolledTab({ onChange }: { onChange?: () => void }) {
 
 // ── Pending tab ───────────────────────────────────────────────────────────────
 
-function PendingTab({ onCountChange, onChange }: {
+export function PendingTab({ onCountChange, onChange }: {
   onCountChange: (n: number) => void;
   onChange?: () => void;
 }) {
@@ -342,7 +342,7 @@ const TTL_OPTIONS = [
   { label: '24 hours', value: 86400 },
 ];
 
-function TokensTab() {
+export function TokensTab() {
   const [tokens, setTokens] = useState<TokenEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
