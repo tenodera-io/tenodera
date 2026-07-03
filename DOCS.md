@@ -211,19 +211,38 @@ cd panel && sudo make tls-selfsigned
 
 Generates a 10-year self-signed certificate in `/etc/tenodera/tls/` and sets correct ownership (`root:tenodera-gw`) and permissions (`640`). After running, follow the printed instructions to enable TLS in `tenodera.cnf` and restart the gateway.
 
-When using a self-signed cert, agents must be installed with `--accept-insecure`:
+When using a self-signed cert, agents need to trust it. Two options:
+
+**Option A — skip verification (quickest, dev/internal only):**
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway https://<panel-host>:9090 --accept-insecure
-```
-
-Or edit `/etc/tenodera/agent.cnf` on the managed host:
-
-```bash
+# /etc/tenodera/agent.cnf
 TENODERA_GATEWAY_URL=https://<panel-host>:9090
 TENODERA_AGENT_ACCEPT_INSECURE=1
 ```
+
+**Option B — add the cert to the system CA store (recommended):**
+
+Copy the gateway certificate (`/etc/tenodera/tls/cert.pem`) to each managed host and add it to the OS trust store. The filename is arbitrary — only the extension matters:
+
+```bash
+# Debian / Ubuntu
+sudo cp cert.pem /usr/local/share/ca-certificates/tenodera-gw.crt
+sudo update-ca-certificates
+
+# Fedora / RHEL
+sudo cp cert.pem /etc/pki/ca-trust/source/anchors/tenodera-gw.pem
+sudo update-ca-trust
+```
+
+Then set the gateway URL without `ACCEPT_INSECURE`:
+
+```bash
+# /etc/tenodera/agent.cnf
+TENODERA_GATEWAY_URL=https://<panel-host>:9090
+```
+
+The agent uses the system CA store via WebPKI and will verify the cert normally.
 
 #### CA-signed certificate (production)
 
@@ -352,9 +371,10 @@ HTTPS/WSS is controlled by the URL scheme in `TENODERA_GATEWAY_URL`, not by `TEN
 |----------|--------|
 | Plain HTTP (default) | `TENODERA_GATEWAY_URL=http://...` |
 | HTTPS with CA-signed cert | `TENODERA_GATEWAY_URL=https://...` |
-| HTTPS with self-signed cert | `TENODERA_GATEWAY_URL=https://...` + `TENODERA_AGENT_ACCEPT_INSECURE=1` |
+| HTTPS with self-signed cert — skip verify | `TENODERA_GATEWAY_URL=https://...` + `TENODERA_AGENT_ACCEPT_INSECURE=1` |
+| HTTPS with self-signed cert — CA store | Add cert to OS trust store (see §4.2), then `TENODERA_GATEWAY_URL=https://...` |
 
-`TENODERA_AGENT_ACCEPT_INSECURE=1` disables TLS certificate verification — it does **not** enable HTTPS. Use it only when the panel has a self-signed certificate.
+`TENODERA_AGENT_ACCEPT_INSECURE=1` disables TLS certificate verification entirely — it does **not** enable HTTPS. The CA store approach is preferred for production: the agent verifies the cert normally, and the filename in the store can be anything as long as the extension is correct (`.crt` on Debian, `.pem` on Fedora).
 
 ---
 
