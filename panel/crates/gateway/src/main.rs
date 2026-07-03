@@ -515,6 +515,8 @@ struct HostListEntry {
     is_local: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     remote_ip: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    os_id: Option<String>,
 }
 
 async fn hosts_list(
@@ -540,6 +542,7 @@ async fn hosts_list(
             online: is_online,
             is_local: h.is_local,
             remote_ip,
+            os_id: h.os_id.clone(),
         });
     }
     hosts.sort_by_key(|h| !h.is_local);
