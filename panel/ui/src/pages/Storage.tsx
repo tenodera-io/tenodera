@@ -20,6 +20,9 @@ interface BlockDevice {
   used: number;
   free: number;
   use_pct: number;
+  inodes_total: number;
+  inodes_used: number;
+  inodes_pct: number;
   children?: BlockDevice[];
 }
 
@@ -30,8 +33,23 @@ interface FlatRow {
   mountpoints: string[];
   used: number;
   use_pct: number;
+  inodes_total: number;
+  inodes_used: number;
+  inodes_pct: number;
   depth: number;
-  prefix: string;  // tree connector like "├─" or "└─"
+  prefix: string;
+}
+
+interface SwapInfo {
+  total: number;
+  used: number;
+  free: number;
+  use_pct: number;
+}
+
+interface DiskIoRate {
+  read_bytes_sec: number;
+  write_bytes_sec: number;
 }
 
 const HISTORY_LEN = 90;
@@ -50,6 +68,13 @@ const INTERVAL_OPTIONS = [
 const INTERVAL_STORAGE_KEY = 'storage_interval';
 
 /* ── helpers ───────────────────────────────────────────── */
+
+function formatInodes(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}G`;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+  return String(n);
+}
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '0 B';
@@ -80,6 +105,9 @@ function flattenTree(devices: BlockDevice[]): FlatRow[] {
       mountpoints: dev.mountpoints,
       used: dev.used,
       use_pct: dev.use_pct,
+      inodes_total: dev.inodes_total ?? 0,
+      inodes_used: dev.inodes_used ?? 0,
+      inodes_pct: dev.inodes_pct ?? 0,
       depth,
       prefix,
     });
@@ -114,6 +142,8 @@ export function Storage() {
   const { request } = useTransport();
   const [history, setHistory] = useState<IoPoint[]>([]);
   const [blockRows, setBlockRows] = useState<FlatRow[]>([]);
+  const [swap, setSwap] = useState<SwapInfo | null>(null);
+  const [diskIo, setDiskIo] = useState<Record<string, DiskIoRate>>({});
   const mountedRef = useRef(true);
   const prevRequestRef = useRef(request);
   const [intervalMs, setIntervalMs] = useState<number>(() => {
@@ -135,6 +165,8 @@ export function Storage() {
       prevRequestRef.current = request;
       setHistory([]);
       setBlockRows([]);
+      setSwap(null);
+      setDiskIo({});
     }
 
     const fetchSnapshot = () => {
@@ -143,7 +175,7 @@ export function Storage() {
         const d = results[0] as Record<string, unknown> | undefined;
         if (!d) return;
 
-        const io = d.io as { read_bytes_sec: number; write_bytes_sec: number } | undefined;
+        const io = d.io as { read_bytes_sec: number; write_bytes_sec: number; disks?: Record<string, DiskIoRate> } | undefined;
         const ts = d.timestamp as string | undefined;
         const time = ts ? new Date(ts).toLocaleTimeString('en-GB', { hour12: false }) : '';
 
@@ -156,7 +188,11 @@ export function Storage() {
             }];
             return next.length > HISTORY_LEN ? next.slice(next.length - HISTORY_LEN) : next;
           });
+          if (io.disks) setDiskIo(io.disks);
         }
+
+        const swapData = d.swap as SwapInfo | undefined;
+        if (swapData) setSwap(swapData);
 
         const bd = d.block_devices as BlockDevice[] | undefined;
         if (bd) setBlockRows(flattenTree(bd));
@@ -251,6 +287,61 @@ export function Storage() {
         </div>
       </div>
 
+      {/* ── Swap + per-disk I/O ── */}
+      <div style={S.metricsRow}>
+        <div style={S.card}>
+          <h3 style={S.cardTitle}>Swap</h3>
+          {!swap ? (
+            <p style={S.muted}>Loading…</p>
+          ) : swap.total === 0 ? (
+            <p style={S.muted}>No swap configured</p>
+          ) : (
+            <>
+              <div style={S.barOuter}>
+                <div style={{
+                  ...S.barInner,
+                  width: `${swap.use_pct}%`,
+                  background: swap.use_pct > 80 ? 'var(--c-red)' : swap.use_pct > 50 ? 'var(--c-yellow)' : 'var(--c-purple)',
+                }} />
+              </div>
+              <div style={S.swapStats}>
+                <span>{formatSize(swap.used)} used</span>
+                <span style={{ fontWeight: 600 }}>{swap.use_pct}%</span>
+                <span>{formatSize(swap.total)} total</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={S.card}>
+          <h3 style={S.cardTitle}>Disk I/O</h3>
+          {Object.keys(diskIo).length === 0 ? (
+            <p style={S.muted}>Loading…</p>
+          ) : (
+            <table style={S.table}>
+              <thead>
+                <tr>
+                  <th style={S.th}>Device</th>
+                  <th style={{ ...S.th, textAlign: 'right' as const }}>Read</th>
+                  <th style={{ ...S.th, textAlign: 'right' as const }}>Write</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(diskIo)
+                  .sort(([, a], [, b]) => (b.read_bytes_sec + b.write_bytes_sec) - (a.read_bytes_sec + a.write_bytes_sec))
+                  .map(([name, rates]) => (
+                    <tr key={name} style={S.tr}>
+                      <td style={{ ...S.td, fontFamily: 'monospace' }}>{name}</td>
+                      <td style={{ ...S.td, textAlign: 'right' as const, color: 'var(--c-blue)' }}>{formatRate(rates.read_bytes_sec)}</td>
+                      <td style={{ ...S.td, textAlign: 'right' as const, color: 'var(--c-red)' }}>{formatRate(rates.write_bytes_sec)}</td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
       {/* ── Block Devices table ── */}
       <div style={S.card}>
         <h3 style={S.cardTitle}>Filesystems</h3>
@@ -260,7 +351,8 @@ export function Storage() {
               <th style={S.th}>Name</th>
               <th style={S.th}>Type</th>
               <th style={S.th}>Mount Points</th>
-              <th style={{ ...S.th, width: '40%' }}>Size</th>
+              <th style={S.th}>Inodes</th>
+              <th style={{ ...S.th, width: '35%' }}>Size</th>
             </tr>
           </thead>
           <tbody>
@@ -281,6 +373,18 @@ export function Storage() {
                   </td>
                   <td style={{ ...S.td, color: 'var(--text-2)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
                     {row.mountpoints.join(', ') || '—'}
+                  </td>
+                  <td style={{ ...S.td, fontSize: '0.78rem', whiteSpace: 'nowrap' as const }}>
+                    {row.inodes_total === 0 ? (
+                      <span style={{ color: 'var(--text-3)' }}>—</span>
+                    ) : (
+                      <span style={{ color: row.inodes_pct > 80 ? 'var(--c-red)' : row.inodes_pct > 60 ? 'var(--c-yellow)' : 'var(--text-1)' }}>
+                        {row.inodes_pct}%{' '}
+                        <span style={{ color: 'var(--text-3)', fontSize: '0.72rem' }}>
+                          ({formatInodes(row.inodes_used)}/{formatInodes(row.inodes_total)})
+                        </span>
+                      </span>
+                    )}
                   </td>
                   <td style={S.td}>
                     <div style={S.sizeCell}>
@@ -350,6 +454,20 @@ const S: Record<string, React.CSSProperties> = {
     gridTemplateColumns: '1fr 1fr',
     gap: '1rem',
     marginTop: '1rem',
+  },
+  metricsRow: {
+    display: 'grid',
+    gridTemplateColumns: '280px 1fr',
+    gap: '1rem',
+    marginTop: '1rem',
+    alignItems: 'start',
+  },
+  swapStats: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    marginTop: '0.5rem',
+    fontSize: '0.8rem',
+    color: 'var(--text-2)',
   },
   chartCard: {
     background: 'var(--bg-panel)',

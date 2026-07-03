@@ -46,13 +46,13 @@ impl ChannelHandler for StorageStreamHandler {
                 _ = ticker.tick() => {
                     let now = std::time::Instant::now();
                     let stats = read_diskstats().await;
-                    let block_devices = get_block_devices().await;
+                    let (block_devices, swap) = tokio::join!(get_block_devices(), read_swap());
 
                     let io = if let (Some(prev), Some(pt)) = (&prev_stats, prev_time) {
                         let dt = now.duration_since(pt).as_secs_f64().max(0.001);
                         compute_io_rates(prev, &stats, dt)
                     } else {
-                        serde_json::json!({ "read_bytes_sec": 0, "write_bytes_sec": 0 })
+                        serde_json::json!({ "read_bytes_sec": 0, "write_bytes_sec": 0, "disks": {} })
                     };
 
                     prev_stats = Some(stats);
@@ -62,6 +62,7 @@ impl ChannelHandler for StorageStreamHandler {
                         "timestamp": chrono::Utc::now().to_rfc3339(),
                         "io": io,
                         "block_devices": block_devices,
+                        "swap": swap,
                     });
 
                     if tx.send(Message::Data {
@@ -124,11 +125,18 @@ async fn read_diskstats() -> Vec<DiskStat> {
 fn compute_io_rates(prev: &[DiskStat], curr: &[DiskStat], dt: f64) -> serde_json::Value {
     let mut total_read: u64 = 0;
     let mut total_write: u64 = 0;
+    let mut disks = serde_json::Map::new();
 
     for c in curr {
         if let Some(p) = prev.iter().find(|p| p.name == c.name) {
-            total_read += c.read_sectors.saturating_sub(p.read_sectors);
-            total_write += c.write_sectors.saturating_sub(p.write_sectors);
+            let r = c.read_sectors.saturating_sub(p.read_sectors);
+            let w = c.write_sectors.saturating_sub(p.write_sectors);
+            total_read += r;
+            total_write += w;
+            disks.insert(c.name.clone(), serde_json::json!({
+                "read_bytes_sec": ((r * 512) as f64 / dt).round() as u64,
+                "write_bytes_sec": ((w * 512) as f64 / dt).round() as u64,
+            }));
         }
     }
 
@@ -139,7 +147,30 @@ fn compute_io_rates(prev: &[DiskStat], curr: &[DiskStat], dt: f64) -> serde_json
     serde_json::json!({
         "read_bytes_sec": read_bytes.round() as u64,
         "write_bytes_sec": write_bytes.round() as u64,
+        "disks": serde_json::Value::Object(disks),
     })
+}
+
+async fn read_swap() -> serde_json::Value {
+    let content = tokio::fs::read_to_string("/proc/meminfo").await.unwrap_or_default();
+    let mut swap_total: u64 = 0;
+    let mut swap_free: u64 = 0;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("SwapTotal:") {
+            swap_total = rest.split_whitespace().next()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0) * 1024;
+        } else if let Some(rest) = line.strip_prefix("SwapFree:") {
+            swap_free = rest.split_whitespace().next()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0) * 1024;
+        }
+    }
+    let used = swap_total.saturating_sub(swap_free);
+    let pct = if swap_total > 0 {
+        ((used as f64 / swap_total as f64) * 100.0).round() as u64
+    } else { 0 };
+    serde_json::json!({ "total": swap_total, "free": swap_free, "used": used, "use_pct": pct })
 }
 
 async fn get_block_devices() -> Vec<serde_json::Value> {
@@ -223,7 +254,7 @@ fn enrich_device(dev: &serde_json::Value) -> serde_json::Value {
         .unwrap_or_default();
 
     // Get usage via statvfs for the first real mountpoint
-    let (used, free, use_pct) = mountpoints
+    let (used, free, use_pct, inodes_total, inodes_used, inodes_pct) = mountpoints
         .iter()
         .find(|m| !m.starts_with('['))
         .and_then(|mount| {
@@ -244,9 +275,17 @@ fn enrich_device(dev: &serde_json::Value) -> serde_json::Value {
             } else {
                 0
             };
-            Some((used_fs, free_fs, pct))
+            let inodes_total = stat.f_files;
+            let inodes_free = stat.f_ffree;
+            let inodes_used = inodes_total.saturating_sub(inodes_free);
+            let inodes_pct = if inodes_total > 0 {
+                ((inodes_used as f64 / inodes_total as f64) * 100.0).round() as u64
+            } else {
+                0
+            };
+            Some((used_fs, free_fs, pct, inodes_total, inodes_used, inodes_pct))
         })
-        .unwrap_or((0, 0, 0));
+        .unwrap_or((0, 0, 0, 0, 0, 0));
 
     let children = dev
         .get("children")
@@ -261,6 +300,9 @@ fn enrich_device(dev: &serde_json::Value) -> serde_json::Value {
         "used": used,
         "free": free,
         "use_pct": use_pct,
+        "inodes_total": inodes_total,
+        "inodes_used": inodes_used,
+        "inodes_pct": inodes_pct,
     });
 
     if let Some(ch) = children {
