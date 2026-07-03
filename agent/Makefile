@@ -64,7 +64,7 @@ install: $(AGENT_BIN)
 	sudo cp systemd/tenodera-agent.service $(SYSTEMDDIR)/
 	sudo systemctl daemon-reload
 	@if [ ! -f $(CONFDIR)/agent.cnf ]; then \
-		printf 'TENODERA_GATEWAY_URL=$(GATEWAY_URL)\n# Uncomment if gateway uses a self-signed TLS cert:\n# TENODERA_AGENT_ACCEPT_INSECURE=1\n' \
+		printf 'TENODERA_GATEWAY_URL=$(GATEWAY_URL)\n# Uncomment if gateway uses a self-signed TLS cert:\n# TENODERA_AGENT_ACCEPT_INSECURE=1\n\n# Optional bootstrap token — skip pending-state approval on first connect.\n# Generate one in the panel under Hosts → Tokens.\n# TENODERA_BOOTSTRAP_TOKEN=<token>\n' \
 			| sudo tee $(CONFDIR)/agent.cnf > /dev/null; \
 		sudo chmod 640 $(CONFDIR)/agent.cnf; \
 		echo "    Created $(CONFDIR)/agent.cnf ($(GATEWAY_URL))"; \
@@ -77,6 +77,10 @@ install: $(AGENT_BIN)
 	@echo "  Config:  $(CONFDIR)/agent.cnf"
 	@echo "  Logs:    journalctl -u tenodera-agent -f"
 	@echo "  Gateway: $(GATEWAY_URL)"
+	@echo ""
+	@echo "  The agent is connecting to $(GATEWAY_URL)."
+	@echo "  On first connect it will enter the pending state — approve it in the panel under Hosts → Pending."
+	@echo "  To skip approval, generate a bootstrap token in Hosts → Tokens and add it to agent.cnf."
 
 # ── Uninstall ─────────────────────────────────────────────
 

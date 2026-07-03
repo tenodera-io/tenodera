@@ -107,7 +107,7 @@ The installer:
 8. Installs and enables `tenodera.service` (systemd)
 9. Compiles and installs the local agent (`tenodera-agent`)
 10. Writes `/etc/tenodera/agent.cnf` and enables `tenodera-agent.service`
-11. Generates a PSK enrollment token (`openssl rand -hex 32`) and appends `TENODERA_AGENT_TOKEN` to both `tenodera.cnf` and `agent.cnf` — the local agent picks it up automatically
+11. Starts `tenodera-agent` — the local agent connects and enters the **pending** state; approve it in the panel under **Hosts → Pending** to bring it online
 
 After install, log in at `http://<host>:9090` with any PAM system user.
 
@@ -115,32 +115,34 @@ After install, log in at `http://<host>:9090` with any PAM system user.
 
 ### 3.2 Agent (managed hosts)
 
-The easiest way is to copy the ready-to-use install command from **Management → Enrollment Token** in the UI (admin only) — the token is already included. Or construct it manually:
+Run on each host you want to manage:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <enrollment-token>
+  | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
-Replace `<panel-host>` with the panel IP/hostname and `<enrollment-token>` with the value shown in Management. The token is required — agents without it are rejected by the gateway.
+Replace `<panel-host>` with the panel IP or hostname.
 
-**On the panel host itself** the token is injected automatically by `tenodera.sh`. If reinstalling the agent separately:
+The agent connects outbound to the gateway on first start. Because the agent's key is unknown to the gateway, the host enters the **pending** state. Approve it in the panel under **Hosts → Pending** — the connection is then promoted to a fully enrolled host and the key is saved for future reconnects.
+
+**Unattended installs (skip approval):** generate a bootstrap token in **Hosts → Tokens**, then pass it with `--token`:
 
 ```bash
-# Read the token first, then pass it:
-TOKEN=$(sudo grep '^TENODERA_AGENT_TOKEN=' /etc/tenodera/tenodera.cnf | cut -d= -f2-)
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --token "$TOKEN"
+  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <bootstrap-token>
 ```
+
+The panel provides a ready-to-use install command with the gateway URL and token pre-filled — copy it from **Hosts → Tokens → Install command**.
 
 The installer:
 1. Installs build dependencies (Rust, gcc, pkg-config)
 2. Compiles `tenodera-agent` from source
 3. Installs the binary with setuid root (`-m 4755`)
-4. Writes `/etc/tenodera/agent.cnf` (including `TENODERA_AGENT_TOKEN`)
+4. Writes `/etc/tenodera/agent.cnf`
 5. Installs and enables `tenodera-agent.service`
 
-The host appears in the panel UI automatically within seconds of the agent starting. No SSH keys, no open inbound ports required.
+The host appears in the panel under Hosts → Pending within seconds of the agent starting. No SSH keys, no open inbound ports required.
 
 ### 3.3 Build from source
 
@@ -193,12 +195,6 @@ TENODERA_UI_DIR=/usr/share/tenodera/ui            # Built UI assets directory
 TENODERA_IDLE_TIMEOUT=900        # Session idle timeout in seconds (default: 900 = 15 min)
 TENODERA_MAX_STARTUPS=20         # Max failed logins per IP per 5-min window (default: 20)
 
-# PSK enrollment token — agents must present this value in their Hello message.
-# Generated automatically by tenodera.sh at install time (openssl rand -hex 32).
-# If absent, all agents are accepted without verification (not recommended).
-# View and copy the ready-to-use install command from Management → Enrollment Token.
-TENODERA_AGENT_TOKEN=<64-hex-char token>
-
 # ── Logging ───────────────────────────────────────────────────────────────────
 RUST_LOG=tenodera_gateway=info   # Log filter: error | warn | info | debug | trace
 ```
@@ -213,7 +209,7 @@ The gateway requires TLS by default and refuses to start without a certificate u
 cd panel && sudo make tls-selfsigned
 ```
 
-Generates a 10-year self-signed certificate in `/etc/tenodera/tls/`, sets correct ownership (`root:tenodera-gw`) and permissions (`640`), and restarts the gateway automatically.
+Generates a 10-year self-signed certificate in `/etc/tenodera/tls/` and sets correct ownership (`root:tenodera-gw`) and permissions (`640`). After running, follow the printed instructions to enable TLS in `tenodera.cnf` and restart the gateway.
 
 When using a self-signed cert, agents must be installed with `--accept-insecure`:
 
@@ -326,10 +322,10 @@ The agent reads `/etc/tenodera/agent.cnf` at startup (if environment variables a
 # https:// → encrypted WebSocket (wss://)
 TENODERA_GATEWAY_URL=http://<panel-host>:9090
 
-# PSK enrollment token — must match TENODERA_AGENT_TOKEN in gateway tenodera.cnf.
+# Optional bootstrap token — skip pending-state approval on first connect.
+# Generate one in the panel under Hosts → Tokens.
 # Written automatically by tenodera-agent.sh --token <value>.
-# Obtain the token from Management → Enrollment Token in the UI.
-TENODERA_AGENT_TOKEN=<64-hex-char token>
+# TENODERA_BOOTSTRAP_TOKEN=<token>
 
 # Skip TLS certificate verification.
 # Uncomment ONLY when using https:// with a self-signed certificate.
@@ -389,14 +385,16 @@ Tenodera is designed to manage multiple servers from a single panel. Each manage
 
 **Adding a host:**
 
-Go to **Management → Enrollment Token** (admin only) and click **Copy** next to the install command — it has the gateway URL and token pre-filled. Or build it manually:
+Run on the managed host:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <enrollment-token>
+  | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
-The host appears in the panel immediately when the agent connects — no pre-registration needed. The enrollment token is verified at the WebSocket handshake level before the host is registered.
+The agent generates an Ed25519 key on first start and connects to the gateway. Because the key is not yet known, the host enters the **pending** state — visible under **Hosts → Pending**. Click **Approve** to enroll the host; the key is saved and future reconnects are authenticated automatically (TOFU — Trust on First Use).
+
+**Unattended installs:** generate a bootstrap token in **Hosts → Tokens**, then pass `--token <token>` to the installer. The gateway validates the token and enrolls the host immediately without requiring manual approval. The panel provides a ready-to-use install command with the gateway URL and token pre-filled.
 
 **Switching between hosts:**
 
@@ -969,48 +967,66 @@ Generate a self-signed TLS certificate:
 
 ### 8.16 Management (admin only)
 
-An admin-only panel for managing all connected agents from a single view.
+An admin-only panel for managing all connected agents from a single view. It has three tabs: **Enrolled**, **Pending**, and **Tokens**.
 
-**Enrollment Token**
+**Enrolled tab**
 
-Displayed at the top of the Management page. Shows the PSK token that every agent must present when connecting to the gateway.
-
-| Control | Description |
-|---------|-------------|
-| Token field | Token value, masked by default (`9563••••••••40d0`) |
-| Reveal / Hide | Toggle between masked and full display |
-| Copy (token) | Copies the raw 64-character hex token to the clipboard |
-| Install command | Full `curl … tenodera-agent.sh … --gateway … --token …` command — also masked when hidden |
-| Copy (command) | Copies the complete install command with gateway URL and token pre-filled |
-
-The token is generated automatically at panel install time (`openssl rand -hex 32`) and stored in `/etc/tenodera/tenodera.cnf`. It does not rotate automatically — to rotate it, replace `TENODERA_AGENT_TOKEN` in `tenodera.cnf`, restart the gateway (`systemctl restart tenodera`), and update `agent.cnf` on every managed host, then restart each agent.
-
-**Host list**
-
-Shows all hosts that have ever connected to this gateway:
+Shows all hosts that have successfully completed the TOFU handshake and are registered with the gateway.
 
 | Column | Description |
 |--------|-------------|
 | Hostname | Agent hostname as reported in the `Hello` handshake |
-| Display name | Custom label (editable inline) |
-| Roles | Roles assigned to the host |
-| Status | Online / offline, with last-seen timestamp |
-| Uptime | Agent process uptime (online hosts only) |
+| Status | Online / offline indicator |
 | IP | Remote IP address of the agent connection |
+| Added | Date the host was first enrolled |
+| Uptime | Agent process uptime (online hosts only) |
+| Roles | Role labels used to group hosts in the host list |
 
-- **Filter** by hostname or display name
-- The panel host itself is labeled **Panel / Local** automatically
+- The **panel host itself** is labeled **local** (green badge) and automatically receives the **Panel / Local** role
+- **Filter** by hostname
+- **Switch**: make this host the active host (all tabs switch context)
+- **Role**: edit role labels (tag-style input — type and press Enter or comma)
+- **Restart**: send a restart command to the agent service (online hosts only)
+- **Remove**: remove the host from the registry (it will re-enter pending on next connect)
 
-**Actions per host**
+**Pending tab**
 
-| Action | Description |
+Shows agents that have connected but whose Ed25519 public key has not yet been approved. The list refreshes every 5 seconds.
+
+| Column | Description |
 |--------|-------------|
-| Edit display name | Set a custom label shown in the host selector |
-| Edit roles | Add or remove role labels (comma-separated) |
-| Restart agent | Sends a restart command to the agent service |
-| Remove host | Removes the host from the registry (it will re-register on next connect) |
+| Hostname | Hostname reported in the `Hello` message |
+| Fingerprint | SHA-256 fingerprint of the agent's public key (`SHA256:…`) |
+| IP | Remote IP of the incoming connection |
+| Waiting | How long the agent has been waiting for approval |
 
-> **Note:** All actions on offline hosts (except Remove) are disabled.
+- **Approve**: enroll the agent — optionally enter a display name before approving. The gateway saves the public key and sends a `HelloAck` to the waiting agent, which then transitions to the enrolled state.
+- Pending entries time out after 24 hours if not approved.
+
+**Tokens tab**
+
+Manage bootstrap tokens used for unattended agent enrollment. An agent presenting a valid token is enrolled immediately without entering the pending state.
+
+| Field | Description |
+|-------|-------------|
+| ID | Token identifier (UUID) |
+| Single-use | Whether the token is consumed on first use |
+| Use count | How many times the token has been used |
+| Expires in | Remaining TTL |
+| Hostname | Hostname binding — only agents with this hostname can use the token (optional) |
+| Re-enroll | If set, replaces the key of an already-enrolled host (key rotation) |
+
+**Create token** options:
+
+| Option | Description |
+|--------|-------------|
+| TTL | Token lifetime (1 hour – 30 days; default: 24 h) |
+| Single-use | Consume the token after one use |
+| Hostname binding | Restrict the token to a specific hostname |
+| Re-enroll | Allow the token to replace an existing host's key |
+
+- **Install command**: generated automatically after token creation — `curl … tenodera-agent.sh … --gateway … --token …` with the gateway URL and token pre-filled; copy it to the clipboard
+- **Revoke**: immediately invalidate a token
 
 **Host selector** (top bar, all users)
 
@@ -1065,7 +1081,7 @@ journalctl -u tenodera-agent -f
 | `/etc/tenodera/tenodera.cnf` | Gateway configuration |
 | `/etc/tenodera/agent.cnf` | Agent configuration |
 | `/etc/tenodera/tls/` | TLS certificates |
-| `/etc/tenodera/hosts.json` | Agent registry (connected hosts) |
+| `/var/lib/tenodera-gw/hosts.json` | Agent registry (enrolled hosts + public keys) |
 | `/etc/systemd/system/tenodera.service` | Gateway systemd service |
 | `/etc/systemd/system/tenodera-agent.service` | Agent systemd service |
 | `/etc/pam.d/tenodera` | PAM service config |
@@ -1146,8 +1162,10 @@ Messages are JSON objects with a `type` field:
 
 | Type | Direction | Description |
 |------|-----------|-------------|
-| `hello` | agent → gateway | Agent announces hostname and protocol version |
-| `hello_ack` | gateway → agent | Gateway acknowledges, optionally warns on version mismatch |
+| `hello` | agent → gateway | Agent announces hostname, protocol version, and Ed25519 public key |
+| `challenge` | gateway → agent | Gateway sends a 32-byte random nonce for the agent to sign |
+| `challenge_response` | agent → gateway | Agent returns the Ed25519 signature of the challenge payload |
+| `hello_ack` | gateway → agent | Gateway acknowledges after successful authentication; carries gateway ID |
 | `open` | browser → gateway | Open a named channel (e.g. `system_info`, `terminal_pty`) |
 | `ready` | agent → browser | Agent acknowledges streaming channel |
 | `data` | bidirectional | Channel payload |
@@ -1156,7 +1174,7 @@ Messages are JSON objects with a `type` field:
 | `auth` / `authresult` | browser → gateway | Session authentication phase |
 | `ping` / `pong` | bidirectional | Keepalive |
 
-Current protocol version: **1**
+Current protocol version: **2**
 
 ### Project structure
 
@@ -1192,7 +1210,7 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 - Passwords stored as `Zeroizing<String>`, overwritten on drop; core dumps disabled
 - TLS required by default; WebSocket Origin validation; CSRF protection on mutating requests
 - Security headers: CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy
-- **PSK agent authentication** — every agent must present `TENODERA_AGENT_TOKEN` in its `Hello` message; verified with constant-time comparison to prevent timing attacks; agents without a valid token are rejected before registration
+- **Ed25519 TOFU agent authentication** — each agent generates a persistent Ed25519 key pair on first start; the gateway issues a 32-byte random challenge, the agent signs it, and the gateway verifies the signature; on first connect from an unknown key the host enters the pending state for admin approval (or is enrolled immediately with a valid bootstrap token); on subsequent connects the saved key is used — impersonation requires possession of the private key
 - Gateway injects `_user` and `_role` into every Open message; `_role` is re-injected into every subsequent Data message on the same channel (including streaming channels) — agent never trusts client-supplied identity
 - Missing `_role` in a handler payload is treated as unauthorized, not as admin — any message that bypasses gateway injection is denied by default
 - Certificate and TLS operations (`openssl s_client`, key generation) invoke `openssl` directly via argument arrays — no `sh -c`, no shell metacharacter injection possible
@@ -1261,27 +1279,32 @@ After editing `agent.cnf`, always restart:
 sudo systemctl restart tenodera-agent
 ```
 
-### Agent rejected — invalid enrollment token
+### Agent not appearing under Hosts → Pending
 
-Gateway logs show `agent rejected: invalid enrollment token`. Causes:
-
-- Agent was installed without `--token` or with a wrong token
-- `TENODERA_AGENT_TOKEN` in `agent.cnf` on the managed host does not match the gateway's token
-
-Fix: check the gateway token:
+If the agent is running but the host does not appear under **Hosts → Pending**, check:
 
 ```bash
-sudo grep TENODERA_AGENT_TOKEN /etc/tenodera/tenodera.cnf
+journalctl -u tenodera-agent -e
 ```
 
-Then update the agent's config on the managed host:
+Common causes:
+- **Wrong gateway URL** — the agent cannot connect; verify `TENODERA_GATEWAY_URL` in `agent.cnf`
+- **Bootstrap token invalid or expired** — if `TENODERA_BOOTSTRAP_TOKEN` is set in `agent.cnf`, ensure the token exists and has not expired (check **Hosts → Tokens** in the panel); remove or correct the token and restart the agent
+- **Pending limit reached** — the gateway caps pending agents at 100 to prevent abuse; check gateway logs: `journalctl -u tenodera -e`
+
+### Agent challenge rejected
+
+Gateway logs show `challenge verification failed`. The agent's key store at `/var/lib/tenodera/` may be corrupted or the key was rotated manually.
+
+Fix: delete the agent's key store and restart (the agent will generate a new key pair and re-enter the pending state):
 
 ```bash
-sudo sed -i "s|^TENODERA_AGENT_TOKEN=.*|TENODERA_AGENT_TOKEN=<correct-token>|" /etc/tenodera/agent.cnf
-sudo systemctl restart tenodera-agent
+sudo systemctl stop tenodera-agent
+sudo rm -rf /var/lib/tenodera/
+sudo systemctl start tenodera-agent
 ```
 
-Or reinstall the agent using the command from **Management → Enrollment Token**.
+Then approve the host again in **Hosts → Pending**. If the host was previously enrolled, remove it first via **Hosts → Enrolled → Remove** so the new key is accepted.
 
 ### Login fails
 
