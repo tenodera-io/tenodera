@@ -365,6 +365,18 @@ impl PendingRegistry {
             .find(|e| e.fingerprint_hex == fingerprint_hex)
             .map(|e| e.pubkey_b64.clone())
     }
+
+    /// Return (pubkey_b64, hostname, remote_ip) for a pending entry by fingerprint hex.
+    pub async fn entry_for_fingerprint(
+        &self,
+        fingerprint_hex: &str,
+    ) -> Option<(String, String, String)> {
+        let guard = self.inner.read().await;
+        guard
+            .values()
+            .find(|e| e.fingerprint_hex == fingerprint_hex)
+            .map(|e| (e.pubkey_b64.clone(), e.hostname.clone(), e.remote_ip.clone()))
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

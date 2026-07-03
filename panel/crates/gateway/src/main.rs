@@ -417,12 +417,16 @@ async fn pending_approve(
 
     let display_name = body.and_then(|b| b.0.display_name);
 
-    let (Some(hostname), Some(pubkey_b64)) = (
-        state.pending_registry.hostname_for_fingerprint(&fingerprint_hex).await,
-        state.pending_registry.pubkey_for_fingerprint(&fingerprint_hex).await,
-    ) else {
+    let Some((pubkey_b64, hostname, remote_ip)) = state
+        .pending_registry
+        .entry_for_fingerprint(&fingerprint_hex)
+        .await
+    else {
         return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "pending agent not found"}))).into_response();
     };
+
+    // Detect local agent: loopback address means it runs on the same machine as the gateway.
+    let is_local = matches!(remote_ip.as_str(), "127.0.0.1" | "::1");
 
     let host = match hosts_config::find_by_hostname(&hostname).await {
         Some(existing) => {
@@ -445,7 +449,7 @@ async fn pending_approve(
         }
         None => {
             // New host — register with its public key
-            match hosts_config::register_host(&hostname, &pubkey_b64, false, display_name).await {
+            match hosts_config::register_host(&hostname, &pubkey_b64, is_local, display_name).await {
                 Ok(h) => h,
                 Err(e) => {
                     tracing::error!(error = %e, "failed to register host during approval");
