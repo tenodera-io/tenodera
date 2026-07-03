@@ -93,6 +93,7 @@ uninstall:
 	-sudo rm -f $(BINDIR)/tenodera-agent
 	-sudo rm -f $(CONFDIR)/agent.cnf
 	-sudo rmdir $(CONFDIR) 2>/dev/null || true
+	-sudo rm -rf /var/lib/tenodera
 	-sudo rm -f /var/log/tenodera_audit.log
 	@echo "Done."
 

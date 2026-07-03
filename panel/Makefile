@@ -190,6 +190,7 @@ uninstall:
 	-sudo rm -rf $(UIDIR)
 	-sudo rm -rf $(CONFDIR)
 	-sudo rm -rf /var/lib/tenodera-gw
+	-sudo rm -rf /var/lib/tenodera
 	-sudo rm -f /etc/logrotate.d/tenodera
 	-sudo rm -f /etc/pam.d/tenodera
 	-sudo rm -f /var/log/tenodera*

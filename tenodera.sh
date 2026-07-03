@@ -71,6 +71,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   rm -rf /usr/share/tenodera
   rm -rf /etc/tenodera
   rm -rf /var/lib/tenodera-gw
+  rm -rf /var/lib/tenodera
   rm -f /etc/logrotate.d/tenodera
   rm -f /etc/pam.d/tenodera
   rm -f /var/log/tenodera*
