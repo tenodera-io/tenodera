@@ -36,11 +36,12 @@ impl ChannelHandler for StorageSnapshotHandler {
 }
 
 async fn collect_snapshot() -> serde_json::Value {
-    let stats1 = read_diskstats().await;
+    let (stats1, vmstat1) = tokio::join!(read_diskstats(), read_vmstat_swap());
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-    let stats2 = read_diskstats().await;
+    let (stats2, vmstat2) = tokio::join!(read_diskstats(), read_vmstat_swap());
 
     let io = compute_io_rates(&stats1, &stats2, 1.0);
+    let swap_io = compute_swap_io_rates(&vmstat1, &vmstat2, 1.0);
     let (block_devices, swap) = tokio::join!(get_block_devices(), read_swap());
 
     serde_json::json!({
@@ -48,10 +49,41 @@ async fn collect_snapshot() -> serde_json::Value {
         "io": io,
         "block_devices": block_devices,
         "swap": swap,
+        "swap_io": swap_io,
     })
 }
 
 // ── Disk stats ─────────────────────────────────────────────
+
+#[derive(Clone)]
+struct VmstatSwap {
+    pswpin: u64,
+    pswpout: u64,
+}
+
+async fn read_vmstat_swap() -> VmstatSwap {
+    let content = tokio::fs::read_to_string("/proc/vmstat").await.unwrap_or_default();
+    let mut pswpin = 0u64;
+    let mut pswpout = 0u64;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("pswpin ") {
+            pswpin = rest.trim().parse().unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("pswpout ") {
+            pswpout = rest.trim().parse().unwrap_or(0);
+        }
+    }
+    VmstatSwap { pswpin, pswpout }
+}
+
+fn compute_swap_io_rates(prev: &VmstatSwap, curr: &VmstatSwap, dt: f64) -> serde_json::Value {
+    const PAGE_BYTES: u64 = 4096;
+    let pages_in = curr.pswpin.saturating_sub(prev.pswpin);
+    let pages_out = curr.pswpout.saturating_sub(prev.pswpout);
+    serde_json::json!({
+        "bytes_in_sec":  ((pages_in  * PAGE_BYTES) as f64 / dt).round() as u64,
+        "bytes_out_sec": ((pages_out * PAGE_BYTES) as f64 / dt).round() as u64,
+    })
+}
 
 #[derive(Clone)]
 struct DiskStat {

@@ -47,6 +47,12 @@ interface SwapInfo {
   use_pct: number;
 }
 
+interface SwapIoPoint {
+  t: string;
+  inKBs: number;
+  outKBs: number;
+}
+
 interface DiskIoRate {
   read_bytes_sec: number;
   write_bytes_sec: number;
@@ -143,6 +149,7 @@ export function Storage() {
   const [history, setHistory] = useState<IoPoint[]>([]);
   const [blockRows, setBlockRows] = useState<FlatRow[]>([]);
   const [swap, setSwap] = useState<SwapInfo | null>(null);
+  const [swapHistory, setSwapHistory] = useState<SwapIoPoint[]>([]);
   const [diskIo, setDiskIo] = useState<Record<string, DiskIoRate>>({});
   const mountedRef = useRef(true);
   const prevRequestRef = useRef(request);
@@ -166,6 +173,7 @@ export function Storage() {
       setHistory([]);
       setBlockRows([]);
       setSwap(null);
+      setSwapHistory([]);
       setDiskIo({});
     }
 
@@ -193,6 +201,14 @@ export function Storage() {
 
         const swapData = d.swap as SwapInfo | undefined;
         if (swapData) setSwap(swapData);
+
+        const swapIo = d.swap_io as { bytes_in_sec: number; bytes_out_sec: number } | undefined;
+        if (swapIo && time) {
+          setSwapHistory((h) => {
+            const next = [...h, { t: time, inKBs: swapIo.bytes_in_sec / 1024, outKBs: swapIo.bytes_out_sec / 1024 }];
+            return next.length > HISTORY_LEN ? next.slice(next.length - HISTORY_LEN) : next;
+          });
+        }
 
         const bd = d.block_devices as BlockDevice[] | undefined;
         if (bd) setBlockRows(flattenTree(bd));
@@ -309,6 +325,45 @@ export function Storage() {
                 <span style={{ fontWeight: 600 }}>{swap.use_pct}%</span>
                 <span>{formatSize(swap.total)} total</span>
               </div>
+              {swapHistory.length > 1 ? (
+                <div style={{ marginTop: '0.75rem' }}>
+                  <div style={S.swapIoLegend}>
+                    <span style={{ color: 'var(--c-blue)' }}>
+                      ↓ {formatRate(swapHistory[swapHistory.length - 1].inKBs * 1024)}
+                    </span>
+                    <span style={{ color: 'var(--text-3)', fontSize: '0.7rem' }}>swap I/O</span>
+                    <span style={{ color: 'var(--c-red)' }}>
+                      ↑ {formatRate(swapHistory[swapHistory.length - 1].outKBs * 1024)}
+                    </span>
+                  </div>
+                  <ResponsiveContainer width="100%" height={80}>
+                    <AreaChart data={swapHistory} margin={{ top: 2, right: 0, bottom: 0, left: -40 }}>
+                      <defs>
+                        <linearGradient id="swapInGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--c-blue)" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="var(--c-blue)" stopOpacity={0.03} />
+                        </linearGradient>
+                        <linearGradient id="swapOutGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="var(--c-red)" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="var(--c-red)" stopOpacity={0.03} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis dataKey="t" hide />
+                      <YAxis hide />
+                      <Tooltip
+                        contentStyle={tooltipStyle}
+                        itemStyle={tooltipItemStyle}
+                        labelStyle={tooltipItemStyle}
+                        formatter={((v: unknown) => [formatRate((v as number) * 1024)]) as never}
+                      />
+                      <Area type="monotone" dataKey="inKBs" name="In" stroke="var(--c-blue)" fill="url(#swapInGrad)" strokeWidth={1.5} dot={false} />
+                      <Area type="monotone" dataKey="outKBs" name="Out" stroke="var(--c-red)" fill="url(#swapOutGrad)" strokeWidth={1.5} dot={false} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <p style={{ ...S.muted, marginTop: '0.5rem', fontSize: '0.75rem' }}>Collecting swap I/O…</p>
+              )}
             </>
           )}
         </div>
@@ -468,6 +523,12 @@ const S: Record<string, React.CSSProperties> = {
     marginTop: '0.5rem',
     fontSize: '0.8rem',
     color: 'var(--text-2)',
+  },
+  swapIoLegend: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: '0.75rem',
+    marginBottom: '0.2rem',
   },
   chartCard: {
     background: 'var(--bg-panel)',

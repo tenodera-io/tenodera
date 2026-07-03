@@ -39,23 +39,32 @@ impl ChannelHandler for StorageStreamHandler {
         let channel: ChannelId = channel.into();
         let mut ticker = tokio::time::interval(std::time::Duration::from_millis(interval_ms));
         let mut prev_stats: Option<Vec<DiskStat>> = None;
+        let mut prev_vmstat: Option<VmstatSwap> = None;
         let mut prev_time: Option<std::time::Instant> = None;
 
         loop {
             tokio::select! {
                 _ = ticker.tick() => {
                     let now = std::time::Instant::now();
-                    let stats = read_diskstats().await;
+                    let (stats, vmstat) = tokio::join!(read_diskstats(), read_vmstat_swap());
                     let (block_devices, swap) = tokio::join!(get_block_devices(), read_swap());
 
-                    let io = if let (Some(prev), Some(pt)) = (&prev_stats, prev_time) {
-                        let dt = now.duration_since(pt).as_secs_f64().max(0.001);
+                    let dt = prev_time.map(|pt| now.duration_since(pt).as_secs_f64().max(0.001));
+
+                    let io = if let (Some(prev), Some(dt)) = (&prev_stats, dt) {
                         compute_io_rates(prev, &stats, dt)
                     } else {
                         serde_json::json!({ "read_bytes_sec": 0, "write_bytes_sec": 0, "disks": {} })
                     };
 
+                    let swap_io = if let (Some(prev_vm), Some(dt)) = (&prev_vmstat, dt) {
+                        compute_swap_io_rates(prev_vm, &vmstat, dt)
+                    } else {
+                        serde_json::json!({ "bytes_in_sec": 0, "bytes_out_sec": 0 })
+                    };
+
                     prev_stats = Some(stats);
+                    prev_vmstat = Some(vmstat);
                     prev_time = Some(now);
 
                     let data = serde_json::json!({
@@ -63,6 +72,7 @@ impl ChannelHandler for StorageStreamHandler {
                         "io": io,
                         "block_devices": block_devices,
                         "swap": swap,
+                        "swap_io": swap_io,
                     });
 
                     if tx.send(Message::Data {
@@ -148,6 +158,36 @@ fn compute_io_rates(prev: &[DiskStat], curr: &[DiskStat], dt: f64) -> serde_json
         "read_bytes_sec": read_bytes.round() as u64,
         "write_bytes_sec": write_bytes.round() as u64,
         "disks": serde_json::Value::Object(disks),
+    })
+}
+
+#[derive(Clone)]
+struct VmstatSwap {
+    pswpin: u64,
+    pswpout: u64,
+}
+
+async fn read_vmstat_swap() -> VmstatSwap {
+    let content = tokio::fs::read_to_string("/proc/vmstat").await.unwrap_or_default();
+    let mut pswpin = 0u64;
+    let mut pswpout = 0u64;
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix("pswpin ") {
+            pswpin = rest.trim().parse().unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("pswpout ") {
+            pswpout = rest.trim().parse().unwrap_or(0);
+        }
+    }
+    VmstatSwap { pswpin, pswpout }
+}
+
+fn compute_swap_io_rates(prev: &VmstatSwap, curr: &VmstatSwap, dt: f64) -> serde_json::Value {
+    const PAGE_BYTES: u64 = 4096;
+    let pages_in = curr.pswpin.saturating_sub(prev.pswpin);
+    let pages_out = curr.pswpout.saturating_sub(prev.pswpout);
+    serde_json::json!({
+        "bytes_in_sec":  ((pages_in  * PAGE_BYTES) as f64 / dt).round() as u64,
+        "bytes_out_sec": ((pages_out * PAGE_BYTES) as f64 / dt).round() as u64,
     })
 }
 
