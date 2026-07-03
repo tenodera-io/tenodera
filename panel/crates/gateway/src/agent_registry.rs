@@ -5,6 +5,8 @@ use tokio::sync::{mpsc, RwLock};
 
 use tenodera_protocol::message::Message;
 
+use crate::agent_auth::AuthenticatedAgent;
+
 const SESSION_PREFIX_LEN: usize = 8;
 
 /// One entry per connected agent host.
@@ -33,19 +35,20 @@ impl AgentRegistry {
         Self { inner: Arc::new(RwLock::new(HashMap::new())) }
     }
 
-    /// Register a newly-connected agent.
-    /// Returns the subscriber map so the agent WS reader can route responses,
-    /// plus a Weak token that user WS sessions can hold to detect stale connections.
+    /// Register a newly-authenticated agent.
+    ///
+    /// Requires `AuthenticatedAgent` — compile-time proof that the Ed25519 handshake
+    /// completed successfully. Pending hosts cannot reach this call site.
     pub async fn register(
         &self,
-        host_id: String,
+        auth: &AuthenticatedAgent,
         to_agent: mpsc::Sender<Message>,
-        remote_ip: Option<String>,
     ) -> Arc<RwLock<HashMap<String, mpsc::Sender<Message>>>> {
         let token = Arc::new(());
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
+        let remote_ip = Some(auth.remote_ip.clone());
         let conn = Arc::new(AgentConn { to_agent, subscribers: subscribers.clone(), remote_ip, _token: token });
-        self.inner.write().await.insert(host_id, conn);
+        self.inner.write().await.insert(auth.host.id.clone(), conn);
         subscribers
     }
 

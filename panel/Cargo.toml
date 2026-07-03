@@ -44,6 +44,10 @@ futures = "0.3"
 zeroize = "1"
 tempfile = "3"
 pam-client = "0.5"
+base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["zeroize", "rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+sha2 = "0.10"
 
 # Internal crates
-tenodera-protocol = { path = "../protocol" }
+tenodera-protocol = { path = "./protocol" }

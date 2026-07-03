@@ -2,19 +2,23 @@ pub mod audit;
 mod config;
 mod handler;
 mod handlers;
+mod identity;
 mod router;
 pub mod util;
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use base64::Engine as _;
 use futures::{SinkExt, StreamExt};
+use tenodera_protocol::auth::build_challenge_payload;
 use tenodera_protocol::message::{Message, PROTOCOL_VERSION};
 use tokio::sync::mpsc;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tracing_subscriber::EnvFilter;
 
 use crate::config::AgentConfig;
+use crate::identity::AgentIdentity;
 use crate::router::Router;
 
 #[tokio::main]
@@ -35,12 +39,20 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let identity = match AgentIdentity::load_or_create() {
+        Ok(id) => Arc::new(id),
+        Err(e) => {
+            tracing::error!("failed to load/create agent identity: {e}");
+            std::process::exit(1);
+        }
+    };
+
     let hostname = hostname();
     tracing::info!(gateway = %config.agent_ws_url(), %hostname, "tenodera-agent starting");
 
     let mut backoff_secs: u64 = 1;
     loop {
-        match run_session(&config, &hostname).await {
+        match run_session(&config, &hostname, &identity).await {
             Ok(()) => {
                 tracing::info!("gateway connection closed — reconnecting");
                 backoff_secs = 1;
@@ -54,7 +66,11 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn run_session(config: &AgentConfig, hostname: &str) -> anyhow::Result<()> {
+async fn run_session(
+    config: &AgentConfig,
+    hostname: &str,
+    identity: &AgentIdentity,
+) -> anyhow::Result<()> {
     let url = config.agent_ws_url();
     let connector = build_tls_connector(config);
     let request = url.clone().into_client_request()?;
@@ -62,23 +78,75 @@ async fn run_session(config: &AgentConfig, hostname: &str) -> anyhow::Result<()>
     tracing::info!(%url, "connecting to gateway");
     let (ws_stream, _) = tokio_tungstenite::connect_async_tls_with_config(
         request, None, false, connector,
-    ).await?;
-
-    tracing::info!("WebSocket connected — starting handshake");
+    )
+    .await?;
 
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
-    // Send Hello as first message
+    // ── Hello ────────────────────────────────────────────────────────────────
     let hello = serde_json::to_string(&Message::Hello {
         version: PROTOCOL_VERSION,
         hostname: hostname.to_string(),
+        agent_version: env!("CARGO_PKG_VERSION").to_string(),
         is_local: config.is_local(),
-        token: config.agent_token.clone(),
+        public_key: Some(identity.public_key_b64()),
+        bootstrap_token: config.bootstrap_token.clone(),
     })?;
-    ws_sink.send(tokio_tungstenite::tungstenite::Message::Text(hello.into())).await?;
+    ws_sink
+        .send(tokio_tungstenite::tungstenite::Message::Text(hello.into()))
+        .await?;
 
-    // Wait for HelloAck
-    let ack = loop {
+    // ── Wait for Challenge ───────────────────────────────────────────────────
+    let (nonce_b64, gateway_id) = loop {
+        match ws_stream.next().await {
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => {
+                match serde_json::from_str::<Message>(&text) {
+                    Ok(Message::Challenge { nonce, gateway_id }) => break (nonce, gateway_id),
+                    Ok(other) => anyhow::bail!("expected Challenge, got: {other:?}"),
+                    Err(e) => anyhow::bail!("parse error waiting for Challenge: {e}"),
+                }
+            }
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | None => {
+                anyhow::bail!("connection closed before Challenge")
+            }
+            Some(Ok(_)) => continue,
+            Some(Err(e)) => anyhow::bail!("WS error waiting for Challenge: {e}"),
+        }
+    };
+
+    // ── Bilateral TOFU: verify or pin gateway_id ─────────────────────────────
+    match identity.load_gateway_id()? {
+        Some(pinned) if pinned != gateway_id => {
+            anyhow::bail!(
+                "gateway_id mismatch: pinned={pinned} got={gateway_id} — possible MITM, refusing connection"
+            );
+        }
+        Some(_) => {}
+        None => {
+            identity.save_gateway_id(&gateway_id)?;
+            tracing::info!(%gateway_id, "gateway_id pinned (first enrollment)");
+        }
+    }
+
+    // ── Sign challenge ────────────────────────────────────────────────────────
+    let nonce_bytes = base64::engine::general_purpose::STANDARD
+        .decode(&nonce_b64)
+        .map_err(|e| anyhow::anyhow!("invalid nonce encoding: {e}"))?;
+    if nonce_bytes.len() != 32 {
+        anyhow::bail!("nonce must be 32 bytes, got {}", nonce_bytes.len());
+    }
+    let nonce_arr: [u8; 32] = nonce_bytes.try_into().unwrap();
+    let payload = build_challenge_payload(&nonce_arr, hostname, &gateway_id);
+    let sig_b64 = base64::engine::general_purpose::STANDARD.encode(identity.sign(&payload));
+
+    // ── ChallengeResponse ────────────────────────────────────────────────────
+    let cr = serde_json::to_string(&Message::Challengeresponse { signature: sig_b64 })?;
+    ws_sink
+        .send(tokio_tungstenite::tungstenite::Message::Text(cr.into()))
+        .await?;
+
+    // ── Wait for HelloAck or Pending ──────────────────────────────────────────
+    let gateway_version = loop {
         match ws_stream.next().await {
             Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => {
                 match serde_json::from_str::<Message>(&text) {
@@ -88,31 +156,42 @@ async fn run_session(config: &AgentConfig, hostname: &str) -> anyhow::Result<()>
                         }
                         break version;
                     }
-                    Ok(other) => {
-                        anyhow::bail!("expected HelloAck, got: {other:?}");
+                    Ok(Message::Pending { reason }) => {
+                        tracing::info!(
+                            %reason,
+                            fingerprint = %identity.fingerprint(),
+                            "agent pending admin approval — waiting"
+                        );
+                        // Stay connected; gateway will send HelloAck when approved
+                        let version = wait_for_approval(&mut ws_sink, &mut ws_stream).await?;
+                        break version;
                     }
-                    Err(e) => {
-                        anyhow::bail!("failed to parse HelloAck: {e}");
-                    }
+                    Ok(other) => anyhow::bail!("unexpected message after ChallengeResponse: {other:?}"),
+                    Err(e) => anyhow::bail!("parse error: {e}"),
                 }
             }
+            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | None => {
+                anyhow::bail!("connection closed during auth (rejected)")
+            }
             Some(Ok(_)) => continue,
-            Some(Err(e)) => anyhow::bail!("WS error waiting for HelloAck: {e}"),
-            None => anyhow::bail!("WS closed before HelloAck"),
+            Some(Err(e)) => anyhow::bail!("WS error during auth: {e}"),
         }
     };
 
-    tracing::info!(gateway_version = ack, "handshake complete");
+    tracing::info!(gateway_version, fingerprint = %identity.fingerprint(), "handshake complete");
 
-    // Channel for outgoing messages (handlers → WS sink)
+    // ── Normal operation ──────────────────────────────────────────────────────
     let (out_tx, mut out_rx) = mpsc::channel::<Message>(256);
 
-    // Spawn WS sink writer task
     let writer_handle = tokio::spawn(async move {
         while let Some(msg) = out_rx.recv().await {
             match serde_json::to_string(&msg) {
                 Ok(json) => {
-                    if ws_sink.send(tokio_tungstenite::tungstenite::Message::Text(json.into())).await.is_err() {
+                    if ws_sink
+                        .send(tokio_tungstenite::tungstenite::Message::Text(json.into()))
+                        .await
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -130,9 +209,8 @@ async fn run_session(config: &AgentConfig, hostname: &str) -> anyhow::Result<()>
             Ok(tokio_tungstenite::tungstenite::Message::Text(t)) => t,
             Ok(tokio_tungstenite::tungstenite::Message::Close(_)) => break,
             Ok(tokio_tungstenite::tungstenite::Message::Ping(data)) => {
-                // tungstenite handles Pong automatically, but send our own Pong too
                 let _ = out_tx.send(Message::Pong).await;
-                let _ = data; // suppress unused warning
+                let _ = data;
                 continue;
             }
             Ok(_) => continue,
@@ -164,6 +242,55 @@ async fn run_session(config: &AgentConfig, hostname: &str) -> anyhow::Result<()>
     Ok(())
 }
 
+/// Wait for HelloAck while keeping the connection alive during pending approval.
+async fn wait_for_approval<S, R>(sink: &mut S, stream: &mut R) -> anyhow::Result<u32>
+where
+    S: SinkExt<tokio_tungstenite::tungstenite::Message> + Unpin,
+    R: StreamExt<Item = Result<tokio_tungstenite::tungstenite::Message, tokio_tungstenite::tungstenite::Error>>
+        + Unpin,
+{
+    let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+    ping_interval.tick().await; // consume immediate first tick
+
+    loop {
+        tokio::select! {
+            frame = stream.next() => {
+                match frame {
+                    Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => {
+                        match serde_json::from_str::<Message>(&text) {
+                            Ok(Message::HelloAck { version, warning }) => {
+                                if let Some(w) = warning { tracing::warn!("HelloAck warning: {w}"); }
+                                tracing::info!("admin approved — resuming");
+                                return Ok(version);
+                            }
+                            Ok(Message::Ping) => {
+                                let _ = sink.send(
+                                    tokio_tungstenite::tungstenite::Message::Pong(vec![].into())
+                                ).await;
+                            }
+                            Ok(_) => {}
+                            Err(_) => {}
+                        }
+                    }
+                    Some(Ok(tokio_tungstenite::tungstenite::Message::Ping(data))) => {
+                        let _ = sink.send(tokio_tungstenite::tungstenite::Message::Pong(data)).await;
+                    }
+                    Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_))) | None => {
+                        anyhow::bail!("connection closed while pending approval");
+                    }
+                    Some(Err(e)) => anyhow::bail!("WS error while pending: {e}"),
+                    Some(Ok(_)) => {}
+                }
+            }
+            _ = ping_interval.tick() => {
+                if sink.send(tokio_tungstenite::tungstenite::Message::Ping(vec![].into())).await.is_err() {
+                    anyhow::bail!("failed to send keepalive ping");
+                }
+            }
+        }
+    }
+}
+
 fn build_tls_connector(config: &AgentConfig) -> Option<tokio_tungstenite::Connector> {
     if config.accept_insecure {
         tracing::warn!("TLS certificate verification disabled (TENODERA_AGENT_ACCEPT_INSECURE=1)");
@@ -173,8 +300,6 @@ fn build_tls_connector(config: &AgentConfig) -> Option<tokio_tungstenite::Connec
             .with_no_client_auth();
         Some(tokio_tungstenite::Connector::Rustls(Arc::new(rustls_config)))
     } else {
-        // None → tokio-tungstenite uses its built-in rustls connector
-        // (webpki roots, enabled via feature rustls-tls-webpki-roots)
         None
     }
 }

@@ -17,10 +17,6 @@ pub struct GatewayConfig {
     /// Publicly reachable URL of this gateway (used in install commands).
     /// Set TENODERA_EXTERNAL_URL in tenodera.cnf, e.g. https://panel.example.com
     pub external_url: Option<String>,
-    /// PSK enrollment token agents must present in Hello.
-    /// Generated automatically by tenodera.sh at install time.
-    /// If absent, all agents are accepted (backward-compat only — not recommended).
-    pub agent_token: Option<String>,
 }
 
 impl GatewayConfig {
@@ -142,9 +138,6 @@ impl Default for GatewayConfig {
                 .ok()
                 .filter(|s| !s.is_empty())
                 .map(|s| s.trim_end_matches('/').to_string()),
-            agent_token: std::env::var("TENODERA_AGENT_TOKEN")
-                .ok()
-                .filter(|s| !s.is_empty()),
         }
     }
 }

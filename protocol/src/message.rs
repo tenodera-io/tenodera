@@ -8,38 +8,61 @@ use crate::channel::{ChannelId, ChannelOpenOptions};
 
 /// Current protocol version sent in Hello/HelloAck.
 ///
-/// Increment when backwards-incompatible wire changes are made.
-/// The gateway rejects bridges whose major version differs from its own.
-pub const PROTOCOL_VERSION: u32 = 1;
+/// Version 2 adds Ed25519 challenge-response authentication.
+/// Gateways reject Hello with version < 2.
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// Top-level envelope for all messages on the WebSocket transport.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Message {
-    /// Agent → Gateway (first message after connection): announce version and identity.
+    /// Agent → Gateway (first message after connection).
     Hello {
         version: u32,
         /// System hostname of the agent host.
         #[serde(default)]
         hostname: String,
-        /// True when the agent is connecting from the same host as the gateway
-        /// (loopback URL). Used to mark the panel host in the UI.
+        /// Agent crate version string.
+        #[serde(default)]
+        agent_version: String,
+        /// True when the agent is connecting from the same host as the gateway.
         #[serde(default)]
         is_local: bool,
-        /// PSK enrollment token — must match TENODERA_AGENT_TOKEN on the gateway.
-        /// Absent on agents that pre-date token enforcement.
+        /// Ed25519 public key (base64, 32 bytes). Required in protocol v2.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        token: Option<String>,
+        public_key: Option<String>,
+        /// Bootstrap enrollment token. Absent for already-enrolled agents.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        bootstrap_token: Option<String>,
+    },
+
+    /// Gateway → Agent: issue authentication challenge.
+    Challenge {
+        /// Fresh 32-byte nonce, base64-encoded.
+        nonce: String,
+        /// Stable UUID identifying this gateway instance.
+        gateway_id: String,
+    },
+
+    /// Agent → Gateway: signed response to Challenge.
+    Challengeresponse {
+        /// Ed25519 signature over the domain-separated payload, base64-encoded (64 bytes).
+        signature: String,
+    },
+
+    /// Gateway → Agent: agent is connected but pending admin approval.
+    Pending {
+        /// "enrollment_required" | "token_invalid"
+        reason: String,
     },
 
     /// Gateway → Agent: acknowledge and report own version.
     HelloAck {
         version: u32,
-        /// Set when the gateway accepted the agent despite a minor-version
-        /// difference. The agent may log this and continue.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         warning: Option<String>,
     },
+
     /// Client → Agent: open a new channel.
     Open {
         channel: ChannelId,
@@ -69,7 +92,6 @@ pub enum Message {
     /// Bidirectional: close a channel.
     Close {
         channel: ChannelId,
-        /// `None` = clean close; `Some(reason)` = error / problem.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         problem: Option<String>,
     },
@@ -241,40 +263,75 @@ mod tests {
     }
 
     #[test]
-    fn hello_roundtrip() {
-        let msg = Message::Hello { version: 1, hostname: "srv01".into(), is_local: false, token: Some("abc".into()) };
+    fn hello_v2_roundtrip() {
+        let msg = Message::Hello {
+            version: 2,
+            hostname: "srv01".into(),
+            agent_version: "0.1.0".into(),
+            is_local: false,
+            public_key: Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into()),
+            bootstrap_token: Some("tok123".into()),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"hello\""), "tag missing: {json}");
         let rt: Message = serde_json::from_str(&json).unwrap();
-        let Message::Hello { version, hostname, is_local, token } = rt else { panic!() };
-        assert_eq!(version, 1);
+        let Message::Hello { version, hostname, public_key, bootstrap_token, .. } = rt else { panic!() };
+        assert_eq!(version, 2);
         assert_eq!(hostname, "srv01");
-        assert!(!is_local);
-        assert_eq!(token.as_deref(), Some("abc"));
+        assert_eq!(public_key.as_deref(), Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
+        assert_eq!(bootstrap_token.as_deref(), Some("tok123"));
     }
 
     #[test]
-    fn hello_defaults_roundtrip() {
-        // Old bridges that only send {type, version} should still deserialize
-        let json = r#"{"type":"hello","version":1}"#;
+    fn hello_no_optional_fields_roundtrip() {
+        // Agents without public_key (old v1 agents) should still deserialize cleanly.
+        // Gateway will reject them on version check.
+        let json = r#"{"type":"hello","version":1,"hostname":"srv01"}"#;
         let rt: Message = serde_json::from_str(json).unwrap();
-        let Message::Hello { version, hostname, is_local } = rt else { panic!() };
+        let Message::Hello { version, hostname, public_key, .. } = rt else { panic!() };
         assert_eq!(version, 1);
-        assert!(hostname.is_empty());
-        assert!(!is_local);
+        assert_eq!(hostname, "srv01");
+        assert!(public_key.is_none());
+    }
+
+    #[test]
+    fn challenge_roundtrip() {
+        let msg = Message::Challenge {
+            nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
+            gateway_id: "550e8400-e29b-41d4-a716-446655440000".into(),
+        };
+        let Message::Challenge { nonce, gateway_id } = roundtrip(&msg) else { panic!() };
+        assert_eq!(nonce, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
+        assert_eq!(gateway_id, "550e8400-e29b-41d4-a716-446655440000");
+    }
+
+    #[test]
+    fn challengeresponse_roundtrip() {
+        let msg = Message::Challengeresponse { signature: "sig64bytes==".into() };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains("\"challengeresponse\""));
+        let Message::Challengeresponse { signature } = roundtrip(&msg) else { panic!() };
+        assert_eq!(signature, "sig64bytes==");
+    }
+
+    #[test]
+    fn pending_roundtrip() {
+        let msg = Message::Pending { reason: "enrollment_required".into() };
+        let Message::Pending { reason } = roundtrip(&msg) else { panic!() };
+        assert_eq!(reason, "enrollment_required");
     }
 
     #[test]
     fn helloack_roundtrip() {
-        let msg = Message::HelloAck { version: 1, warning: Some("version mismatch".into()) };
+        let msg = Message::HelloAck { version: 2, warning: Some("version mismatch".into()) };
         let Message::HelloAck { version, warning } = roundtrip(&msg) else { panic!() };
-        assert_eq!(version, 1);
+        assert_eq!(version, 2);
         assert_eq!(warning.as_deref(), Some("version mismatch"));
     }
 
     #[test]
     fn helloack_no_warning_omits_field() {
-        let msg = Message::HelloAck { version: 1, warning: None };
+        let msg = Message::HelloAck { version: 2, warning: None };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(!json.contains("warning"), "warning should be absent: {json}");
     }

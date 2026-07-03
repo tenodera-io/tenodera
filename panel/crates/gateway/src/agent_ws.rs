@@ -1,132 +1,228 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::{
-    extract::{ConnectInfo, State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{ConnectInfo, State, WebSocketUpgrade, ws::WebSocket},
+    extract::ws::Message as WsMessage,
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 
 use tenodera_protocol::message::{self, PROTOCOL_VERSION};
 
 use crate::AppState;
+use crate::agent_auth::{
+    AuthenticatedAgent, BootstrapRegistry, PendingRegistry,
+    generate_nonce, pubkey_fingerprint_display, verify_signature,
+};
 use crate::agent_registry::{self, AgentRegistry};
 use crate::hosts_config;
 
 /// GET /api/agent — WebSocket endpoint for agent connections.
-///
-/// Any agent may connect. The agent identifies itself via its hostname sent
-/// in the Hello message. If no entry exists for that hostname, one is created
-/// automatically (Zabbix-style auto-registration).
 pub async fn agent_ws_upgrade(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let registry = state.agent_registry.clone();
+    let pending_registry = state.pending_registry.clone();
+    let bootstrap_registry = state.bootstrap_registry.clone();
+    let gateway_id = state.gateway_id.clone();
     let remote_ip = addr.ip().to_string();
-    let agent_token = state.config.agent_token.clone();
-    ws.on_upgrade(move |socket| handle_agent_socket(registry, socket, remote_ip, agent_token))
+    ws.on_upgrade(move |socket| {
+        handle_agent_socket(
+            registry,
+            pending_registry,
+            bootstrap_registry,
+            gateway_id,
+            socket,
+            remote_ip,
+        )
+    })
 }
 
-async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_ip: String, agent_token: Option<String>) {
+async fn handle_agent_socket(
+    registry: AgentRegistry,
+    pending_registry: PendingRegistry,
+    bootstrap_registry: BootstrapRegistry,
+    gateway_id: String,
+    socket: WebSocket,
+    remote_ip: String,
+) {
     let (mut sink, mut stream) = socket.split();
 
-    // ── Hello/HelloAck handshake ──────────────────────────────────────────
-    let (agent_version, hostname, is_local) = loop {
+    // ── AwaitHello ────────────────────────────────────────────────────────────
+    let hello = loop {
         match stream.next().await {
-            Some(Ok(Message::Text(text))) => {
+            Some(Ok(WsMessage::Text(text))) => {
                 match serde_json::from_str::<message::Message>(&text) {
-                    Ok(message::Message::Hello { version, hostname, is_local, token }) => {
-                        // PSK enforcement: reject if gateway has a token configured
-                        // and the agent either omitted it or provided a wrong value.
-                        if let Some(ref expected) = agent_token {
-                            let provided = token.as_deref().unwrap_or("");
-                            if !constant_time_eq(provided.as_bytes(), expected.as_bytes()) {
+                    Ok(message::Message::Hello {
+                        version,
+                        hostname,
+                        is_local,
+                        public_key,
+                        bootstrap_token,
+                        ..
+                    }) => {
+                        if version < 2 {
+                            tracing::warn!(
+                                %remote_ip, %hostname, version,
+                                "agent rejected: protocol version < 2"
+                            );
+                            return;
+                        }
+                        let public_key = match public_key {
+                            Some(pk) => pk,
+                            None => {
                                 tracing::warn!(
-                                    remote_ip = %remote_ip,
-                                    hostname = %hostname,
-                                    "agent rejected: invalid enrollment token"
+                                    %remote_ip, %hostname,
+                                    "agent rejected: protocol v2 requires public_key"
                                 );
                                 return;
                             }
-                        } else {
-                            tracing::warn!(
-                                "TENODERA_AGENT_TOKEN not configured — agent accepted without token verification"
-                            );
-                        }
-                        break (version, hostname, is_local);
+                        };
+                        break (hostname, is_local, public_key, bootstrap_token);
                     }
                     Ok(other) => {
-                        tracing::warn!(?other, "expected Hello from agent");
+                        tracing::warn!(%remote_ip, ?other, "expected Hello from agent");
                         return;
                     }
                     Err(e) => {
-                        tracing::warn!(error = %e, "failed to parse Hello");
+                        tracing::warn!(%remote_ip, error = %e, "failed to parse Hello");
                         return;
                     }
                 }
             }
-            Some(Ok(Message::Close(_))) | None => return,
+            Some(Ok(WsMessage::Close(_))) | None => return,
             Some(Ok(_)) => continue,
             Some(Err(e)) => {
-                tracing::warn!(error = %e, "WS error during handshake");
+                tracing::warn!(%remote_ip, error = %e, "WS error during Hello");
                 return;
             }
         }
     };
 
-    // ── Auto-register ─────────────────────────────────────────────────────
-    let effective_hostname = if hostname.is_empty() { "unknown".to_string() } else { hostname };
-    let host = hosts_config::find_or_register_by_hostname(&effective_hostname, is_local).await;
+    let (hostname, is_local, pubkey_b64, bootstrap_token) = hello;
 
-    tracing::info!(
-        host_id = %host.id,
-        host_name = %host.name,
-        hostname = %effective_hostname,
-        "agent connection accepted"
-    );
+    // ── Send Challenge ────────────────────────────────────────────────────────
+    let (nonce_bytes, nonce_b64) = generate_nonce();
+    let challenge = serde_json::to_string(&message::Message::Challenge {
+        nonce: nonce_b64,
+        gateway_id: gateway_id.clone(),
+    })
+    .expect("serialize Challenge");
 
-    let warning = if agent_version != PROTOCOL_VERSION {
-        let w = format!(
-            "protocol version mismatch: gateway={PROTOCOL_VERSION}, agent={agent_version}"
-        );
-        tracing::warn!(host = %host.id, "{w}");
-        Some(w)
-    } else {
-        None
-    };
+    if sink.send(WsMessage::Text(challenge.into())).await.is_err() {
+        return;
+    }
 
-    let ack = message::Message::HelloAck { version: PROTOCOL_VERSION, warning };
-    let ack_json = match serde_json::to_string(&ack) {
-        Ok(j) => j,
-        Err(e) => {
-            tracing::error!(error = %e, "failed to serialize HelloAck");
+    // ── AwaitResponse (10s deadline) ──────────────────────────────────────────
+    let sig_b64 = match tokio::time::timeout(
+        Duration::from_secs(10),
+        recv_challenge_response(&mut stream),
+    )
+    .await
+    {
+        Ok(Some(sig)) => sig,
+        Ok(None) => {
+            tracing::warn!(%remote_ip, %hostname, "connection closed waiting for ChallengeResponse");
+            return;
+        }
+        Err(_) => {
+            tracing::warn!(%remote_ip, %hostname, "challenge deadline exceeded (10s)");
             return;
         }
     };
-    if sink.send(Message::Text(ack_json.into())).await.is_err() {
+
+    // ── Verify signature ──────────────────────────────────────────────────────
+    if !verify_signature(&pubkey_b64, &sig_b64, &nonce_bytes, &hostname, &gateway_id) {
+        tracing::warn!(%remote_ip, %hostname, "invalid Ed25519 signature — closing");
+        return;
+    }
+
+    let fingerprint = pubkey_fingerprint_display(&pubkey_b64);
+    tracing::debug!(%hostname, %fingerprint, "signature verified");
+
+    // ── Route to correct authentication path ──────────────────────────────────
+    let auth = match resolve_auth_path(
+        &hostname,
+        &pubkey_b64,
+        bootstrap_token.as_deref(),
+        is_local,
+        &remote_ip,
+        &fingerprint,
+        &bootstrap_registry,
+        &registry,
+    )
+    .await
+    {
+        AuthPath::Authenticated(a) => a,
+
+        AuthPath::Pending(reason) => {
+            // Send Pending, then wait for admin approval
+            let pending_msg = serde_json::to_string(&message::Message::Pending { reason })
+                .expect("serialize Pending");
+            if sink.send(WsMessage::Text(pending_msg.into())).await.is_err() {
+                return;
+            }
+
+            let (approve_tx, approve_rx) = oneshot::channel::<hosts_config::HostEntry>();
+            let inserted = pending_registry
+                .insert(pubkey_b64.clone(), hostname.clone(), remote_ip.clone(), approve_tx)
+                .await;
+
+            if !inserted {
+                tracing::warn!(%hostname, "pending registry full — rejecting");
+                return;
+            }
+            tracing::info!(%hostname, %fingerprint, "agent pending admin approval");
+
+            let host = match wait_for_approval(&mut sink, &mut stream, approve_rx).await {
+                Some(h) => h,
+                None => {
+                    pending_registry.remove(&pubkey_b64).await;
+                    tracing::info!(%hostname, "pending agent disconnected or timed out");
+                    return;
+                }
+            };
+
+            AuthenticatedAgent { host, remote_ip: remote_ip.clone() }
+        }
+
+        AuthPath::Reject => return,
+    };
+
+    // ── HelloAck ──────────────────────────────────────────────────────────────
+    let ack = serde_json::to_string(&message::Message::HelloAck {
+        version: PROTOCOL_VERSION,
+        warning: None,
+    })
+    .expect("serialize HelloAck");
+
+    if sink.send(WsMessage::Text(ack.into())).await.is_err() {
         return;
     }
 
     tracing::info!(
-        host = %host.id,
-        hostname = %effective_hostname,
-        agent_version,
-        "agent handshake complete"
+        host_id = %auth.host.id,
+        hostname = %auth.host.hostname,
+        %fingerprint,
+        "agent authenticated"
     );
 
-    // ── Register in agent registry ────────────────────────────────────────
+    // ── Register in agent registry ────────────────────────────────────────────
     let (to_agent_tx, mut to_agent_rx) = mpsc::channel::<message::Message>(512);
-    let subscribers = registry.register(host.id.clone(), to_agent_tx, Some(remote_ip)).await;
+    let subscribers = registry.register(&auth, to_agent_tx).await;
+    let host_id = auth.host.id.clone();
 
-    // ── WS writer task: gateway → agent ──────────────────────────────────
+    // ── WS writer task: gateway → agent ──────────────────────────────────────
     let writer_handle = tokio::spawn(async move {
         while let Some(msg) = to_agent_rx.recv().await {
             match serde_json::to_string(&msg) {
                 Ok(json) => {
-                    if sink.send(Message::Text(json.into())).await.is_err() {
+                    if sink.send(WsMessage::Text(json.into())).await.is_err() {
                         break;
                     }
                 }
@@ -135,19 +231,19 @@ async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_
         }
     });
 
-    // ── WS reader task: agent → gateway sessions ──────────────────────────
+    // ── WS reader task: agent → gateway sessions ──────────────────────────────
     while let Some(frame) = stream.next().await {
         let text = match frame {
-            Ok(Message::Text(t)) => t,
-            Ok(Message::Close(_)) | Err(_) => break,
-            Ok(Message::Ping(_)) => continue,
+            Ok(WsMessage::Text(t)) => t,
+            Ok(WsMessage::Close(_)) | Err(_) => break,
+            Ok(WsMessage::Ping(_)) => continue,
             Ok(_) => continue,
         };
 
         let msg: message::Message = match serde_json::from_str(&text) {
             Ok(m) => m,
             Err(e) => {
-                tracing::warn!(host = %host.id, error = %e, "invalid message from agent");
+                tracing::warn!(host = %host_id, error = %e, "invalid message from agent");
                 continue;
             }
         };
@@ -160,26 +256,183 @@ async fn handle_agent_socket(registry: AgentRegistry, socket: WebSocket, remote_
         let subs = subscribers.read().await;
         if let Some(sub_tx) = subs.get(&prefix) {
             if sub_tx.send(stripped).await.is_err() {
-                tracing::debug!(host = %host.id, prefix = %prefix, "session subscriber gone");
+                tracing::debug!(host = %host_id, prefix = %prefix, "session subscriber gone");
             }
         } else {
-            tracing::debug!(host = %host.id, prefix = %prefix, "no subscriber for prefix");
+            tracing::debug!(host = %host_id, prefix = %prefix, "no subscriber for prefix");
         }
     }
 
-    // ── Cleanup ───────────────────────────────────────────────────────────
-    hosts_config::update_last_seen(&host.id).await;
-    registry.unregister(&host.id).await;
+    // ── Cleanup ───────────────────────────────────────────────────────────────
+    hosts_config::update_last_seen(&host_id).await;
+    registry.unregister(&host_id).await;
     writer_handle.abort();
-    tracing::info!(host = %host.id, "agent disconnected");
+    tracing::info!(host = %host_id, "agent disconnected");
 }
 
-/// Constant-time byte comparison — prevents timing attacks on token verification.
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() { return false; }
-    let mut diff = 0u8;
-    for (x, y) in a.iter().zip(b.iter()) {
-        diff |= x ^ y;
+// ── Authentication path resolution ───────────────────────────────────────────
+
+enum AuthPath {
+    Authenticated(AuthenticatedAgent),
+    Pending(String),
+    Reject,
+}
+
+async fn resolve_auth_path(
+    hostname: &str,
+    pubkey_b64: &str,
+    bootstrap_token: Option<&str>,
+    is_local: bool,
+    remote_ip: &str,
+    fingerprint: &str,
+    bootstrap_registry: &BootstrapRegistry,
+    agent_registry: &AgentRegistry,
+) -> AuthPath {
+    // Path 1 & Path 2: known host
+    if let Some(host) = hosts_config::find_by_pubkey(pubkey_b64).await {
+        // Path 1: pubkey matches stored key → authenticated
+        tracing::info!(
+            hostname = %host.hostname,
+            host_id = %host.id,
+            %fingerprint,
+            "known host reconnected"
+        );
+        return AuthPath::Authenticated(AuthenticatedAgent {
+            host,
+            remote_ip: remote_ip.to_string(),
+        });
     }
-    diff == 0
+
+    // Path 2: known hostname but different pubkey
+    if let Some(existing) = hosts_config::find_by_hostname(hostname).await {
+        // Check for re_enroll token bound to this hostname
+        if let Some(token_val) = bootstrap_token {
+            if let Some(true) = bootstrap_registry.validate_and_consume(token_val, hostname).await {
+                // re_enroll path: replace public key
+                match hosts_config::replace_pubkey(&existing.id, pubkey_b64).await {
+                    Ok(updated) => {
+                        // Kick old agent session
+                        agent_registry.unregister(&existing.id).await;
+                        tracing::warn!(
+                            hostname,
+                            old_fingerprint = %pubkey_fingerprint_display(
+                                existing.public_key.as_deref().unwrap_or("")
+                            ),
+                            new_fingerprint = %fingerprint,
+                            "key replaced via re_enroll token"
+                        );
+                        return AuthPath::Authenticated(AuthenticatedAgent {
+                            host: updated,
+                            remote_ip: remote_ip.to_string(),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to replace pubkey");
+                        return AuthPath::Reject;
+                    }
+                }
+            }
+        }
+
+        // No valid re_enroll token → pubkey mismatch ALERT
+        tracing::error!(
+            hostname,
+            host_id = %existing.id,
+            known_fingerprint = %pubkey_fingerprint_display(
+                existing.public_key.as_deref().unwrap_or("")
+            ),
+            presented_fingerprint = %fingerprint,
+            "SECURITY ALERT: known hostname presented unknown pubkey — closing connection"
+        );
+        return AuthPath::Reject;
+    }
+
+    // Path 3 & Path 4: new host
+    if let Some(token_val) = bootstrap_token {
+        match bootstrap_registry.validate_and_consume(token_val, hostname).await {
+            Some(_) => {
+                // Path 3: valid token → auto-enroll
+                match hosts_config::register_host(hostname, pubkey_b64, is_local, None).await {
+                    Ok(host) => {
+                        tracing::info!(hostname, %fingerprint, "new host enrolled via bootstrap token");
+                        return AuthPath::Authenticated(AuthenticatedAgent {
+                            host,
+                            remote_ip: remote_ip.to_string(),
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!(error = %e, "failed to register host");
+                        return AuthPath::Reject;
+                    }
+                }
+            }
+            None => {
+                // Token present but invalid/expired
+                tracing::warn!(hostname, %fingerprint, "bootstrap token invalid or expired");
+                return AuthPath::Pending("token_invalid".to_string());
+            }
+        }
+    }
+
+    // Path 4: no token → pending
+    tracing::info!(hostname, %fingerprint, "new host without token — entering pending state");
+    AuthPath::Pending("enrollment_required".to_string())
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async fn recv_challenge_response<S>(stream: &mut S) -> Option<String>
+where
+    S: StreamExt<Item = Result<WsMessage, axum::Error>> + Unpin,
+{
+    loop {
+        match stream.next().await? {
+            Ok(WsMessage::Text(text)) => {
+                match serde_json::from_str::<message::Message>(&text) {
+                    Ok(message::Message::Challengeresponse { signature }) => return Some(signature),
+                    Ok(_) => continue,
+                    Err(_) => return None,
+                }
+            }
+            Ok(WsMessage::Close(_)) => return None,
+            Ok(_) => continue,
+            Err(_) => return None,
+        }
+    }
+}
+
+async fn wait_for_approval<Si, St>(
+    sink: &mut Si,
+    stream: &mut St,
+    mut approve_rx: oneshot::Receiver<hosts_config::HostEntry>,
+) -> Option<hosts_config::HostEntry>
+where
+    Si: SinkExt<WsMessage> + Unpin,
+    St: StreamExt<Item = Result<WsMessage, axum::Error>> + Unpin,
+{
+    let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
+    ping_interval.tick().await; // skip immediate tick
+
+    loop {
+        tokio::select! {
+            result = &mut approve_rx => {
+                return result.ok();
+            }
+            _ = ping_interval.tick() => {
+                if sink.send(WsMessage::Ping(vec![].into())).await.is_err() {
+                    return None;
+                }
+            }
+            frame = stream.next() => {
+                match frame {
+                    Some(Ok(WsMessage::Close(_))) | None => return None,
+                    Some(Err(_)) => return None,
+                    _ => {}
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_secs(86_400)) => {
+                return None;
+            }
+        }
+    }
 }

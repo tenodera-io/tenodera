@@ -1,7 +1,8 @@
-mod audit;
-mod auth;
+mod agent_auth;
 mod agent_registry;
 mod agent_ws;
+mod audit;
+mod auth;
 mod config;
 mod hosts_config;
 mod pam;
@@ -26,6 +27,7 @@ use tracing_subscriber::EnvFilter;
 
 use axum::response::IntoResponse;
 
+use crate::agent_auth::{BootstrapRegistry, PendingRegistry};
 use crate::agent_registry::AgentRegistry;
 use crate::config::GatewayConfig;
 use crate::rate_limit::LoginRateLimiter;
@@ -82,6 +84,10 @@ pub struct AppState {
     pub sessions: SessionStore,
     pub login_limiter: LoginRateLimiter,
     pub agent_registry: AgentRegistry,
+    pub pending_registry: PendingRegistry,
+    pub bootstrap_registry: BootstrapRegistry,
+    /// Stable UUID identifying this gateway instance (bilateral TOFU with agents).
+    pub gateway_id: String,
     pub started_at: std::time::Instant,
 }
 
@@ -96,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
     let config = GatewayConfig::default();
     config.validate()?;
     let bind_addr = config.bind_addr;
+    let gateway_id = hosts_config::load_or_create_gateway_id().await?;
 
     // Disable core dumps so FreeIPA passwords from sessions cannot
     // leak via /proc/<pid>/mem or crash dumps.
@@ -120,11 +127,23 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    let bootstrap_registry = BootstrapRegistry::new();
+    {
+        let br = bootstrap_registry.clone();
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
+            loop { tick.tick().await; br.cleanup().await; }
+        });
+    }
+
     let state = Arc::new(AppState {
         config,
         sessions,
         login_limiter,
         agent_registry: AgentRegistry::new(),
+        pending_registry: PendingRegistry::new(),
+        bootstrap_registry,
+        gateway_id,
         started_at: std::time::Instant::now(),
     });
 
@@ -139,7 +158,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/agent", get(agent_ws::agent_ws_upgrade))
         .route("/api/hosts", axum::routing::get(hosts_list))
         .route("/api/hosts/{id}", axum::routing::delete(hosts_remove).patch(hosts_patch))
-        .route("/api/agent-token", get(agent_token_info))
+        .route("/api/agent/tokens", axum::routing::get(token_list).post(token_create))
+        .route("/api/agent/tokens/{id}", axum::routing::delete(token_revoke))
+        .route("/api/agent/pending", axum::routing::get(pending_list))
+        .route("/api/agent/pending/{fingerprint}/approve", axum::routing::post(pending_approve))
         .route("/api/health", get(health))
         .route("/api/health/ready", get(health_ready))
         // Serve built frontend from ui/dist (production)
@@ -278,29 +300,181 @@ async fn health_ready(
     (code, Json(ReadyResponse { ready, agent_bin: bin, error }))
 }
 
-/// GET /api/agent-token — return the PSK enrollment token (admin only).
-/// Used by the Management page to display the token and pre-fill install commands.
-async fn agent_token_info(
+// ── Bootstrap token endpoints ────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct CreateTokenRequest {
+    #[serde(default = "default_ttl")]
+    ttl_secs: u64,
+    #[serde(default = "default_true")]
+    single_use: bool,
+    #[serde(default)]
+    max_uses: Option<u32>,
+    #[serde(default)]
+    bound_hostname: Option<String>,
+    #[serde(default)]
+    re_enroll: bool,
+}
+
+fn default_ttl() -> u64 { 3600 }
+fn default_true() -> bool { true }
+
+async fn token_create(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
+    Json(body): Json<CreateTokenRequest>,
 ) -> impl axum::response::IntoResponse {
-    let bearer = match extract_bearer_token(&headers) {
-        Some(t) => t,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response(),
+    let Some(bearer) = extract_bearer_token(&headers) else {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
     };
-    let session = match state.sessions.get(&bearer).await {
-        Some(s) => s,
-        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response(),
+    let Some(session) = state.sessions.get(&bearer).await else {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
     };
     if session.role != crate::session::Role::Admin {
         return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "admin required"}))).into_response();
     }
+
+    let ttl = std::time::Duration::from_secs(body.ttl_secs.clamp(60, 86_400 * 30));
+    let (id, value) = state
+        .bootstrap_registry
+        .create(ttl, body.single_use, body.max_uses, body.bound_hostname, body.re_enroll)
+        .await;
+
     let gateway_url = state.config.external_url.clone()
-        .unwrap_or_else(|| format!("http://{}", state.config.bind_addr));
+        .unwrap_or_else(|| format!("https://{}", state.config.bind_addr));
+
     Json(serde_json::json!({
-        "token": state.config.agent_token,
-        "gateway_url": gateway_url,
-    })).into_response()
+        "id": id,
+        "token": value,
+        "ttl_secs": body.ttl_secs,
+        "install_cmd": format!(
+            "curl -sSL {gateway_url}/tenodera-agent.sh | sudo bash -s -- --gateway {gateway_url} --token {value}"
+        ),
+    }))
+    .into_response()
+}
+
+async fn token_list(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> impl axum::response::IntoResponse {
+    if require_admin(&state, &headers).await.is_err() {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+    }
+    Json(serde_json::json!({ "tokens": state.bootstrap_registry.list().await })).into_response()
+}
+
+async fn token_revoke(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> StatusCode {
+    if require_admin(&state, &headers).await.is_err() {
+        return StatusCode::UNAUTHORIZED;
+    }
+    if state.bootstrap_registry.revoke(&id).await {
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
+
+// ── Pending agent endpoints ───────────────────────────────────────────────────
+
+async fn pending_list(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> impl axum::response::IntoResponse {
+    if require_admin(&state, &headers).await.is_err() {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+    }
+    Json(serde_json::json!({ "pending": state.pending_registry.list().await })).into_response()
+}
+
+#[derive(Deserialize, Default)]
+struct ApproveRequest {
+    #[serde(default)]
+    display_name: Option<String>,
+}
+
+async fn pending_approve(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(fingerprint_hex): axum::extract::Path<String>,
+    body: Option<Json<ApproveRequest>>,
+) -> impl axum::response::IntoResponse {
+    let Some(bearer) = extract_bearer_token(&headers) else {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+    };
+    let Some(session) = state.sessions.get(&bearer).await else {
+        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+    };
+    if session.role != crate::session::Role::Admin {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "admin required"}))).into_response();
+    }
+
+    let display_name = body.and_then(|b| b.0.display_name);
+
+    let (Some(hostname), Some(pubkey_b64)) = (
+        state.pending_registry.hostname_for_fingerprint(&fingerprint_hex).await,
+        state.pending_registry.pubkey_for_fingerprint(&fingerprint_hex).await,
+    ) else {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "pending agent not found"}))).into_response();
+    };
+
+    let host = match hosts_config::find_by_hostname(&hostname).await {
+        Some(existing) => {
+            // Hostname already enrolled — update the public key and optional display_name
+            match hosts_config::replace_pubkey(&existing.id, &pubkey_b64).await {
+                Ok(mut updated) => {
+                    if display_name.is_some() {
+                        updated.display_name = display_name;
+                        if let Err(e) = save_display_name(&updated.id, updated.display_name.clone()).await {
+                            tracing::error!(error = %e, "failed to save display_name");
+                        }
+                    }
+                    updated
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to update pubkey during approval");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "registration failed"}))).into_response();
+                }
+            }
+        }
+        None => {
+            // New host — register with its public key
+            match hosts_config::register_host(&hostname, &pubkey_b64, false, display_name).await {
+                Ok(h) => h,
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to register host during approval");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "registration failed"}))).into_response();
+                }
+            }
+        }
+    };
+
+    if state.pending_registry.approve(&fingerprint_hex, host.clone()).await {
+        tracing::info!(hostname, host_id = %host.id, "admin approved pending agent");
+        Json(serde_json::json!({ "approved": true, "host_id": host.id })).into_response()
+    } else {
+        (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "pending agent not found or already approved"}))).into_response()
+    }
+}
+
+async fn save_display_name(host_id: &str, display_name: Option<String>) -> anyhow::Result<()> {
+    let mut config = hosts_config::load().await;
+    if let Some(h) = config.hosts.iter_mut().find(|h| h.id == host_id) {
+        h.display_name = display_name;
+        hosts_config::save(&config).await?;
+    }
+    Ok(())
+}
+
+async fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), ()> {
+    let bearer = extract_bearer_token(headers).ok_or(())?;
+    let session = state.sessions.get(&bearer).await.ok_or(())?;
+    if session.role != crate::session::Role::Admin { return Err(()); }
+    Ok(())
 }
 
 fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {

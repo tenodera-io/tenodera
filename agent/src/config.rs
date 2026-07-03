@@ -3,8 +3,9 @@ pub struct AgentConfig {
     pub gateway_url: String,
     /// Skip TLS certificate verification. Use only for dev/self-signed certs.
     pub accept_insecure: bool,
-    /// PSK enrollment token — must match TENODERA_AGENT_TOKEN on the gateway.
-    pub agent_token: Option<String>,
+    /// Bootstrap enrollment token (TENODERA_BOOTSTRAP_TOKEN).
+    /// Required for first-time enrollment; absent for already-enrolled agents.
+    pub bootstrap_token: Option<String>,
 }
 
 impl AgentConfig {
@@ -18,9 +19,9 @@ impl AgentConfig {
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
-        let agent_token = std::env::var("TENODERA_AGENT_TOKEN").ok().filter(|s| !s.is_empty());
+        let bootstrap_token = std::env::var("TENODERA_BOOTSTRAP_TOKEN").ok().filter(|s| !s.is_empty());
 
-        Ok(Self { gateway_url, accept_insecure, agent_token })
+        Ok(Self { gateway_url, accept_insecure, bootstrap_token })
     }
 
     /// WebSocket URL for the agent endpoint on the gateway.
