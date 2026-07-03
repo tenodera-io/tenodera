@@ -25,7 +25,7 @@ jobs:
         with:
           workspaces: |
             panel -> target
-            bridge -> target
+            agent -> target
 
       - name: Install Node.js
         uses: actions/setup-node@v4
@@ -46,8 +46,8 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build bridge
-        working-directory: bridge
+      - name: Build agent
+        working-directory: agent
         run: cargo build --release
 
       - name: Build gateway + UI
@@ -56,8 +56,8 @@ jobs:
           cargo build --release
           cd ui && npm ci && npm run build
 
-      - name: Package bridge (deb)
-        working-directory: bridge
+      - name: Package agent (deb)
+        working-directory: agent
         run: make package-deb VERSION=${{ steps.version.outputs.version }}
 
       - name: Package gateway (deb)
@@ -72,21 +72,28 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           files: |
-            bridge/tenodera-bridge_${{ steps.version.outputs.version }}_amd64.deb
-            panel/tenodera-gateway_${{ steps.version.outputs.version }}_amd64.deb
+            agent/tenodera-agent_${{ steps.version.outputs.version }}_amd64.deb
+            panel/tenodera_${{ steps.version.outputs.version }}_amd64.deb
           body: |
             ## Installation
 
-            ### Managed hosts (bridge)
+            ### Panel (gateway + UI)
             ```bash
-            sudo dpkg -i tenodera-bridge_${{ steps.version.outputs.version }}_amd64.deb
+            curl -sSfL https://raw.githubusercontent.com/${{ github.repository }}/main/tenodera.sh | sudo bash
             ```
 
-            ### Gateway server
+            ### Managed hosts (agent)
             ```bash
-            sudo dpkg -i tenodera-gateway_${{ steps.version.outputs.version }}_amd64.deb
-            sudo make tls-selfsigned   # or configure your own TLS cert
-            sudo systemctl start tenodera-gateway
+            curl -sSfL https://raw.githubusercontent.com/${{ github.repository }}/main/tenodera-agent.sh | sudo bash -s -- --gateway http://<panel-host>:9090
+            ```
+
+            Or install the .deb packages directly:
+            ```bash
+            # Panel host
+            sudo dpkg -i tenodera_${{ steps.version.outputs.version }}_amd64.deb
+
+            # Managed hosts
+            sudo dpkg -i tenodera-agent_${{ steps.version.outputs.version }}_amd64.deb
             ```
 
             See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full setup instructions.

@@ -17,9 +17,12 @@ The gateway is the central server accessible from the browser. It handles:
 Browser --> HTTPS/WSS --> Gateway (:9090) <-- outbound WS -- tenodera-agent (each host)
 ```
 
-Agents connect outbound to `GET /api/agent`. The gateway auto-registers each host
-on first connect using the hostname from the `Hello` handshake (Zabbix-style). Multiple
-user WebSocket sessions share the same agent connection via `AgentRegistry`.
+Agents connect outbound to `GET /api/agent`. The gateway performs an Ed25519
+TOFU handshake (`Hello` → `Challenge` → `ChallengeResponse` → `HelloAck`).
+New hosts enter **pending** state until approved by an admin, or auto-enroll
+via a bootstrap token or loopback connection. Known hosts authenticate via
+their stored public key with no manual approval. Multiple browser sessions
+share the same agent connection via `AgentRegistry`.
 
 ## Modules
 
@@ -28,13 +31,14 @@ user WebSocket sessions share the same agent connection via `AgentRegistry`.
 | `main.rs` | Axum server setup, routing, shared state, core dump prevention |
 | `auth.rs` | Login (PAM + sudo check), logout (Bearer auth required) |
 | `ws.rs` | WebSocket upgrade, Origin validation, channel routing via AgentRegistry |
-| `agent_ws.rs` | `GET /api/agent` endpoint — Hello/HelloAck handshake, agent auto-registration |
+| `agent_ws.rs` | `GET /api/agent` endpoint — TOFU handshake + auth path resolution |
+| `agent_auth.rs` | Ed25519 signature verification, bootstrap/pending registries, nonce generation |
 | `agent_registry.rs` | In-memory registry of active agent WebSocket connections |
 | `session.rs` | In-memory session store with idle timeout, max lifetime, and reaper |
 | `pam.rs` | PAM authentication via `tenodera-pam-helper` subprocess, sudo privilege check via `sudo -l -U` |
 | `config.rs` | Configuration from environment variables |
 | `tls.rs` | TLS acceptor setup (tokio-rustls) |
-| `hosts_config.rs` | Remote host config (`/etc/tenodera/hosts.json`) |
+| `hosts_config.rs` | Enrolled host registry (`/var/lib/tenodera-gw/hosts.json`) |
 | `audit.rs` | Structured audit logging to `/var/log/tenodera_audit.log` |
 | `rate_limit.rs` | Per-IP sliding-window login rate limiter |
 | `security_headers.rs` | CSRF Origin check on mutating requests + HTTP security headers |
@@ -46,10 +50,15 @@ user WebSocket sessions share the same agent connection via `AgentRegistry`.
 | `/api/auth/login` | POST | Login (PAM auth + sudo check, rate-limited per IP) |
 | `/api/auth/logout` | POST | Logout (requires `Authorization: Bearer <session_id>`) |
 | `/api/ws` | GET | WebSocket upgrade for browser sessions (`?session_id=...`, Origin validated) |
-| `/api/agent` | GET | WebSocket upgrade for agent connections (Hello/HelloAck handshake) |
+| `/api/agent` | GET | WebSocket upgrade for agent connections (TOFU handshake) |
 | `/api/hosts` | GET | List all registered hosts with status |
 | `/api/hosts/{id}` | DELETE | Remove a host from the registry |
 | `/api/hosts/{id}` | PATCH | Update host metadata (e.g. name) |
+| `/api/agent/pending` | GET | List hosts awaiting admin approval |
+| `/api/agent/pending/{fp}/approve` | POST | Approve a pending host by fingerprint |
+| `/api/agent/tokens` | GET | List active bootstrap tokens |
+| `/api/agent/tokens` | POST | Create a bootstrap token (TTL, single-use, re-enroll) |
+| `/api/agent/tokens/{id}` | DELETE | Revoke a bootstrap token |
 | `/api/health` | GET | Health check: `{ status, sessions, uptime_secs, version }` |
 | `/api/health/ready` | GET | Readiness probe (200 OK \| 503) |
 | `/*` | GET | UI file serving (SPA fallback) |

@@ -12,11 +12,12 @@ not communicate over stdin/stdout.
 Gateway (:9090) <──WS── tenodera-agent (each managed host)
 ```
 
-On startup the agent sends a `Hello` message containing its hostname and
-protocol version. The gateway responds with `HelloAck` and auto-registers the
-host — no tokens, no pre-registration, no inbound ports required on the managed
-host. Multiple user sessions on the gateway share the same agent connection via
-the `AgentRegistry`.
+On startup the agent performs an Ed25519 TOFU handshake with the gateway
+(`Hello` → `Challenge` → `ChallengeResponse` → `HelloAck`). On first connect
+the host enters **pending** state until an admin approves it, or a bootstrap
+token is provided to auto-enroll. Subsequent reconnects authenticate via the
+stored public key with no further approval. Multiple user sessions share the
+same agent connection via `AgentRegistry`.
 
 ## Handler Modules
 
@@ -101,7 +102,7 @@ via the `host.action` / `set_role` handler — this rewrites the `role=` lines i
 
 ## Privilege Model
 
-The agent runs as a non-root user (`tenodera-brdg`). Privileged operations
+The agent binary is installed **setuid root** (`-m 4755`). Privileged operations
 use `sudo -S` with the password piped from the superuser context — the user
 authenticates once via `superuser.verify`, and that password is used for
 subsequent sudo calls within the session.

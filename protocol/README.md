@@ -75,10 +75,9 @@ top level of the JSON object alongside `type`, `channel`, and `payload`.
 
 | Module | Description |
 |--------|-------------|
-| `message.rs` | `Message` enum -- all protocol frames |
+| `message.rs` | `Message` enum -- all protocol frames (Hello, Challenge, Data, Close, …) |
 | `channel.rs` | `ChannelOpenOptions`, `ChannelState`, `SuperuserMode` |
-| `payload.rs` | `Payload` enum -- known payload type registry |
-| `error.rs` | `ProtocolError` -- typed error variants |
+| `auth.rs` | Auth-specific message types for the Ed25519 TOFU handshake |
 
 ## Dependencies
 
