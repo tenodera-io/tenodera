@@ -18,7 +18,7 @@ Include a description, steps to reproduce, and potential impact. Fixes are provi
 - **PAM authentication** via an isolated `tenodera-pam-helper` subprocess — the gateway never calls PAM directly; all credential handling is confined to the subprocess
 - **Admin role determination** at login: `getpwnam_r` + `getgrouplist` + `getgrgid_r` (the full NSS stack) checks group membership against `sudo`, `wheel`, and `admin`; LDAP/SSSD/FreeIPA groups are resolved transparently via NSS — no `sudo` process is spawned
 - **Login rate limiting**: per-IP sliding window (default: 20 attempts per 5 minutes) — blocks brute-force attacks
-- **Session idle timeout**: sessions expire after 900 seconds of inactivity (configurable)
+- **Session idle timeout**: sessions expire after 900 seconds of inactivity (configurable via `TENODERA_IDLE_TIMEOUT` in `tenodera.cnf` — see §4.1 of DOCS.md)
 - **Maximum session lifetime**: 4 hours regardless of activity
 - **Authenticated logout**: requires `Authorization: Bearer <session_id>` matching the request body
 
