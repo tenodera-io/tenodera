@@ -389,6 +389,16 @@ Tenodera uses **PAM authentication** — the same credentials as the system. No 
 
 Role is determined at login by running `sudo -l -U <user>` on the panel host. LDAP/SSSD/FreeIPA users work transparently if PAM is configured for them.
 
+**Account presence on managed hosts**
+
+Tenodera authenticates you against the **panel host** — managed hosts are separate machines and may not have your account. The panel checks whether your login name exists on each connected host (via `getent passwd`, which queries NSS and works with local users, SSSD, FreeIPA, and LDAP equally). If your account is absent on a host:
+
+- A warning banner appears at the top of the UI when that host is active
+- A **no account** badge appears on the host card in Management → Enrolled
+- Read-only features (Dashboard, Storage, Networking, Logs) still work — the agent collects data independently of your account
+- Operations requiring `sudo` (service restart, package install, firewall changes, etc.) will fail with a permission error since PAM cannot authenticate a non-existent user
+- The Terminal is non-functional on that host (PTY session requires a valid system account)
+
 **Session limits:**
 
 | Setting | Default | Config key |
@@ -488,7 +498,7 @@ A full PTY (pseudo-terminal) running in the browser, powered by xterm.js. Visibl
 - **Resize**: the terminal resizes automatically with the browser window (xterm.js FitAddon)
 - The connection is a WebSocket channel multiplexed through the gateway — no direct SSH to the managed host
 
-> **Note:** The Terminal works per-host. Use the host selector (top-left) to open a terminal on a different managed host.
+> **Note:** The Terminal works per-host. Use the host selector (top-left) to open a terminal on a different managed host. The terminal requires a valid system account on the managed host — if your account does not exist there, the PTY session will be rejected. See [§6 Authentication](#6-authentication--access-control) for details on cross-host account presence.
 
 ---
 
@@ -1001,6 +1011,16 @@ Shows all hosts that have successfully completed the TOFU handshake and are regi
 | Added | Date the host was first enrolled |
 | Uptime | Agent process uptime (online hosts only) |
 | Roles | Role labels used to group hosts in the host list |
+
+Each card may display additional badges:
+
+| Badge | Meaning |
+|-------|---------|
+| **local** (green) | This is the panel host itself |
+| **active** (blue) | Currently selected host |
+| **no account** (yellow) | Your login name does not exist on this host — sudo operations and terminal will fail |
+
+The distro name (e.g. DEBIAN, FEDORA, UBUNTU) is shown in the top-right corner of each card based on the `ID=` field from `/etc/os-release`. It is recorded once at enrollment and does not change automatically.
 
 - The **panel host itself** is labeled **local** (green badge) and automatically receives the **Panel / Local** role
 - **Filter** by hostname
