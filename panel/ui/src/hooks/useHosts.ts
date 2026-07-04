@@ -66,7 +66,6 @@ export function useHosts(_connected: boolean): UseHostsResult {
       setHosts(list);
 
       // Check user existence for newly-online hosts (once per host, cached).
-      const sessionId = sessionStorage.getItem('session_id') ?? '';
       const toCheck = list.filter(h => h.online && !checkedHostIds.current.has(h.id));
       if (toCheck.length > 0) {
         toCheck.forEach(h => checkedHostIds.current.add(h.id));
