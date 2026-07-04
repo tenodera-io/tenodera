@@ -1,8 +1,11 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::{mpsc, RwLock};
 
+use rand_core::RngCore as _;
+use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::agent_auth::AuthenticatedAgent;
@@ -66,6 +69,70 @@ impl AgentRegistry {
 
     pub async fn online_host_ids(&self) -> Vec<String> {
         self.inner.read().await.keys().cloned().collect()
+    }
+
+    /// Send a one-shot request to an agent and wait for the response.
+    ///
+    /// Opens a temporary channel using `payload` as the handler type, sends
+    /// `request_data`, and returns the agent's first `Data` response.
+    /// Returns `None` if the host is offline, the agent doesn't respond within
+    /// 5 seconds, or the protocol exchange fails.
+    pub async fn execute_rpc(
+        &self,
+        host_id: &str,
+        payload: &str,
+        request_data: serde_json::Value,
+    ) -> Option<serde_json::Value> {
+        let conn = self.inner.read().await.get(host_id)?.clone();
+
+        // 8-char lowercase hex prefix — unique per call, fits SESSION_PREFIX_LEN.
+        let mut raw = [0u8; 4];
+        rand_core::OsRng.fill_bytes(&mut raw);
+        let prefix = format!("{:08x}", u32::from_be_bytes(raw));
+
+        let prefixed = format!("{prefix}-rpc");
+        let deadline = Duration::from_secs(5);
+
+        let (sub_tx, mut sub_rx) = mpsc::channel::<Message>(4);
+        conn.subscribers.write().await.insert(prefix.clone(), sub_tx);
+
+        // Open channel on the agent
+        let _ = conn.to_agent.send(Message::Open {
+            channel: prefixed.clone().into(),
+            options: ChannelOpenOptions {
+                payload: payload.to_string(),
+                superuser: None,
+                extra: Default::default(),
+            },
+        }).await;
+
+        // Wait for Ready
+        let ready = tokio::time::timeout(deadline, sub_rx.recv()).await.ok()??;
+        if !matches!(ready, Message::Ready { .. }) {
+            conn.subscribers.write().await.remove(&prefix);
+            return None;
+        }
+
+        // Send request data
+        let _ = conn.to_agent.send(Message::Data {
+            channel: prefixed.clone().into(),
+            data: request_data,
+        }).await;
+
+        // Wait for response
+        let response = tokio::time::timeout(deadline, sub_rx.recv()).await.ok()??;
+
+        // Cleanup
+        conn.subscribers.write().await.remove(&prefix);
+        let _ = conn.to_agent.send(Message::Close {
+            channel: prefixed.into(),
+            problem: None,
+        }).await;
+
+        match response {
+            Message::Data { data, .. } => Some(data),
+            _ => None,
+        }
     }
 
     /// Subscribe a user WS session to an agent connection.

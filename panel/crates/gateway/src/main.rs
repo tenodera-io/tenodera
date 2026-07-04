@@ -158,6 +158,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/agent", get(agent_ws::agent_ws_upgrade))
         .route("/api/hosts", axum::routing::get(hosts_list))
         .route("/api/hosts/{id}", axum::routing::delete(hosts_remove).patch(hosts_patch))
+        .route("/api/hosts/{id}/user-check", axum::routing::get(host_user_check))
         .route("/api/agent/tokens", axum::routing::get(token_list).post(token_create))
         .route("/api/agent/tokens/{id}", axum::routing::delete(token_revoke))
         .route("/api/agent/pending", axum::routing::get(pending_list))
@@ -500,6 +501,47 @@ fn extract_bearer_token(headers: &HeaderMap) -> Option<String> {
 }
 
 // ── Hosts REST API ──────────────────────────────────────────────────────────
+
+async fn host_user_check(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let bearer = match extract_bearer_token(&headers) {
+        Some(t) => t,
+        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::Value::Null)).into_response(),
+    };
+    let session = match state.sessions.get(&bearer).await {
+        Some(s) => s,
+        None => return (StatusCode::UNAUTHORIZED, Json(serde_json::Value::Null)).into_response(),
+    };
+
+    let username = session.user.clone();
+
+    if !state.agent_registry.is_online(&id).await {
+        return Json(serde_json::json!({
+            "username": username,
+            "exists": serde_json::Value::Null,
+            "error": "host_offline",
+        })).into_response();
+    }
+
+    match state.agent_registry.execute_rpc(
+        &id,
+        "users.manage",
+        serde_json::json!({ "action": "check_exists", "username": username }),
+    ).await {
+        Some(data) => {
+            let exists = data.get("exists").and_then(|v| v.as_bool()).unwrap_or(false);
+            Json(serde_json::json!({ "username": username, "exists": exists })).into_response()
+        }
+        None => (StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({
+            "username": username,
+            "exists": serde_json::Value::Null,
+            "error": "timeout",
+        }))).into_response(),
+    }
+}
 
 #[derive(Serialize)]
 struct HostListEntry {

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useContext, useRef } from 'react';
 import { request as rawRequest } from '../api/transport.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { useToast } from '../contexts/ToastContext.tsx';
-import type { HostEntry } from '../hooks/useHosts.ts';
+import type { HostEntry, UserExistsMap } from '../hooks/useHosts.ts';
 import { PendingTab, TokensTab } from './Hosts.tsx';
 import React from 'react';
 
@@ -11,6 +11,7 @@ interface ManagementProps {
   activeHost: HostEntry | null;
   onSwitchHost: (host: HostEntry) => void;
   onReloadHosts: () => void;
+  userExistsMap: UserExistsMap;
 }
 
 interface HostConfig {
@@ -28,7 +29,7 @@ interface HostWithConfig {
 
 type ManagementTab = 'hosts' | 'pending' | 'tokens';
 
-export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: ManagementProps) {
+export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts, userExistsMap }: ManagementProps) {
   const su = useContext(SuperuserContext);
   const [tab, setTab] = useState<ManagementTab>('hosts');
   const [pendingCount, setPendingCount] = useState(0);
@@ -161,6 +162,7 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts }: M
             item={item}
             isActive={activeHost?.id === item.host.id}
             isSelected={selectedId === item.host.id}
+            userExists={userExistsMap[item.host.id]}
             onSelect={() => setSelectedId(id => id === item.host.id ? null : item.host.id)}
             onSwitch={() => onSwitchHost(item.host)}
             onRemove={() => handleRemove(item.host)}
@@ -258,10 +260,11 @@ function formatDate(iso: string): string {
 
 type CardAction = 'remove' | 'restart' | 'role' | null;
 
-function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, onRoleChange, onRestart }: {
+function HostCard({ item, isActive, isSelected, userExists, onSelect, onSwitch, onRemove, onRoleChange, onRestart }: {
   item: HostWithConfig;
   isActive: boolean;
   isSelected: boolean;
+  userExists: boolean | null | undefined;
   onSelect: () => void;
   onSwitch: () => void;
   onRemove: () => Promise<void>;
@@ -355,6 +358,9 @@ function HostCard({ item, isActive, isSelected, onSelect, onSwitch, onRemove, on
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</span>
             {host.is_local && <span style={S.badgeGreen}>local</span>}
             {isActive && <span style={S.badgeBlue}>active</span>}
+            {userExists === false && online && (
+              <span style={S.badgeWarn} title="Your account does not exist on this host">no account</span>
+            )}
           </div>
           {config?.hostname && config.hostname !== host.name && (
             <div style={{ fontSize: '0.7rem', color: 'var(--text-2)', marginTop: 1 }}>{host.name}</div>
@@ -551,6 +557,7 @@ const S: Record<string, React.CSSProperties> = {
 
   badgeGreen:    { fontSize: '0.66rem', padding: '0.1rem 0.35rem', borderRadius: 3, background: 'color-mix(in srgb, var(--c-green) 13%, transparent)', color: 'var(--c-green)', border: '1px solid color-mix(in srgb, var(--c-green) 27%, transparent)', whiteSpace: 'nowrap' },
   badgeBlue:     { fontSize: '0.66rem', padding: '0.1rem 0.35rem', borderRadius: 3, background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)', color: 'var(--c-blue)', border: '1px solid color-mix(in srgb, var(--c-blue) 27%, transparent)', whiteSpace: 'nowrap' },
+  badgeWarn:     { fontSize: '0.66rem', padding: '0.1rem 0.35rem', borderRadius: 3, background: 'color-mix(in srgb, var(--c-yellow) 13%, transparent)', color: 'var(--c-yellow)', border: '1px solid color-mix(in srgb, var(--c-yellow) 27%, transparent)', whiteSpace: 'nowrap' },
 
   infoGrid:      { display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: '0.65rem', rowGap: '0.18rem', marginBottom: '0.65rem' },
   infoLabel:     { fontSize: '0.72rem', color: 'var(--text-2)', whiteSpace: 'nowrap', alignSelf: 'center' },

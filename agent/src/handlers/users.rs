@@ -31,7 +31,7 @@ impl ChannelHandler for UsersManageHandler {
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
-        if !matches!(action, "list" | "list_groups" | "list_shells") {
+        if !matches!(action, "list" | "list_groups" | "list_shells" | "check_exists") {
             if let Some(err) = crate::util::require_admin(data) {
                 return vec![Message::Data { channel: channel.into(), data: err }];
             }
@@ -42,6 +42,10 @@ impl ChannelHandler for UsersManageHandler {
             "list" => list_users().await,
             "list_groups" => list_groups().await,
             "list_shells" => list_shells().await,
+            "check_exists" => {
+                let username = data.get("username").and_then(|u| u.as_str()).unwrap_or("");
+                check_user_exists(username).await
+            }
 
             // ── User CRUD (requires sudo) ──
             "create" => {
@@ -716,6 +720,17 @@ fn is_valid_path(path: &str) -> bool {
         && !path.contains("..")
         && !path.contains('\0')
         && path.len() <= 4096
+}
+
+/// Check whether a user account exists via NSS (works with local, SSSD, FreeIPA, LDAP).
+async fn check_user_exists(username: &str) -> Value {
+    // Basic sanity check — colon and newline would corrupt /etc/passwd fields.
+    if username.is_empty() || username.contains(':') || username.contains('\n') || username.len() > 256 {
+        return json!({ "exists": false });
+    }
+    let out = run_cmd(&["getent", "passwd", username]).await;
+    let exists = !out.is_empty() && !out.starts_with("error:");
+    json!({ "exists": exists })
 }
 
 /// Validate GECOS (full name / comment) field.

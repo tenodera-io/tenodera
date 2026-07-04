@@ -47,7 +47,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
   const [hostManageOpen, setHostManageOpen] = useState(false);
   const navigate = useNavigate();
 
-  const { hosts, activeHost, hostStatuses, remoteStatus, loadHosts, switchHost } = useHosts(connected);
+  const { hosts, activeHost, hostStatuses, remoteStatus, userExistsMap, loadHosts, switchHost } = useHosts(connected);
   const su = useSuperuser(activeHost?.id);
 
   const fetchLocalInfo = useCallback(() => {
@@ -109,6 +109,24 @@ export function Shell({ user, role, onLogout }: ShellProps) {
           onLogout={handleLogout}
         />
 
+        {activeHost && userExistsMap[activeHost.id] === false && (
+          <div style={{
+            padding: '0.4rem 1rem',
+            background: 'color-mix(in srgb, var(--c-yellow) 12%, var(--bg-surface))',
+            borderBottom: '1px solid color-mix(in srgb, var(--c-yellow) 30%, transparent)',
+            color: 'color-mix(in srgb, var(--c-yellow) 80%, var(--text-1))',
+            fontSize: '0.78rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ flexShrink: 0 }}>
+              <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 11.5a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5zm.75-3.5a.75.75 0 0 1-1.5 0V5a.75.75 0 0 1 1.5 0v4z"/>
+            </svg>
+            Account <strong style={{ fontWeight: 600 }}>{user}</strong> does not exist on this host.
+          </div>
+        )}
+
         {su.suPrompt && (
           <SuperuserModal
             suPwInput={su.suPwInput}
@@ -157,7 +175,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/cron" element={<Cron />} />
                       <Route path="/dns" element={<DNS />} />
                       <Route path="/certificates" element={<Certificates />} />
-                      <Route path="/management" element={<Management hosts={hosts} activeHost={activeHost} onSwitchHost={switchHost} onReloadHosts={loadHosts} />} />
+                      <Route path="/management" element={<Management hosts={hosts} activeHost={activeHost} onSwitchHost={switchHost} onReloadHosts={loadHosts} userExistsMap={userExistsMap} />} />
                       <Route path="/api-docs" element={su.suActive ? <ApiDocs /> : <Navigate to="/" />} />
                       <Route path="/files" element={<Files user={user} />} />
                       <Route path="/kdump" element={<Kdump />} />
