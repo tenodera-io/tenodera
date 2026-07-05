@@ -16,6 +16,7 @@
 scripts/
 
 # Internal documents (not for public repo)
+freeipa.txt
 AGENTS.md
 SECURITY_AUDIT.md
 SECURITY_AUDIT_PL.md
