@@ -173,7 +173,7 @@ pub async fn verify_sudo(user: &str) -> Result<(), String> {
 
 fn verify_sudo_blocking(user: &str) -> Result<(), String> {
     use std::ffi::{CStr, CString};
-    const ADMIN_GROUPS: &[&str] = &["sudo", "wheel", "admin"];
+    const ADMIN_GROUPS: &[&str] = &["sudo", "wheel", "admin", "admins"];
 
     let cname = CString::new(user).map_err(|_| "invalid username".to_string())?;
 
