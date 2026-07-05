@@ -384,7 +384,7 @@ Tenodera uses **PAM authentication** — the same credentials as the system. No 
 
 | Role | Who | Permissions |
 |------|-----|-------------|
-| **Admin** | Users in `sudo`, `wheel`, or `admin` group | Full read/write access to all features |
+| **Admin** | Users in `sudo`, `wheel`, `admin`, or `admins` group (`admins` = FreeIPA default) | Full read/write access to all features |
 | **Read-only** | All other authenticated PAM users | Monitor only — cannot execute write operations |
 
 Role is determined at login by running `sudo -l -U <user>` on the panel host. LDAP/SSSD/FreeIPA users work transparently if PAM is configured for them.
@@ -444,7 +444,7 @@ Agents reconnect automatically with exponential backoff if the connection to the
 
 ## 8. Feature Reference
 
-This section describes every page and sub-tab available in the Tenodera UI. Write operations (marked **admin only**) require the user to be a member of the `sudo`, `wheel`, or `admin` group on the panel host.
+This section describes every page and sub-tab available in the Tenodera UI. Write operations (marked **admin only**) require the user to be a member of the `sudo`, `wheel`, `admin`, or `admins` group on the panel host.
 
 Many write operations also require entering the **superuser password** — this is the password of the currently logged-in user (used for `sudo -S` on the managed host). A padlock button in the top bar opens the superuser password prompt; the password is stored encrypted in browser `sessionStorage` for the duration of the session.
 
