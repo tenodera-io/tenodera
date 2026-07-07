@@ -89,6 +89,16 @@ curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-ag
   | sudo bash -s -- --uninstall
 ```
 
+## Why not Docker?
+
+Tenodera is intentionally **not distributed as a Docker image**. Running it inside a container breaks three core functions:
+
+- **PAM authentication** — the gateway authenticates users through the host's PAM stack (`/etc/pam.d/tenodera`). Inside a container, PAM sees the container's empty user database, not the host's. Mounting `/etc/passwd`, `/etc/shadow`, and PAM modules into the container is fragile and still won't work correctly with SSSD/FreeIPA/LDAP without also mounting their sockets.
+- **Setuid helper** — PAM authentication and PTY user-switching run through a dedicated `tenodera-pam-helper` binary that must be setuid root. Standard Docker security (`no-new-privileges`, user namespace remapping) prevents setuid binaries from working. The only workaround is `--privileged`, which removes container isolation entirely.
+- **Host system access** — Tenodera's purpose is to manage the OS it runs on (systemd units, packages, users, network, storage). A container doing this would need to mount `/sys`, `/proc`, `/etc`, `/var`, the systemd D-Bus socket, and more — making `--privileged` unavoidable and containerization pointless.
+
+For production deployments, install directly on the host using the installer above and **enable TLS** (`TENODERA_TLS_CERT` / `TENODERA_TLS_KEY` in `/etc/tenodera/tenodera.cnf`). See [DOCS.md](DOCS.md) for the full TLS setup guide.
+
 ## Screenshots
 
 <details>
