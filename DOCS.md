@@ -38,8 +38,9 @@
 10. [Health & Monitoring](#10-health--monitoring)
 11. [Architecture](#11-architecture)
 12. [Security](#12-security)
-13. [Uninstall](#13-uninstall)
-14. [Troubleshooting](#14-troubleshooting)
+13. [Docker / Containerization](#13-docker--containerization)
+14. [Uninstall](#14-uninstall)
+15. [Troubleshooting](#15-troubleshooting)
 
 ---
 
@@ -1261,7 +1262,103 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 
 ---
 
-## 13. Uninstall
+## 13. Docker / Containerization
+
+Tenodera **cannot run correctly inside a standard Docker container**. This is not a missing feature — it is a fundamental architectural constraint. Three independent mechanisms each break when containerized.
+
+### Why containerization fails
+
+#### 1. PAM authentication requires the host user database
+
+Tenodera authenticates every login through the Linux PAM stack (`/etc/pam.d/tenodera`). PAM resolves users against NSS — `/etc/passwd`, `/etc/shadow`, and optionally SSSD, FreeIPA, or LDAP via their respective sockets and shared libraries.
+
+Inside a Docker container, PAM sees the **container's own minimal user database**, not the host system's. Even if you mount `/etc/passwd` and `/etc/shadow` from the host, the following issues remain:
+
+- **SSSD / FreeIPA / LDAP** — these authenticate via Unix sockets (`/var/run/sssd/public/sss_cli`, `/var/run/samba/winbindd_privileged`) and shared libraries (`pam_sss.so`, `pam_winbind.so`). Mounting only the user files is not enough; you would also need to mount the live sockets, bind-mount all matching PAM modules, and keep library versions in sync between host and container. This is fragile and effectively unmaintainable.
+- **PAM modules themselves** — distributions ship PAM modules (`pam_unix.so`, `pam_sss.so`, `pam_ldap.so`) as shared libraries linked against specific glibc versions. A container built on a different base image will have the wrong library versions, causing `pam_authenticate()` to segfault or silently fail.
+- **`/etc/pam.d/tenodera`** — the PAM service config is installed on the host by the Tenodera installer. Inside the container, this file does not exist unless explicitly mounted.
+
+#### 2. Setuid root subprocess conflicts with Docker's security model
+
+PAM authentication and PTY user-switching both run through `tenodera-pam-helper`, a dedicated binary that must be **setuid root**. The gateway spawns it as the unprivileged `tenodera-gw` user; the setuid bit allows the helper to escalate to root only for the duration of the PAM call.
+
+Docker prevents this in two ways:
+
+- **User namespace remapping** — when Docker remaps UIDs (the default in rootless Docker and common in hardened deployments), the binary's setuid bit is ignored because the file is owned by a remapped UID, not real root.
+- **`no-new-privileges`** — Docker's default seccomp profile and most Kubernetes pod security policies set the `no-new-privileges` flag via `PR_SET_NO_NEW_PRIVS`. This flag is inherited by all child processes and explicitly prevents setuid binaries from gaining additional privileges.
+
+The systemd service file documents why the same restrictions are intentionally excluded from the systemd unit:
+
+```ini
+# NoNewPrivileges is intentionally NOT set: child processes (tenodera-pam-helper)
+# are setuid root and must be able to gain root for PAM auth and PTY user switching.
+```
+
+#### 3. The panel's purpose requires unrestricted host access
+
+Tenodera manages the OS it runs on. Providing its full feature set requires access to:
+
+| Feature | Required host access |
+|---|---|
+| Services | systemd D-Bus socket (`/run/systemd/private`) |
+| Packages | Package manager lock files, `/var/lib/dpkg`, `/var/lib/rpm` |
+| Storage | Block device nodes (`/dev/sd*`, `/dev/nvme*`), `/proc/mounts` |
+| Networking | `ip netns`, `/proc/net/*`, nftables/iptables netlink sockets |
+| Containers | Docker or Podman socket (`/var/run/docker.sock`, `/run/podman/podman.sock`) |
+| Files | Root filesystem (`/etc`, `/var`, `/home`, arbitrary paths) |
+| Logs | `/var/log/*`, `/run/log/journal/*` |
+| Terminal | PTY devices, `/dev/pts/*`, process namespace |
+| Users | `/etc/passwd`, `/etc/shadow`, `/etc/group` (write access) |
+
+Granting all of this to a container requires `--privileged`. A `--privileged` container has the same kernel access as a root process on the host — container isolation is entirely removed. There is no security benefit over running the binary directly.
+
+### The `--privileged` workaround is not a solution
+
+Some tools can recover partial functionality with `--privileged`. Tenodera cannot, because even with `--privileged`:
+
+- PAM still sees the wrong user database unless `/etc` is fully bind-mounted (which means the container and host share `/etc`, breaking container isolation further)
+- SSSD / FreeIPA sockets are not available inside the container unless also bind-mounted
+- Library version mismatches between the container base image and host PAM modules remain
+
+The result is a `--privileged` container that is harder to debug, slower to start, and less reliable than the binary running natively — with no isolation benefit.
+
+### What Docker can be used for: build environments
+
+Docker is appropriate as a **build environment** for producing Tenodera binaries:
+
+```dockerfile
+FROM rust:1.82-bookworm
+RUN apt-get update && apt-get install -y \
+    libpam0g-dev nodejs npm
+WORKDIR /build
+COPY panel/ ./panel/
+COPY protocol/ ./protocol/
+RUN cd panel && cargo build --release
+# Copy binaries out: docker cp <container>:/build/panel/target/release/tenodera-gateway ./
+```
+
+This is useful for:
+- **CI/CD pipelines** — reproducible builds without installing Rust on CI runners
+- **Cross-compilation** — building `aarch64` binaries on `x86_64` hosts
+- **Release artifacts** — producing static binaries for distribution
+
+The resulting binaries are then deployed and run **directly on the host**, not inside Docker.
+
+### Recommended production setup
+
+```
+Host OS (bare metal or VM)
+├── tenodera-gateway    (systemd service, drops to tenodera-gw after bind)
+├── tenodera-pam-helper (setuid root, spawned by gateway for auth)
+├── tenodera-agent      (systemd service, connects outbound to gateway)
+└── nginx / Caddy       (optional reverse proxy for TLS termination)
+```
+
+For TLS, either configure the gateway directly (see [§4.2 TLS setup](#42-tls-setup)) or place nginx or Caddy in front of it (see [§4.3 Reverse proxy](#43-reverse-proxy-nginx--caddy)).
+
+---
+
+## 14. Uninstall
 
 ### Panel host (removes everything)
 
@@ -1290,7 +1387,7 @@ cd agent && sudo make uninstall
 
 ---
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 ### Panel not starting
 
