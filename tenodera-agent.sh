@@ -131,7 +131,7 @@ else
     wget -qO- "$TARBALL_URL" | tar xz -C "$WORK_DIR"
   fi
 
-  EXTRACTED=$(ls -d "$WORK_DIR"/Tenodera-* 2>/dev/null | head -1)
+  EXTRACTED=$(ls -d "$WORK_DIR"/*enodera-* 2>/dev/null | head -1)
   [ -z "$EXTRACTED" ] && fail "Failed to extract source archive"
 
   AGENT_DIR="$EXTRACTED/agent"
