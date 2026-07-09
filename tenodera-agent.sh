@@ -112,8 +112,8 @@ WantedBy=multi-user.target
 SVCEOF
   fi
 else
-  REPO="tenodera-io/tenodera"
-  BRANCH="main"
+  REPO="${TENODERA_REPO:-tenodera-io/tenodera}"
+  BRANCH="${TENODERA_BRANCH:-main}"
   WORK_DIR="/tmp/tenodera-agent-install"
 
   command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
@@ -131,7 +131,7 @@ else
     wget -qO- "$TARBALL_URL" | tar xz -C "$WORK_DIR"
   fi
 
-  EXTRACTED=$(ls -d "$WORK_DIR"/*enodera-* 2>/dev/null | head -1)
+  EXTRACTED=$(ls -d "$WORK_DIR"/*enodera-* 2>/dev/null | head -1 || true)
   [ -z "$EXTRACTED" ] && fail "Failed to extract source archive"
 
   AGENT_DIR="$EXTRACTED/agent"

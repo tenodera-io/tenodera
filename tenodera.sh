@@ -82,8 +82,8 @@ fi
 
 # ── Install ───────────────────────────────────────────────
 
-REPO="tenodera-io/tenodera"
-BRANCH="main"
+REPO="${TENODERA_REPO:-tenodera-io/tenodera}"
+BRANCH="${TENODERA_BRANCH:-main}"
 WORK_DIR="/tmp/tenodera-install"
 
 command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
@@ -117,7 +117,7 @@ elif command -v wget >/dev/null 2>&1; then
 fi
 
 # GitHub tarballs extract as REPO-BRANCH/
-EXTRACTED=$(ls -d "$WORK_DIR"/*enodera-* 2>/dev/null | head -1)
+EXTRACTED=$(ls -d "$WORK_DIR"/*enodera-* 2>/dev/null | head -1 || true)
 if [ -z "$EXTRACTED" ]; then
   fail "Failed to extract source archive"
 fi
