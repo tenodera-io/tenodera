@@ -46,7 +46,7 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 Run on the machine that will host the panel:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh | sudo bash
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
 ```
 
 Installs build dependencies, compiles from source (~3–4 min), installs systemd services, and starts the panel on port 9090. The local agent is installed and enrolled automatically.
@@ -58,7 +58,7 @@ Open `http://<host>:9090` and log in with any PAM system user that has `sudo` pr
 Run on each host you want to manage:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
@@ -69,7 +69,7 @@ The agent connects outbound — no inbound ports needed. On first connect it wai
 To skip the approval step, generate a bootstrap token first (**Management → Tokens**), then pass it to the installer:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090 --token <token>
 ```
 
@@ -81,11 +81,11 @@ The host enrolls immediately without manual approval.
 
 ```bash
 # Panel host (removes gateway, agent, UI, config, services):
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh \
   | sudo bash -s -- --uninstall
 
 # Managed hosts (agent only):
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --uninstall
 ```
 

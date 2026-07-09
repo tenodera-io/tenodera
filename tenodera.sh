@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tenodera Panel — installer (gateway + UI + local agent)
 # Usage:
-#   Install:   curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh | sudo bash
+#   Install:   curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
 #   Uninstall: sudo bash tenodera.sh --uninstall
 #
 # Install:
@@ -82,7 +82,7 @@ fi
 
 # ── Install ───────────────────────────────────────────────
 
-REPO="ultherego/Tenodera"
+REPO="tenodera-io/tenodera"
 BRANCH="main"
 WORK_DIR="/tmp/tenodera-install"
 
@@ -203,7 +203,7 @@ echo "  This host's agent will appear under Hosts → Pending."
 echo "  Approve it in the panel to bring it online."
 echo ""
 echo "  To add remote hosts:"
-echo "  curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://${GW_IP}:9090"
+echo "  curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://${GW_IP}:9090"
 echo "  Then approve the host in the panel (Hosts → Pending)."
 echo ""
 echo "  For unattended installs, generate a bootstrap token in the panel (Hosts → Tokens)"

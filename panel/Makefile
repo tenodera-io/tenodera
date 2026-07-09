@@ -157,7 +157,7 @@ install: $(GATEWAY_BIN) $(PAM_HELPER_BIN) ui/dist/index.html
 	@echo ""
 	@echo "  To add a remote host:"
 	@echo "  1. Run on the remote host:"
-	@echo "     curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://$$(hostname -I | awk '{print $$1}'):9090"
+	@echo "     curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh | sudo bash -s -- --gateway http://$$(hostname -I | awk '{print $$1}'):9090"
 	@echo "  2. In the panel, go to Hosts → Pending and approve the host."
 	@echo "     Or generate a bootstrap token (Hosts → Tokens) and pass --token to skip approval."
 	@echo ""

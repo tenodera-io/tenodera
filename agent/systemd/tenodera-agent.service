@@ -1,6 +1,6 @@
 [Unit]
 Description=Tenodera Agent
-Documentation=https://github.com/ultherego/Tenodera
+Documentation=https://github.com/tenodera-io/tenodera
 After=network-online.target
 Wants=network-online.target
 

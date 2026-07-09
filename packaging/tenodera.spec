@@ -3,7 +3,7 @@ Version:        %{version}
 Release:        1%{?dist}
 Summary:        Tenodera Panel — web administration panel (gateway + UI)
 License:        MIT
-URL:            https://github.com/ultherego/Tenodera
+URL:            https://github.com/tenodera-io/tenodera
 
 BuildRequires:  rust cargo nodejs npm clang-devel pam-devel openssl-devel
 Requires(pre):  shadow-utils

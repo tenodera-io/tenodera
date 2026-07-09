@@ -94,7 +94,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 Run on the host that will serve the web interface:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh | sudo bash
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
 ```
 
 The installer:
@@ -119,7 +119,7 @@ After install, log in at `http://<host>:9090` with any PAM system user.
 Run on each host you want to manage:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
@@ -130,7 +130,7 @@ The agent connects outbound to the gateway on first start. Because the agent's k
 **Unattended installs (skip approval):** generate a bootstrap token in **Hosts → Tokens**, then pass it with `--token`:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090 --token <bootstrap-token>
 ```
 
@@ -148,7 +148,7 @@ The host appears in the panel under Hosts → Pending within seconds of the agen
 ### 3.3 Build from source
 
 ```bash
-git clone https://github.com/ultherego/Tenodera
+git clone https://github.com/tenodera-io/tenodera
 cd Tenodera
 
 # Panel (on the gateway host):
@@ -419,7 +419,7 @@ Tenodera is designed to manage multiple servers from a single panel. Each manage
 Run on the managed host:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
@@ -1363,7 +1363,7 @@ For TLS, either configure the gateway directly (see [§4.2 TLS setup](#42-tls-se
 ### Panel host (removes everything)
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh \
   | sudo bash -s -- --uninstall
 ```
 
@@ -1372,7 +1372,7 @@ Removes: gateway and agent binaries, PAM helper, UI assets, systemd services, `/
 ### Managed hosts (agent only)
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/ultherego/Tenodera/main/tenodera-agent.sh \
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --uninstall
 ```
 

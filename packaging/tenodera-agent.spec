@@ -3,7 +3,7 @@ Version:        %{version}
 Release:        1%{?dist}
 Summary:        Tenodera Agent — runs on managed hosts
 License:        MIT
-URL:            https://github.com/ultherego/Tenodera
+URL:            https://github.com/tenodera-io/tenodera
 
 BuildRequires:  rust cargo
 

@@ -95,7 +95,7 @@ if [ -x "$INSTALL_BIN" ]; then
     cat > "$SYSTEMD_SERVICE" <<'SVCEOF'
 [Unit]
 Description=Tenodera Agent
-Documentation=https://github.com/ultherego/Tenodera
+Documentation=https://github.com/tenodera-io/tenodera
 After=network-online.target
 Wants=network-online.target
 
@@ -112,7 +112,7 @@ WantedBy=multi-user.target
 SVCEOF
   fi
 else
-  REPO="ultherego/Tenodera"
+  REPO="tenodera-io/tenodera"
   BRANCH="main"
   WORK_DIR="/tmp/tenodera-agent-install"
 
