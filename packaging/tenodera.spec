@@ -32,7 +32,7 @@ cp -r %{_sourcedir}/ui-dist/. %{buildroot}%{_datadir}/tenodera/ui/
 
 %post
 # The pam-helper ships root:root (the tenodera-gw group does not exist at build
-# time). %pre has created the group by now, so fix ownership: the gateway runs
+# time). The group now exists, so fix ownership: the gateway runs
 # as tenodera-gw and must be able to execute the setuid helper (4750).
 if [ -e %{_bindir}/tenodera-pam-helper ]; then
     chgrp tenodera-gw %{_bindir}/tenodera-pam-helper
@@ -93,15 +93,16 @@ fi
 %systemd_preun tenodera.service
 
 %postun
-# Plain postun (daemon-reload); %post already restarts on upgrade, so avoid the
-# double restart that %systemd_postun_with_restart would cause.
+# Plain postun (daemon-reload); the post scriptlet already restarts on upgrade,
+# so avoid the double restart the with-restart variant would cause. (Do not name
+# rpm macros in comments here — rpm expands them even inside shell comments.)
 %systemd_postun tenodera.service
 
 %files
 %{_bindir}/tenodera-gateway
-# Packaged root:root 4750; %post re-groups it to tenodera-gw once the group
-# exists (declaring the group via %attr here would add an install-time
-# Requires on group(tenodera-gw), which %pre only creates later).
+# Packaged root:root 4750; the post scriptlet re-groups it to tenodera-gw once
+# the group exists (declaring the group as an owner here would add an
+# install-time Requires on the group, which is only created later).
 %{_bindir}/tenodera-pam-helper
 %{_unitdir}/tenodera.service
 %{_sysconfdir}/logrotate.d/tenodera
