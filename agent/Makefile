@@ -122,7 +122,10 @@ package-rpm: build
 	@mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 	@cp ../packaging/tenodera-agent.spec ~/rpmbuild/SPECS/
 	@cp target/release/tenodera-agent ~/rpmbuild/BUILD/
-	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-agent.spec
+	@mkdir -p ~/rpmbuild/BUILD/agent/systemd
+	@cp systemd/tenodera-agent.service ~/rpmbuild/BUILD/agent/systemd/
+	@# RPM Version forbids '-'; map a pre-release tag (0.1.0-rc1) to 0.1.0~rc1
+	@rpmbuild -bb --nodeps --define "version $(subst -,~,$(VERSION))" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-agent.spec
 	@find ~/rpmbuild/RPMS -name "tenodera-agent-*.rpm" -exec cp {} . \;
 	@echo "✓ RPM package built"
 

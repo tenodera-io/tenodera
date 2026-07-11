@@ -263,7 +263,8 @@ package-rpm: build
 	@cp target/release/tenodera-gateway target/release/tenodera-pam-helper ~/rpmbuild/BUILD/
 	@cp -r . ~/rpmbuild/BUILD/panel
 	@cp -r ui/dist ~/rpmbuild/BUILD/panel/ui/
-	@rpmbuild -bb --define "version $(VERSION)" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera.spec
+	@# RPM Version forbids '-'; map a pre-release tag (0.1.0-rc1) to 0.1.0~rc1
+	@rpmbuild -bb --nodeps --define "version $(subst -,~,$(VERSION))" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera.spec
 	@find ~/rpmbuild/RPMS -name "tenodera-*.rpm" -exec cp {} . \;
 	@echo "✓ RPM package built"
 

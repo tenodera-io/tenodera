@@ -21,7 +21,7 @@ exit 0
 
 %install
 install -D -m 755 %{_builddir}/tenodera-gateway %{buildroot}%{_bindir}/tenodera-gateway
-install -D -m 4750 -o root -g tenodera-gw %{_builddir}/tenodera-pam-helper %{buildroot}%{_bindir}/tenodera-pam-helper
+install -D -m 4750 %{_builddir}/tenodera-pam-helper %{buildroot}%{_bindir}/tenodera-pam-helper
 install -D -m 644 %{_builddir}/panel/systemd/tenodera.service %{buildroot}%{_unitdir}/tenodera.service
 install -D -m 644 %{_builddir}/panel/logrotate/tenodera %{buildroot}%{_sysconfdir}/logrotate.d/tenodera
 install -D -m 644 %{_builddir}/panel/pam.d/tenodera %{buildroot}%{_sysconfdir}/pam.d/tenodera
@@ -40,7 +40,7 @@ cp -r %{_builddir}/panel/ui/dist/. %{buildroot}%{_datadir}/tenodera/ui/
 
 %files
 %{_bindir}/tenodera-gateway
-%{_bindir}/tenodera-pam-helper
+%attr(4750,root,tenodera-gw) %{_bindir}/tenodera-pam-helper
 %{_unitdir}/tenodera.service
 %{_sysconfdir}/logrotate.d/tenodera
 %{_sysconfdir}/pam.d/tenodera
