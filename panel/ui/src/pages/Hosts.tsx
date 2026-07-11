@@ -39,7 +39,7 @@ interface HostsProps {
   onChange?: () => void;
 }
 
-type Tab = 'enrolled' | 'pending' | 'tokens';
+type Tab = 'enrolled' | 'pending';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -84,15 +84,15 @@ export function Hosts({ onClose, onChange }: HostsProps) {
       <div style={S.header}>
         <h2 style={S.title}>Hosts</h2>
         <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-          {(['enrolled', 'pending', 'tokens'] as Tab[]).map(t => (
+          {(['enrolled', 'pending'] as Tab[]).map(t => (
             <button
               key={t}
               style={{ ...S.tabBtn, ...(tab === t ? S.tabActive : {}) }}
               onClick={() => setTab(t)}
             >
-              {t === 'enrolled' ? 'Enrolled' : t === 'pending'
-                ? `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}`
-                : 'Tokens'}
+              {t === 'enrolled'
+                ? 'Enrolled'
+                : `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}`}
             </button>
           ))}
           <button style={S.iconBtn} onClick={onClose} title="Close">&#x2715;</button>
@@ -104,9 +104,6 @@ export function Hosts({ onClose, onChange }: HostsProps) {
       )}
       {tab === 'pending' && (
         <PendingTab onCountChange={setPendingCount} onChange={onChange} />
-      )}
-      {tab === 'tokens' && (
-        <TokensTab />
       )}
     </div>
   );
