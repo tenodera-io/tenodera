@@ -101,17 +101,20 @@ uninstall:
 
 VERSION ?= $(shell . "$$HOME/.cargo/env" 2>/dev/null || true; cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])" 2>/dev/null || echo "0.1.0")
 
+# Debian architecture of the build host (amd64 / arm64). Override for cross-builds.
+DEB_ARCH ?= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
+
 package-deb: build
-	@echo "==> Building Debian package (tenodera-agent v$(VERSION))..."
+	@echo "==> Building Debian package (tenodera-agent v$(VERSION), $(DEB_ARCH))..."
 	@command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb not found — install dpkg"; exit 1; }
 	$(eval PKGDIR := /tmp/tenodera-agent-deb-$(VERSION))
 	@rm -rf $(PKGDIR) && mkdir -p $(PKGDIR)/DEBIAN $(PKGDIR)/usr/bin $(PKGDIR)/lib/systemd/system
 	@install -m 0755 -o root -g root target/release/tenodera-agent $(PKGDIR)/usr/bin/
 	@install -m 644 systemd/tenodera-agent.service $(PKGDIR)/lib/systemd/system/
-	@printf 'Package: tenodera-agent\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera agent for managed hosts\n Installed on managed Linux servers. Connects outbound to the Tenodera\n gateway — no inbound ports or SSH keys required.\n' > $(PKGDIR)/DEBIAN/control
-	@dpkg-deb --build $(PKGDIR) tenodera-agent_$(VERSION)_amd64.deb
+	@printf 'Package: tenodera-agent\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera agent for managed hosts\n Installed on managed Linux servers. Connects outbound to the Tenodera\n gateway — no inbound ports or SSH keys required.\n' > $(PKGDIR)/DEBIAN/control
+	@dpkg-deb --build $(PKGDIR) tenodera-agent_$(VERSION)_$(DEB_ARCH).deb
 	@rm -rf $(PKGDIR)
-	@echo "✓ Package: tenodera-agent_$(VERSION)_amd64.deb"
+	@echo "✓ Package: tenodera-agent_$(VERSION)_$(DEB_ARCH).deb"
 
 package-rpm: build
 	@echo "==> Building RPM package (tenodera-agent v$(VERSION))..."

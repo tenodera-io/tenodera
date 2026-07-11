@@ -15,6 +15,36 @@ Include a description, steps to reproduce, and potential impact. Fixes are provi
 
 ---
 
+## Verifying releases
+
+Release artifacts (`.deb` / `.rpm`, amd64 and arm64) are checksummed in a
+`SHA256SUMS` file, and that file is signed with
+[minisign](https://jedisct1.github.io/minisign/). Verifying the signature proves
+the packages came from this project's release pipeline and were not tampered with
+in transit.
+
+Public key:
+
+```
+untrusted comment: minisign public key 691ADB50B83EB5A6
+RWSmtT64UNsaaa2uow7VxKq5kApYJmEmvcqO9SgeXnCAcYl7FI74eDql
+```
+
+Verify a downloaded release:
+
+```bash
+# 1. verify the signature on the checksum file
+minisign -Vm SHA256SUMS -P 'RWSmtT64UNsaaa2uow7VxKq5kApYJmEmvcqO9SgeXnCAcYl7FI74eDql'
+
+# 2. verify the packages against the (now-trusted) checksums
+sha256sum -c SHA256SUMS
+```
+
+> The signing key is Ed25519. The private key never leaves CI (stored as a
+> GitHub Actions secret); only the public key above is needed to verify.
+
+---
+
 ## Built-in Security Features
 
 ### Authentication

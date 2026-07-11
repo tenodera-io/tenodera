@@ -228,8 +228,11 @@ tls-selfsigned:
 
 VERSION ?= $(shell . "$$HOME/.cargo/env" 2>/dev/null || true; cargo metadata --no-deps --format-version 1 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['packages'][0]['version'])" 2>/dev/null || echo "0.1.0")
 
+# Debian architecture of the build host (amd64 / arm64). Override for cross-builds.
+DEB_ARCH ?= $(shell dpkg --print-architecture 2>/dev/null || echo amd64)
+
 package-deb: build
-	@echo "==> Building Debian package (tenodera v$(VERSION))..."
+	@echo "==> Building Debian package (tenodera v$(VERSION), $(DEB_ARCH))..."
 	@command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb not found — install dpkg"; exit 1; }
 	$(eval PKGDIR := /tmp/tenodera-deb-$(VERSION))
 	@rm -rf $(PKGDIR) && mkdir -p \
@@ -245,12 +248,12 @@ package-deb: build
 	@install -m 644 systemd/tenodera.service $(PKGDIR)/lib/systemd/system/
 	@install -m 644 logrotate/tenodera $(PKGDIR)/etc/logrotate.d/tenodera
 	@install -m 644 pam.d/tenodera $(PKGDIR)/etc/pam.d/tenodera
-	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
+	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6, libpam0g\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
 	@printf '#!/bin/sh\ngetent group tenodera-gw >/dev/null || groupadd -r tenodera-gw\ngetent passwd tenodera-gw >/dev/null || \\\n    useradd -r -s /sbin/nologin -M -d /nonexistent -g tenodera-gw \\\n    -c "Tenodera Gateway" tenodera-gw\nexit 0\n' > $(PKGDIR)/DEBIAN/preinst
 	@chmod 755 $(PKGDIR)/DEBIAN/preinst
-	@dpkg-deb --build $(PKGDIR) tenodera_$(VERSION)_amd64.deb
+	@dpkg-deb --build $(PKGDIR) tenodera_$(VERSION)_$(DEB_ARCH).deb
 	@rm -rf $(PKGDIR)
-	@echo "✓ Package: tenodera_$(VERSION)_amd64.deb"
+	@echo "✓ Package: tenodera_$(VERSION)_$(DEB_ARCH).deb"
 
 package-rpm: build
 	@echo "==> Building RPM package (tenodera v$(VERSION))..."

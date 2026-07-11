@@ -9,60 +9,172 @@ permissions:
   contents: write
 
 jobs:
-  build-packages:
-    name: Build packages
-    runs-on: ubuntu-24.04
-
+  # ── .deb — built in a Debian 12 (bookworm) container ──────────────────────────
+  # glibc is forward-compatible: a binary built against bookworm's glibc (2.36)
+  # runs on Debian 12+ and Ubuntu 24.04+ (all newer glibc). Building on the
+  # oldest supported target covers every newer one with a single artifact.
+  build-deb:
+    name: Build .deb (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    container: debian:bookworm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
     steps:
+      - name: Install build dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            build-essential pkg-config clang libclang-dev \
+            libpam0g-dev dpkg-dev \
+            curl ca-certificates git python3 xz-utils
+
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: |
-            panel -> target
-            agent -> target
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: panel/ui/package-lock.json
 
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential pkg-config \
-            libssl-dev libpam0g-dev libclang-dev \
-            dpkg-dev
-
-      - name: Get version from tag
+      - name: Version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Build agent
+      - name: Package agent (.deb)
         working-directory: agent
-        run: cargo build --release
+        run: make package-deb VERSION=${{ steps.version.outputs.version }}
 
-      - name: Build gateway + UI
+      - name: Package gateway (.deb)
         working-directory: panel
+        run: make package-deb VERSION=${{ steps.version.outputs.version }}
+
+      - name: Collect artifacts
         run: |
-          cargo build --release
-          cd ui && npm ci && npm run build
+          mkdir -p dist
+          mv agent/*.deb panel/*.deb dist/
+          ls -l dist
 
-      - name: Package agent (deb)
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*.deb
+          if-no-files-found: error
+
+  # ── .rpm — built in a Fedora container (native rpmbuild + PAM sonames) ─────────
+  build-rpm:
+    name: Build .rpm (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    container: fedora:43
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: x86_64,  runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf -y install \
+            gcc gcc-c++ make pkgconf-pkg-config clang clang-devel \
+            pam-devel rpm-build \
+            curl ca-certificates git python3 xz findutils
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Package agent (.rpm)
         working-directory: agent
-        run: make package-deb VERSION=${{ steps.version.outputs.version }}
+        run: make package-rpm VERSION=${{ steps.version.outputs.version }}
 
-      - name: Package gateway (deb)
+      - name: Package gateway (.rpm)
         working-directory: panel
-        run: make package-deb VERSION=${{ steps.version.outputs.version }}
+        run: make package-rpm VERSION=${{ steps.version.outputs.version }}
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist
+          mv agent/*.rpm panel/*.rpm dist/
+          ls -l dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.arch }}
+          path: dist/*.rpm
+          if-no-files-found: error
+
+  # ── Checksums, signature, and the GitHub Release ──────────────────────────────
+  release:
+    name: Sign and publish
+    needs: [build-deb, build-rpm]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect packages
+        run: |
+          mkdir -p dist
+          find artifacts -type f \( -name '*.deb' -o -name '*.rpm' \) -exec cp -v {} dist/ \;
+          echo "── packages ──"
+          ls -l dist
+
+      - name: Generate checksums
+        working-directory: dist
+        run: sha256sum *.deb *.rpm > SHA256SUMS
+
+      - name: Install minisign
+        run: sudo apt-get update && sudo apt-get install -y minisign
+
+      - name: Sign checksums
+        working-directory: dist
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+          MINISIGN_PASSWORD: ${{ secrets.MINISIGN_PASSWORD }}
+        run: |
+          if [ -z "$MINISIGN_SECRET_KEY" ]; then
+            echo "::error::MINISIGN_SECRET_KEY secret is not set — cannot sign the release."
+            echo "::error::Generate a key with 'minisign -G', add the secret key as the"
+            echo "::error::MINISIGN_SECRET_KEY repository secret, and put the public key in SECURITY.md."
+            exit 1
+          fi
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
+          printf '%s\n' "$MINISIGN_PASSWORD" | \
+            minisign -S -s minisign.key -m SHA256SUMS \
+              -t "Tenodera ${GITHUB_REF_NAME} — signed by CI"
+          rm -f minisign.key
+          echo "── signed ──"
+          ls -l SHA256SUMS SHA256SUMS.minisig
+
+      - name: Version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -72,8 +184,10 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: true
           files: |
-            agent/tenodera-agent_${{ steps.version.outputs.version }}_amd64.deb
-            panel/tenodera_${{ steps.version.outputs.version }}_amd64.deb
+            dist/*.deb
+            dist/*.rpm
+            dist/SHA256SUMS
+            dist/SHA256SUMS.minisig
           body: |
             ## Installation
 
@@ -87,13 +201,30 @@ jobs:
             curl -sSfL https://raw.githubusercontent.com/${{ github.repository }}/main/tenodera-agent.sh | sudo bash -s -- --gateway http://<panel-host>:9090
             ```
 
-            Or install the .deb packages directly:
-            ```bash
-            # Panel host
-            sudo dpkg -i tenodera_${{ steps.version.outputs.version }}_amd64.deb
+            ### Or install a package directly (amd64 / arm64)
 
-            # Managed hosts
-            sudo dpkg -i tenodera-agent_${{ steps.version.outputs.version }}_amd64.deb
+            **Debian 12+ / Ubuntu 24.04+** — `.deb`:
+            ```bash
+            sudo dpkg -i tenodera_${{ steps.version.outputs.version }}_amd64.deb        # panel host
+            sudo dpkg -i tenodera-agent_${{ steps.version.outputs.version }}_amd64.deb  # managed host
             ```
 
-            See [README](https://github.com/${{ github.repository }}/blob/main/README.md) for full setup instructions.
+            **Fedora / RHEL / openSUSE** — `.rpm`:
+            ```bash
+            sudo rpm -i tenodera-${{ steps.version.outputs.version }}-1.x86_64.rpm         # panel host
+            sudo rpm -i tenodera-agent-${{ steps.version.outputs.version }}-1.x86_64.rpm   # managed host
+            ```
+
+            ### Verifying the download
+
+            All artifacts are checksummed in `SHA256SUMS`, which is signed with
+            [minisign](https://jedisct1.github.io/minisign/). The public key is in
+            [SECURITY.md](https://github.com/${{ github.repository }}/blob/main/SECURITY.md).
+            ```bash
+            minisign -Vm SHA256SUMS -P <public-key-from-SECURITY.md>
+            sha256sum -c SHA256SUMS
+            ```
+
+            See [README](https://github.com/${{ github.repository }}/blob/main/README.md)
+            for full setup instructions and [THREAT_MODEL.md](https://github.com/${{ github.repository }}/blob/main/THREAT_MODEL.md)
+            for the security model.
