@@ -86,7 +86,7 @@ jobs:
         run: |
           dnf -y install \
             gcc gcc-c++ make pkgconf-pkg-config clang clang-devel \
-            pam-devel rpm-build \
+            pam-devel rpm-build systemd-rpm-macros \
             curl ca-certificates git python3 xz findutils
 
       - name: Checkout

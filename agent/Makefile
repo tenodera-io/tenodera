@@ -121,10 +121,12 @@ package-rpm: build
 	@command -v rpmbuild >/dev/null 2>&1 || { echo "ERROR: rpmbuild not found — install rpm-build"; exit 1; }
 	@mkdir -p ~/rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 	@cp ../packaging/tenodera-agent.spec ~/rpmbuild/SPECS/
-	@cp target/release/tenodera-agent ~/rpmbuild/BUILD/
-	@mkdir -p ~/rpmbuild/BUILD/agent/systemd
-	@cp systemd/tenodera-agent.service ~/rpmbuild/BUILD/agent/systemd/
-	@# RPM Version forbids '-'; map a pre-release tag (0.1.0-rc1) to 0.1.0~rc1
+	@# Stage prebuilt inputs in SOURCES (a stable path); the spec installs from
+	@# %{_sourcedir}. rpm 6 redefines %{_builddir} to a per-package subdir during
+	@# %install, so referencing BUILD is unreliable — SOURCES is not remapped.
+	@cp target/release/tenodera-agent ~/rpmbuild/SOURCES/
+	@cp systemd/tenodera-agent.service ~/rpmbuild/SOURCES/
+	@# RPM Version forbids '-'; map a pre-release tag (0.1.0-rc1) to 0.1.0~rc1.
 	@rpmbuild -bb --nodeps --define "version $(subst -,~,$(VERSION))" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-agent.spec
 	@find ~/rpmbuild/RPMS -name "tenodera-agent-*.rpm" -exec cp {} . \;
 	@echo "✓ RPM package built"
