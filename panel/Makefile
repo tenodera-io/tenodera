@@ -245,7 +245,9 @@ package-deb: build
 	@install -m 755 target/release/tenodera-gateway $(PKGDIR)/usr/bin/
 	@install -m 4750 target/release/tenodera-pam-helper $(PKGDIR)/usr/bin/
 	@cp -r ui/dist/. $(PKGDIR)/usr/share/tenodera/ui/
-	@install -m 644 systemd/tenodera.service $(PKGDIR)/lib/systemd/system/
+	@# The unit ships with /usr/local/bin (source install); packages use /usr/bin.
+	@sed 's|/usr/local/bin/|/usr/bin/|g' systemd/tenodera.service > $(PKGDIR)/lib/systemd/system/tenodera.service
+	@chmod 644 $(PKGDIR)/lib/systemd/system/tenodera.service
 	@install -m 644 logrotate/tenodera $(PKGDIR)/etc/logrotate.d/tenodera
 	@install -m 644 pam.d/tenodera $(PKGDIR)/etc/pam.d/tenodera
 	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6, libpam0g, tenodera-agent (= $(VERSION))\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
@@ -265,7 +267,7 @@ package-rpm: build
 	@# %install, so referencing BUILD is unreliable — SOURCES is not remapped.
 	@# logrotate/ and pam.d/ files are both named 'tenodera'; rename in SOURCES.
 	@cp target/release/tenodera-gateway target/release/tenodera-pam-helper ~/rpmbuild/SOURCES/
-	@cp systemd/tenodera.service ~/rpmbuild/SOURCES/
+	@sed 's|/usr/local/bin/|/usr/bin/|g' systemd/tenodera.service > ~/rpmbuild/SOURCES/tenodera.service
 	@cp logrotate/tenodera ~/rpmbuild/SOURCES/tenodera.logrotate
 	@cp pam.d/tenodera ~/rpmbuild/SOURCES/tenodera.pam
 	@rm -rf ~/rpmbuild/SOURCES/ui-dist && cp -r ui/dist ~/rpmbuild/SOURCES/ui-dist

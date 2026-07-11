@@ -110,7 +110,9 @@ package-deb: build
 	$(eval PKGDIR := /tmp/tenodera-agent-deb-$(VERSION))
 	@rm -rf $(PKGDIR) && mkdir -p $(PKGDIR)/DEBIAN $(PKGDIR)/usr/bin $(PKGDIR)/lib/systemd/system
 	@install -m 0755 -o root -g root target/release/tenodera-agent $(PKGDIR)/usr/bin/
-	@install -m 644 systemd/tenodera-agent.service $(PKGDIR)/lib/systemd/system/
+	@# The unit ships with /usr/local/bin (source install); packages use /usr/bin.
+	@sed 's|/usr/local/bin/|/usr/bin/|g' systemd/tenodera-agent.service > $(PKGDIR)/lib/systemd/system/tenodera-agent.service
+	@chmod 644 $(PKGDIR)/lib/systemd/system/tenodera-agent.service
 	@printf 'Package: tenodera-agent\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera agent for managed hosts\n Installed on managed Linux servers. Connects outbound to the Tenodera\n gateway — no inbound ports or SSH keys required.\n' > $(PKGDIR)/DEBIAN/control
 	@install -m 755 ../packaging/deb/tenodera-agent.postinst $(PKGDIR)/DEBIAN/postinst
 	@dpkg-deb --build $(PKGDIR) tenodera-agent_$(VERSION)_$(DEB_ARCH).deb
@@ -126,7 +128,7 @@ package-rpm: build
 	@# %{_sourcedir}. rpm 6 redefines %{_builddir} to a per-package subdir during
 	@# %install, so referencing BUILD is unreliable — SOURCES is not remapped.
 	@cp target/release/tenodera-agent ~/rpmbuild/SOURCES/
-	@cp systemd/tenodera-agent.service ~/rpmbuild/SOURCES/
+	@sed 's|/usr/local/bin/|/usr/bin/|g' systemd/tenodera-agent.service > ~/rpmbuild/SOURCES/tenodera-agent.service
 	@# RPM Version forbids '-'; map a pre-release tag (0.1.0-rc1) to 0.1.0~rc1.
 	@rpmbuild -bb --nodeps --define "version $(subst -,~,$(VERSION))" --define "_topdir $$HOME/rpmbuild" ~/rpmbuild/SPECS/tenodera-agent.spec
 	@find ~/rpmbuild/RPMS -name "tenodera-agent-*.rpm" -exec cp {} . \;
