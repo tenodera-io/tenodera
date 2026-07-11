@@ -1,0 +1,31 @@
+#!/bin/sh
+set -e
+
+CONFDIR=/etc/tenodera
+mkdir -p "$CONFDIR"
+
+# Default agent config — never overwrite an existing one. The default points at
+# a local gateway; on a managed host, edit TENODERA_GATEWAY_URL to your panel.
+if [ ! -f "$CONFDIR/agent.cnf" ]; then
+    cat > "$CONFDIR/agent.cnf" <<'CFG'
+# Tenodera Agent Configuration
+# On a managed host, set this to your panel host, e.g. http://panel:9090
+TENODERA_GATEWAY_URL=http://127.0.0.1:9090
+
+# Uncomment if the gateway uses a self-signed TLS certificate:
+# TENODERA_AGENT_ACCEPT_INSECURE=1
+
+# Optional bootstrap token to skip pending-approval on first connect:
+# TENODERA_BOOTSTRAP_TOKEN=<token>
+CFG
+    chmod 640 "$CONFDIR/agent.cnf"
+fi
+
+# Enable the agent, but do not start it here: the gateway URL is host-specific,
+# so leave starting to the operator (or to the panel package on a panel host).
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    systemctl enable tenodera-agent.service || true
+fi
+
+exit 0

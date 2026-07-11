@@ -7,6 +7,7 @@ URL:            https://github.com/tenodera-io/tenodera
 
 BuildRequires:  rust cargo nodejs npm clang-devel pam-devel openssl-devel
 Requires(pre):  shadow-utils
+Requires:       tenodera-agent = %{version}
 
 %description
 Tenodera gateway serves the web administration panel and routes
@@ -30,7 +31,58 @@ install -d %{buildroot}%{_datadir}/tenodera/ui
 cp -r %{_sourcedir}/ui-dist/. %{buildroot}%{_datadir}/tenodera/ui/
 
 %post
+# The pam-helper ships root:root (the tenodera-gw group does not exist at build
+# time). %pre has created the group by now, so fix ownership: the gateway runs
+# as tenodera-gw and must be able to execute the setuid helper (4750).
+if [ -e %{_bindir}/tenodera-pam-helper ]; then
+    chgrp tenodera-gw %{_bindir}/tenodera-pam-helper
+    chmod 4750 %{_bindir}/tenodera-pam-helper
+fi
+
+# Config and TLS directory, owned by the gateway group.
+mkdir -p %{_sysconfdir}/tenodera/tls
+chown root:tenodera-gw %{_sysconfdir}/tenodera %{_sysconfdir}/tenodera/tls
+chmod 750 %{_sysconfdir}/tenodera %{_sysconfdir}/tenodera/tls
+
+# Data directory the gateway writes to after dropping privileges.
+mkdir -p /var/lib/tenodera-gw
+chown tenodera-gw:tenodera-gw /var/lib/tenodera-gw
+chmod 750 /var/lib/tenodera-gw
+
+# Audit log.
+touch /var/log/tenodera_audit.log
+chown root:root /var/log/tenodera_audit.log
+chmod 622 /var/log/tenodera_audit.log
+
+# Default gateway config (HTTP mode) — never overwrite an existing one.
+if [ ! -f %{_sysconfdir}/tenodera/tenodera.cnf ]; then
+    cat > %{_sysconfdir}/tenodera/tenodera.cnf <<'CFG'
+# Tenodera Panel Configuration
+TENODERA_BIND_ADDR=0.0.0.0
+TENODERA_BIND_PORT=9090
+TENODERA_AGENT_BIN=/usr/bin/tenodera-agent
+TENODERA_UI_DIR=/usr/share/tenodera/ui
+
+# TLS — optional. Uncomment and set cert/key paths to enable HTTPS,
+# then remove TENODERA_ALLOW_UNENCRYPTED below.
+#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
+#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+
+# HTTP mode (plain, no TLS) — enabled by default.
+TENODERA_ALLOW_UNENCRYPTED=1
+
+RUST_LOG=info
+CFG
+    chown root:tenodera-gw %{_sysconfdir}/tenodera/tenodera.cnf
+    chmod 640 %{_sysconfdir}/tenodera/tenodera.cnf
+fi
+
 %systemd_post tenodera.service
+if [ -d /run/systemd/system ]; then
+    systemctl enable --now tenodera.service || :
+    # On a panel host the local agent's default config points here; start it.
+    systemctl start tenodera-agent.service || :
+fi
 
 %preun
 %systemd_preun tenodera.service
@@ -40,7 +92,10 @@ cp -r %{_sourcedir}/ui-dist/. %{buildroot}%{_datadir}/tenodera/ui/
 
 %files
 %{_bindir}/tenodera-gateway
-%attr(4750,root,tenodera-gw) %{_bindir}/tenodera-pam-helper
+# Packaged root:root 4750; %post re-groups it to tenodera-gw once the group
+# exists (declaring the group via %attr here would add an install-time
+# Requires on group(tenodera-gw), which %pre only creates later).
+%{_bindir}/tenodera-pam-helper
 %{_unitdir}/tenodera.service
 %{_sysconfdir}/logrotate.d/tenodera
 %{_sysconfdir}/pam.d/tenodera

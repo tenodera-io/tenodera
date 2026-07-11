@@ -1,0 +1,61 @@
+#!/bin/sh
+set -e
+
+CONFDIR=/etc/tenodera
+
+# The pam-helper ships root:root (the tenodera-gw group does not exist at build
+# time). Now that preinst has created the group, fix its ownership so the
+# gateway — which runs as tenodera-gw — can execute the setuid helper (4750).
+if [ -e /usr/bin/tenodera-pam-helper ]; then
+    chgrp tenodera-gw /usr/bin/tenodera-pam-helper
+    chmod 4750 /usr/bin/tenodera-pam-helper
+fi
+
+# Config and TLS directory, owned by the gateway group.
+mkdir -p "$CONFDIR/tls"
+chown root:tenodera-gw "$CONFDIR" "$CONFDIR/tls"
+chmod 750 "$CONFDIR" "$CONFDIR/tls"
+
+# Data directory the gateway writes to after dropping privileges.
+mkdir -p /var/lib/tenodera-gw
+chown tenodera-gw:tenodera-gw /var/lib/tenodera-gw
+chmod 750 /var/lib/tenodera-gw
+
+# Audit log.
+touch /var/log/tenodera_audit.log
+chown root:root /var/log/tenodera_audit.log
+chmod 622 /var/log/tenodera_audit.log
+
+# Default gateway config (HTTP mode) — never overwrite an existing one.
+if [ ! -f "$CONFDIR/tenodera.cnf" ]; then
+    cat > "$CONFDIR/tenodera.cnf" <<'CFG'
+# Tenodera Panel Configuration
+TENODERA_BIND_ADDR=0.0.0.0
+TENODERA_BIND_PORT=9090
+TENODERA_AGENT_BIN=/usr/bin/tenodera-agent
+TENODERA_UI_DIR=/usr/share/tenodera/ui
+
+# TLS — optional. Uncomment and set cert/key paths to enable HTTPS,
+# then remove TENODERA_ALLOW_UNENCRYPTED below.
+#TENODERA_TLS_CERT=/etc/tenodera/tls/cert.pem
+#TENODERA_TLS_KEY=/etc/tenodera/tls/key.pem
+
+# HTTP mode (plain, no TLS) — enabled by default.
+TENODERA_ALLOW_UNENCRYPTED=1
+
+RUST_LOG=info
+CFG
+    chown root:tenodera-gw "$CONFDIR/tenodera.cnf"
+    chmod 640 "$CONFDIR/tenodera.cnf"
+fi
+
+# Enable and start the gateway (only when running under systemd).
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+    systemctl enable --now tenodera.service || true
+    # On a panel host the local agent's default config points at this gateway,
+    # so start it too (it is installed as a dependency and already enabled).
+    systemctl start tenodera-agent.service || true
+fi
+
+exit 0

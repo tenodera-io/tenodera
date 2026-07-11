@@ -248,9 +248,9 @@ package-deb: build
 	@install -m 644 systemd/tenodera.service $(PKGDIR)/lib/systemd/system/
 	@install -m 644 logrotate/tenodera $(PKGDIR)/etc/logrotate.d/tenodera
 	@install -m 644 pam.d/tenodera $(PKGDIR)/etc/pam.d/tenodera
-	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6, libpam0g\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
-	@printf '#!/bin/sh\ngetent group tenodera-gw >/dev/null || groupadd -r tenodera-gw\ngetent passwd tenodera-gw >/dev/null || \\\n    useradd -r -s /sbin/nologin -M -d /nonexistent -g tenodera-gw \\\n    -c "Tenodera Gateway" tenodera-gw\nexit 0\n' > $(PKGDIR)/DEBIAN/preinst
-	@chmod 755 $(PKGDIR)/DEBIAN/preinst
+	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6, libpam0g, tenodera-agent (= $(VERSION))\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
+	@install -m 755 ../packaging/deb/tenodera.preinst $(PKGDIR)/DEBIAN/preinst
+	@install -m 755 ../packaging/deb/tenodera.postinst $(PKGDIR)/DEBIAN/postinst
 	@dpkg-deb --build $(PKGDIR) tenodera_$(VERSION)_$(DEB_ARCH).deb
 	@rm -rf $(PKGDIR)
 	@echo "✓ Package: tenodera_$(VERSION)_$(DEB_ARCH).deb"

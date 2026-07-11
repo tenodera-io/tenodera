@@ -112,6 +112,7 @@ package-deb: build
 	@install -m 0755 -o root -g root target/release/tenodera-agent $(PKGDIR)/usr/bin/
 	@install -m 644 systemd/tenodera-agent.service $(PKGDIR)/lib/systemd/system/
 	@printf 'Package: tenodera-agent\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera agent for managed hosts\n Installed on managed Linux servers. Connects outbound to the Tenodera\n gateway — no inbound ports or SSH keys required.\n' > $(PKGDIR)/DEBIAN/control
+	@install -m 755 ../packaging/deb/tenodera-agent.postinst $(PKGDIR)/DEBIAN/postinst
 	@dpkg-deb --build $(PKGDIR) tenodera-agent_$(VERSION)_$(DEB_ARCH).deb
 	@rm -rf $(PKGDIR)
 	@echo "✓ Package: tenodera-agent_$(VERSION)_$(DEB_ARCH).deb"

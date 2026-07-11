@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+# Create the unprivileged service account the gateway drops to.
+getent group tenodera-gw >/dev/null || groupadd -r tenodera-gw
+getent passwd tenodera-gw >/dev/null || \
+    useradd -r -s /sbin/nologin -M -d /nonexistent -g tenodera-gw \
+            -c "Tenodera Gateway" tenodera-gw
+
+exit 0
