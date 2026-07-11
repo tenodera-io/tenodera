@@ -136,7 +136,44 @@ curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-
 
 The panel provides a ready-to-use install command with the gateway URL and token pre-filled — copy it from **Hosts → Tokens → Install command**.
 
-The installer:
+### 3.3 Install from prebuilt packages
+
+Every [release](https://github.com/tenodera-io/tenodera/releases) ships signed
+packages that install without compiling:
+
+- **`.deb`** — built on Debian 12 (bookworm), so it runs on Debian 12+ and Ubuntu 24.04+ (glibc is forward-compatible). amd64 and arm64.
+- **`.rpm`** — built on Fedora. x86_64 and aarch64.
+
+**Panel host** (install the panel and the agent together — the gateway validates the agent binary at startup):
+
+```bash
+# Debian / Ubuntu
+sudo apt install ./tenodera_<version>_amd64.deb ./tenodera-agent_<version>_amd64.deb
+# Fedora
+sudo dnf install ./tenodera-<version>.x86_64.rpm ./tenodera-agent-<version>.x86_64.rpm
+```
+
+The panel package's `postinst`/`%post` creates `/etc/tenodera` (owned `root:tenodera-gw`, mode 750) with a default `tenodera.cnf`, the `/var/lib/tenodera-gw` data directory, the audit log, re-groups the setuid PAM helper to `tenodera-gw`, then enables and starts `tenodera.service` — and starts the bundled local agent (its default `agent.cnf` points at `127.0.0.1:9090`).
+
+**Managed host** (agent only). The agent package installs but does **not** start the service — the gateway URL is host-specific:
+
+```bash
+sudo apt install ./tenodera-agent_<version>_amd64.deb   # or: dnf install ./...rpm
+sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
+sudo systemctl enable --now tenodera-agent
+```
+
+**Verifying the download.** Each release includes `SHA256SUMS` and a
+`SHA256SUMS.minisig` signature (Ed25519, via [minisign](https://jedisct1.github.io/minisign/)). The public key is in [SECURITY.md](SECURITY.md):
+
+```bash
+minisign -Vm SHA256SUMS -P <public-key>
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+Upgrades (`apt install`/`dnf upgrade` a newer package) restart the service onto the new binary; removal (`apt remove`/`dnf remove`) stops and disables it.
+
+For reference, the agent source installer (§3.2):
 1. Installs build dependencies (Rust, gcc, pkg-config)
 2. Compiles `tenodera-agent` from source
 3. Installs the binary root-owned (`-m 0755`, no setuid bit); it runs as root via systemd

@@ -75,6 +75,43 @@ curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-
 
 The host enrolls immediately without manual approval.
 
+### 4. Install from a package (optional)
+
+Prebuilt, signed packages for **Debian 12+ / Ubuntu 24.04+** (`.deb`, amd64 &
+arm64) and **Fedora** (`.rpm`, x86_64 & aarch64) are attached to each
+[release](https://github.com/tenodera-io/tenodera/releases). They install in
+seconds without compiling.
+
+Panel host — install both the panel and the agent:
+
+```bash
+# Debian / Ubuntu
+sudo apt install ./tenodera_<version>_amd64.deb ./tenodera-agent_<version>_amd64.deb
+# Fedora
+sudo dnf install ./tenodera-<version>.x86_64.rpm ./tenodera-agent-<version>.x86_64.rpm
+```
+
+The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, sets
+up the service account, enables and starts the gateway on port 9090) and starts
+the local agent.
+
+Managed host — install just the agent, then point it at your panel:
+
+```bash
+sudo apt install ./tenodera-agent_<version>_amd64.deb    # or: dnf install ./...rpm
+sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
+sudo systemctl enable --now tenodera-agent
+```
+
+**Verify the download** — all artifacts are checksummed in `SHA256SUMS`, signed
+with [minisign](https://jedisct1.github.io/minisign/). The public key is in
+[SECURITY.md](SECURITY.md):
+
+```bash
+minisign -Vm SHA256SUMS -P <public-key-from-SECURITY.md>
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
 > See [DOCS.md](DOCS.md) for TLS setup, configuration reference, and more.
 
 ## Uninstall
