@@ -21,6 +21,8 @@ AGENTS.md
 SECURITY_AUDIT.md
 SECURITY_AUDIT_PL.md
 SECURITY_AUDIT_V2.md
+INSTALL_NOTES.md
+MIGRATION.md
 
 # Environment & secrets
 .env
