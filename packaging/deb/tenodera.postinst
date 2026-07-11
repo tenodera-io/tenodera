@@ -49,13 +49,16 @@ CFG
     chmod 640 "$CONFDIR/tenodera.cnf"
 fi
 
-# Enable and start the gateway (only when running under systemd).
+# Enable and (re)start the gateway. `restart` covers both a fresh install and an
+# upgrade — on upgrade it reloads the new binary, which a plain `start` would not.
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
-    systemctl enable --now tenodera.service || true
+    systemctl enable tenodera.service || true
+    systemctl restart tenodera.service || true
     # On a panel host the local agent's default config points at this gateway,
-    # so start it too (it is installed as a dependency and already enabled).
-    systemctl start tenodera-agent.service || true
+    # so enable and start it here (the agent package leaves it untouched).
+    systemctl enable tenodera-agent.service || true
+    systemctl restart tenodera-agent.service || true
 fi
 
 exit 0

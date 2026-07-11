@@ -21,11 +21,12 @@ CFG
     chmod 640 "$CONFDIR/agent.cnf"
 fi
 
-# Enable the agent, but do not start it here: the gateway URL is host-specific,
-# so leave starting to the operator (or to the panel package on a panel host).
+# Do not enable or start the agent here: it cannot run without a valid gateway
+# URL, which is host-specific. The operator sets TENODERA_GATEWAY_URL above and
+# then runs `systemctl enable --now tenodera-agent`. (On a panel host, the panel
+# package configures and starts the local agent itself.)
 if [ -d /run/systemd/system ]; then
     systemctl daemon-reload || true
-    systemctl enable tenodera-agent.service || true
 fi
 
 exit 0

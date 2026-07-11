@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+# Stop and disable the agent on removal (not on upgrade).
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    if [ -d /run/systemd/system ]; then
+        systemctl stop tenodera-agent.service || true
+        systemctl disable tenodera-agent.service || true
+    fi
+fi
+
+exit 0

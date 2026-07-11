@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+
+# Stop and disable the gateway on removal (not on upgrade — dpkg passes "upgrade"
+# there, and the new postinst restarts the service).
+if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
+    if [ -d /run/systemd/system ]; then
+        systemctl stop tenodera.service || true
+        systemctl disable tenodera.service || true
+    fi
+fi
+
+exit 0

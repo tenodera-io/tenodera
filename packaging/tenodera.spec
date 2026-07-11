@@ -79,16 +79,23 @@ fi
 
 %systemd_post tenodera.service
 if [ -d /run/systemd/system ]; then
-    systemctl enable --now tenodera.service || :
-    # On a panel host the local agent's default config points here; start it.
-    systemctl start tenodera-agent.service || :
+    # `restart` covers both fresh install and upgrade — on upgrade it reloads the
+    # new binary, which a plain `start` would not.
+    systemctl enable tenodera.service || :
+    systemctl restart tenodera.service || :
+    # On a panel host the local agent's default config points here; the agent
+    # package leaves it untouched, so enable and start it from here.
+    systemctl enable tenodera-agent.service || :
+    systemctl restart tenodera-agent.service || :
 fi
 
 %preun
 %systemd_preun tenodera.service
 
 %postun
-%systemd_postun_with_restart tenodera.service
+# Plain postun (daemon-reload); %post already restarts on upgrade, so avoid the
+# double restart that %systemd_postun_with_restart would cause.
+%systemd_postun tenodera.service
 
 %files
 %{_bindir}/tenodera-gateway
