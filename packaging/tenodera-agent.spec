@@ -13,7 +13,7 @@ It connects outbound to the Tenodera gateway over a persistent WebSocket
 to perform system administration tasks — no inbound ports required.
 
 %install
-install -D -m 4755 -o root -g root %{_builddir}/tenodera-agent %{buildroot}%{_bindir}/tenodera-agent
+install -D -m 0755 -o root -g root %{_builddir}/tenodera-agent %{buildroot}%{_bindir}/tenodera-agent
 install -D -m 644 %{_builddir}/agent/systemd/tenodera-agent.service %{buildroot}%{_unitdir}/tenodera-agent.service
 
 %post

@@ -51,8 +51,8 @@ $(AGENT_BIN):
 # ── Install ───────────────────────────────────────────────
 
 install: $(AGENT_BIN)
-	@echo "==> Installing tenodera-agent to $(BINDIR) (setuid root)..."
-	sudo install -m 4755 -o root -g root $(AGENT_BIN) $(BINDIR)/tenodera-agent
+	@echo "==> Installing tenodera-agent to $(BINDIR)..."
+	sudo install -m 0755 -o root -g root $(AGENT_BIN) $(BINDIR)/tenodera-agent
 	@echo "==> Setting up directories..."
 	sudo mkdir -p $(CONFDIR)
 	sudo chmod 755 $(CONFDIR)
@@ -106,7 +106,7 @@ package-deb: build
 	@command -v dpkg-deb >/dev/null 2>&1 || { echo "ERROR: dpkg-deb not found — install dpkg"; exit 1; }
 	$(eval PKGDIR := /tmp/tenodera-agent-deb-$(VERSION))
 	@rm -rf $(PKGDIR) && mkdir -p $(PKGDIR)/DEBIAN $(PKGDIR)/usr/bin $(PKGDIR)/lib/systemd/system
-	@install -m 4755 -o root -g root target/release/tenodera-agent $(PKGDIR)/usr/bin/
+	@install -m 0755 -o root -g root target/release/tenodera-agent $(PKGDIR)/usr/bin/
 	@install -m 644 systemd/tenodera-agent.service $(PKGDIR)/lib/systemd/system/
 	@printf 'Package: tenodera-agent\nVersion: $(VERSION)\nArchitecture: amd64\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera agent for managed hosts\n Installed on managed Linux servers. Connects outbound to the Tenodera\n gateway — no inbound ports or SSH keys required.\n' > $(PKGDIR)/DEBIAN/control
 	@dpkg-deb --build $(PKGDIR) tenodera-agent_$(VERSION)_amd64.deb

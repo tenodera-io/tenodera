@@ -102,7 +102,8 @@ via the `host.action` / `set_role` handler — this rewrites the `role=` lines i
 
 ## Privilege Model
 
-The agent binary is installed **setuid root** (`-m 4755`). Privileged operations
+The agent runs as root under systemd (installed root-owned, mode `0755`, with no
+setuid bit). Privileged operations
 use `sudo -S` with the password piped from the superuser context — the user
 authenticates once via `superuser.verify`, and that password is used for
 subsequent sudo calls within the session.

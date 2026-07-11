@@ -81,7 +81,7 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 
 ### Terminal Security
 
-- The agent binary is installed **setuid root** (`-m 4755`); it drops to the authenticated user's UID/GID via `setuid()`/`setgid()` before spawning the shell — no root shell is ever exposed to the user
+- The agent runs as root under systemd (the binary is installed root-owned, mode `0755`, **without** a setuid bit); for terminal sessions it drops to the authenticated user's UID/GID via `setuid()`/`setgid()` before spawning the shell — no root shell is ever exposed to the user
 - **Shell allowlist**: only the following shells may be spawned — `/bin/sh`, `/bin/bash`, `/bin/zsh`, `/bin/fish`, and their `/usr/bin/` equivalents; any other shell path (including the user's configured shell if not on the list) causes the terminal session to be rejected
 - The terminal requires a valid system account on the managed host; if the logged-in user does not exist on that host, the PAM/setuid drop will fail
 
@@ -114,7 +114,7 @@ The gateway service runs with:
 - `ProtectHome=yes`
 - Dedicated unprivileged service user (`tenodera-gw`)
 
-The agent binary is installed setuid root and runs as root under systemd. For terminal sessions it drops to the authenticated user's UID/GID before spawning the shell. For other privileged operations (package install, service restart, firewall changes, etc.) it invokes `sudo -S` with the password supplied by the authenticated user — so the operation runs under the user's own sudo privileges, not unconditionally as root.
+The agent binary is installed root-owned (mode `0755`, no setuid bit) and runs as root because systemd starts it. For terminal sessions it drops to the authenticated user's UID/GID before spawning the shell. For other privileged operations (package install, service restart, firewall changes, etc.) it invokes `sudo -S` with the password supplied by the authenticated user — so the operation runs under the user's own sudo privileges, not unconditionally as root.
 
 ---
 

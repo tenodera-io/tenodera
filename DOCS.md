@@ -139,7 +139,7 @@ The panel provides a ready-to-use install command with the gateway URL and token
 The installer:
 1. Installs build dependencies (Rust, gcc, pkg-config)
 2. Compiles `tenodera-agent` from source
-3. Installs the binary with setuid root (`-m 4755`)
+3. Installs the binary root-owned (`-m 0755`, no setuid bit); it runs as root via systemd
 4. Writes `/etc/tenodera/agent.cnf`
 5. Installs and enables `tenodera-agent.service`
 
@@ -1117,7 +1117,7 @@ journalctl -u tenodera-agent -f
 |------|-------------|
 | `/usr/local/bin/tenodera-gateway` | Gateway binary |
 | `/usr/local/bin/tenodera-pam-helper` | PAM helper (setuid root) |
-| `/usr/local/bin/tenodera-agent` | Agent binary (setuid root) |
+| `/usr/local/bin/tenodera-agent` | Agent binary (runs as root via systemd) |
 | `/usr/share/tenodera/ui/` | Built UI assets |
 | `/etc/tenodera/tenodera.cnf` | Gateway configuration |
 | `/etc/tenodera/agent.cnf` | Agent configuration |
@@ -1190,7 +1190,7 @@ Returns `200 OK` when the agent binary exists and is executable, `503 Service Un
 - Handles 39 operation types across 28 handler modules
 - Announces itself via `Hello/HelloAck` handshake on connect
 - Reconnects automatically with exponential backoff on disconnect
-- Installed as setuid root; drops to the authenticated user's UID/GID for terminal sessions
+- Runs as root under systemd; drops to the authenticated user's UID/GID for terminal sessions
 
 **Protocol** (`protocol/`)
 - Shared Rust library crate
