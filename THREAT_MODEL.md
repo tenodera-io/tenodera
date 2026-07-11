@@ -145,9 +145,9 @@ Each item below is present in the current `main` tree.
 
 ### Persistent agent vs. on-demand activation
 
-A common comparison is with socket-activated tools (e.g. Cockpit), which consume
-no resources when idle and expose no long-running privileged process. Tenodera
-keeps a **persistent agent** with a standing outbound connection.
+Some management tools activate on demand — consuming no resources when idle and
+exposing no long-running privileged process. Tenodera instead keeps a
+**persistent agent** with a standing outbound connection.
 
 This is an inherent cost of the outbound-only model, not a defect to be fixed:
 **a connection that dials out and stays reachable requires a process that is
@@ -165,11 +165,11 @@ The gateway is a high-value target. If it is compromised, an attacker can
 potentially reach every host it brokers, over the multiplexed WebSocket.
 
 This is **not unique to Tenodera** — it is the nature of any central management
-plane. An Ansible controller, a Salt master, a Teleport proxy, or a Cockpit
-multi-host bastion (which holds SSH keys to every host it reaches) all have the
-same property: compromise the center, and the fleet is at risk. Naming it does
-not make Tenodera worse than the alternatives; hiding it would make this document
-dishonest.
+plane. Any system where a single control point can reach an entire fleet — a
+configuration-management controller, an orchestration server, or a bastion that
+holds keys to every host — has the same property: compromise the center, and the
+fleet is at risk. Acknowledging this does not make Tenodera worse than the
+alternatives; hiding it would make this document dishonest.
 
 We reduce, but do not remove, this risk:
 
