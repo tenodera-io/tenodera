@@ -13,9 +13,17 @@ export function Login({ onLogin }: LoginProps) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [tried, setTried] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
 
   React.useEffect(() => {
     document.documentElement.setAttribute('data-theme', 'catppuccin-mocha');
+  }, []);
+
+  React.useEffect(() => {
+    fetch('/api/health')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.version) setVersion(d.version); })
+      .catch(() => {});
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -65,6 +73,7 @@ export function Login({ onLogin }: LoginProps) {
           {loading ? 'Logging in...' : 'Log In'}
         </button>
       </form>
+      {version && <div style={styles.version}>v{version}</div>}
     </div>
   );
 }
@@ -79,6 +88,15 @@ const styles: Record<string, React.CSSProperties> = {
       'radial-gradient(900px circle at 15% 12%, rgba(166,227,161,0.10), transparent 45%),' +
       'radial-gradient(760px circle at 85% 88%, rgba(166,227,161,0.06), transparent 45%),' +
       '#1E1E2E',
+  },
+  version: {
+    position: 'fixed',
+    right: '1rem',
+    bottom: '0.85rem',
+    fontFamily: 'monospace',
+    fontSize: '0.75rem',
+    letterSpacing: '0.02em',
+    color: 'color-mix(in srgb, #A6E3A1 55%, var(--text-3, #6c7086))',
   },
   form: {
     display: 'flex',
