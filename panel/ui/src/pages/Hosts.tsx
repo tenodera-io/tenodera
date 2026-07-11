@@ -348,7 +348,7 @@ export function TokensTab() {
   const [creating, setCreating] = useState(false);
   const [newToken, setNewToken] = useState<{ id: string; token: string; install_cmd: string } | null>(null);
   const [form, setForm] = useState({ ttl: 3600, single_use: true, bound_hostname: '', re_enroll: false });
-  const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const res = await apiFetch('/api/agent/tokens');
@@ -389,10 +389,10 @@ export function TokensTab() {
     await load();
   };
 
-  const copyCmd = (cmd: string) => {
-    navigator.clipboard.writeText(cmd).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
+  const copyCmd = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(null), 1500);
     });
   };
 
@@ -434,22 +434,50 @@ export function TokensTab() {
       </div>
 
       {/* Newly created token */}
-      {newToken && (
-        <div style={{ ...S.row, flexDirection: 'column', gap: '0.4rem', marginBottom: '0.5rem', borderColor: 'var(--c-green)' }}>
-          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--c-green)' }}>
-            ✓ Token created — copy the install command below
-          </div>
-          <div style={{ fontFamily: 'monospace', fontSize: '0.72rem', wordBreak: 'break-all', color: 'var(--text-2)' }}>
-            {newToken.install_cmd}
-          </div>
-          <div style={{ display: 'flex', gap: '0.4rem' }}>
-            <button style={S.saveBtn} onClick={() => copyCmd(newToken.install_cmd)}>
-              {copied ? '✓ Copied' : 'Copy install command'}
+      {newToken && (() => {
+        const gwUrl = newToken.install_cmd.match(/--gateway (\S+)/)?.[1] ?? 'http://<panel-host>:9090';
+        const cnfBlock = `TENODERA_GATEWAY_URL=${gwUrl}\nTENODERA_BOOTSTRAP_TOKEN=${newToken.token}`;
+        const snippet: React.CSSProperties = { fontFamily: 'monospace', fontSize: '0.72rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-2)', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.4rem 0.55rem', margin: 0 };
+        const label: React.CSSProperties = { fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-1)', margin: '0.1rem 0 0.25rem' };
+        return (
+        <div style={{ ...S.row, flexDirection: 'column', alignItems: 'stretch', gap: '0.55rem', marginBottom: '0.5rem', borderColor: 'var(--c-green)' }}>
+          <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--c-green)' }}>✓ Token created</div>
+
+          {/* Raw token */}
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+            <code style={{ ...snippet, flex: 1 }}>{newToken.token}</code>
+            <button style={S.saveBtn} onClick={() => copyCmd(newToken.token, 'token')}>
+              {copiedKey === 'token' ? '✓' : 'Copy token'}
             </button>
-            <button style={S.cancelBtn} onClick={() => setNewToken(null)}>Dismiss</button>
           </div>
+
+          {/* From a package */}
+          <div>
+            <div style={label}>From a <code>.deb</code> / <code>.rpm</code> package — set in <code>/etc/tenodera/agent.cnf</code>, then start (reusable token works across many hosts):</div>
+            <pre style={snippet}>{cnfBlock}</pre>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', marginTop: '0.35rem' }}>
+              <code style={{ ...snippet, flex: 1 }}>sudo systemctl enable --now tenodera-agent</code>
+              <button style={S.saveBtn} onClick={() => copyCmd(cnfBlock, 'cnf')}>
+                {copiedKey === 'cnf' ? '✓' : 'Copy config'}
+              </button>
+            </div>
+          </div>
+
+          {/* One-line source install */}
+          <div>
+            <div style={label}>Or one-line install from source:</div>
+            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+              <code style={{ ...snippet, flex: 1 }}>{newToken.install_cmd}</code>
+              <button style={S.saveBtn} onClick={() => copyCmd(newToken.install_cmd, 'cmd')}>
+                {copiedKey === 'cmd' ? '✓' : 'Copy command'}
+              </button>
+            </div>
+          </div>
+
+          <button style={{ ...S.cancelBtn, alignSelf: 'flex-start' }} onClick={() => setNewToken(null)}>Dismiss</button>
         </div>
-      )}
+        );
+      })()}
 
       {loading ? (
         <div style={S.empty}>Loading...</div>
