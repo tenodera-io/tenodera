@@ -1,5 +1,9 @@
 # Security
 
+For the design-level view — trust boundaries, the outbound-only trade-off,
+gateway blast radius, and what is implemented versus planned — see
+[THREAT_MODEL.md](THREAT_MODEL.md). This document covers the concrete controls.
+
 ## Reporting a Vulnerability
 
 If you discover a security vulnerability:
