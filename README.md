@@ -80,15 +80,20 @@ The host enrolls immediately without manual approval.
 Prebuilt, signed packages for **Debian 12+ / Ubuntu 24.04+** (`.deb`, amd64 &
 arm64) and **Fedora** (`.rpm`, x86_64 & aarch64) are attached to each
 [release](https://github.com/tenodera-io/tenodera/releases). They install in
-seconds without compiling.
+seconds without compiling. Asset filenames carry no version, so the
+`releases/latest/download/…` URLs below always fetch the newest release.
 
 Panel host — install both the panel and the agent:
 
 ```bash
 # Debian / Ubuntu
-sudo apt install ./tenodera_<version>_amd64.deb ./tenodera-agent_<version>_amd64.deb
-# Fedora
-sudo dnf install ./tenodera-<version>.x86_64.rpm ./tenodera-agent-<version>.x86_64.rpm
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera_amd64.deb
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
+sudo apt install ./tenodera_amd64.deb ./tenodera-agent_amd64.deb
+# Fedora (dnf installs straight from the URL)
+sudo dnf install \
+  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-x86_64.rpm \
+  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 ```
 
 The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, sets
@@ -98,10 +103,17 @@ the local agent.
 Managed host — install just the agent, then point it at your panel:
 
 ```bash
-sudo apt install ./tenodera-agent_<version>_amd64.deb    # or: dnf install ./...rpm
+# Debian / Ubuntu
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
+sudo apt install ./tenodera-agent_amd64.deb
+# Fedora: sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
 sudo systemctl enable --now tenodera-agent
 ```
+
+> arm64 / aarch64: swap `amd64` → `arm64` (.deb) and `x86_64` → `aarch64` (.rpm).
+> For a specific version, replace `latest` with the tag, e.g.
+> `releases/download/v0.1.6/tenodera_amd64.deb`.
 
 **Verify the download** — all artifacts are checksummed in `SHA256SUMS`, signed
 with [minisign](https://jedisct1.github.io/minisign/). The public key is in

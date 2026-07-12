@@ -66,7 +66,14 @@ jobs:
         run: |
           mkdir -p dist
           mv agent/*.deb panel/*.deb dist/
-          ls -l dist
+          cd dist
+          # Version-less filenames so the release "latest/download/<file>" URL is
+          # stable across releases. The version stays inside the package (dpkg -l)
+          # and in the release title/changelog. underscore vs. hyphen keeps the
+          # agent and panel globs disjoint.
+          mv tenodera-agent_*.deb tenodera-agent_${{ matrix.arch }}.deb
+          mv tenodera_*.deb tenodera_${{ matrix.arch }}.deb
+          ls -l
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -128,7 +135,14 @@ jobs:
         run: |
           mkdir -p dist
           mv agent/*.rpm panel/*.rpm dist/
-          ls -l dist
+          cd dist
+          # Version-less filenames for a stable latest/download URL (see .deb job).
+          # rpmbuild names files <name>-<ver>-<rel>.<dist>.<arch>.rpm; drop all of
+          # that but the name and arch. The panel name is followed by a digit,
+          # the agent name by "agent-", so the two globs are disjoint.
+          mv tenodera-agent-*.rpm tenodera-agent-${{ matrix.arch }}.rpm
+          mv tenodera-[0-9]*.rpm tenodera-${{ matrix.arch }}.rpm
+          ls -l
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -182,10 +196,6 @@ jobs:
           echo "── signed ──"
           ls -l SHA256SUMS SHA256SUMS.minisig
 
-      - name: Version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -211,19 +221,34 @@ jobs:
             curl -sSfL https://raw.githubusercontent.com/${{ github.repository }}/main/tenodera-agent.sh | sudo bash -s -- --gateway http://<panel-host>:9090
             ```
 
-            ### Or install a package directly (amd64 / arm64)
+            ### Or download a package directly (amd64 / arm64)
+
+            Asset filenames are version-less, so `releases/latest/download/…` always
+            fetches the newest release. For a specific version, swap `latest` for the
+            tag, e.g. `releases/download/${{ github.ref_name }}/tenodera_amd64.deb`.
 
             **Debian 12+ / Ubuntu 24.04+** — `.deb`:
             ```bash
-            sudo dpkg -i tenodera_${{ steps.version.outputs.version }}_amd64.deb        # panel host
-            sudo dpkg -i tenodera-agent_${{ steps.version.outputs.version }}_amd64.deb  # managed host
+            # panel host
+            wget https://github.com/${{ github.repository }}/releases/latest/download/tenodera_amd64.deb
+            wget https://github.com/${{ github.repository }}/releases/latest/download/tenodera-agent_amd64.deb
+            sudo apt install ./tenodera_amd64.deb ./tenodera-agent_amd64.deb
+            # managed host
+            wget https://github.com/${{ github.repository }}/releases/latest/download/tenodera-agent_amd64.deb
+            sudo apt install ./tenodera-agent_amd64.deb
             ```
 
             **Fedora / RHEL / openSUSE** — `.rpm`:
             ```bash
-            sudo rpm -i tenodera-${{ steps.version.outputs.version }}-1.x86_64.rpm         # panel host
-            sudo rpm -i tenodera-agent-${{ steps.version.outputs.version }}-1.x86_64.rpm   # managed host
+            # panel host
+            sudo dnf install \
+              https://github.com/${{ github.repository }}/releases/latest/download/tenodera-x86_64.rpm \
+              https://github.com/${{ github.repository }}/releases/latest/download/tenodera-agent-x86_64.rpm
+            # managed host
+            sudo dnf install https://github.com/${{ github.repository }}/releases/latest/download/tenodera-agent-x86_64.rpm
             ```
+
+            > arm64 / aarch64: swap `amd64` → `arm64` (.deb) and `x86_64` → `aarch64` (.rpm).
 
             ### Verifying the download
 

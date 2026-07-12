@@ -144,13 +144,19 @@ packages that install without compiling:
 - **`.deb`** — built on Debian 12 (bookworm), so it runs on Debian 12+ and Ubuntu 24.04+ (glibc is forward-compatible). amd64 and arm64.
 - **`.rpm`** — built on Fedora. x86_64 and aarch64.
 
+Asset filenames carry no version, so `releases/latest/download/…` always fetches the newest release. For a specific version, replace `latest` with the tag (e.g. `releases/download/v0.1.6/tenodera_amd64.deb`); arm64/aarch64: swap `amd64`→`arm64` (.deb) and `x86_64`→`aarch64` (.rpm).
+
 **Panel host** (install the panel and the agent together — the gateway validates the agent binary at startup):
 
 ```bash
 # Debian / Ubuntu
-sudo apt install ./tenodera_<version>_amd64.deb ./tenodera-agent_<version>_amd64.deb
-# Fedora
-sudo dnf install ./tenodera-<version>.x86_64.rpm ./tenodera-agent-<version>.x86_64.rpm
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera_amd64.deb
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
+sudo apt install ./tenodera_amd64.deb ./tenodera-agent_amd64.deb
+# Fedora (dnf installs straight from the URL)
+sudo dnf install \
+  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-x86_64.rpm \
+  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 ```
 
 The panel package's `postinst`/`%post` creates `/etc/tenodera` (owned `root:tenodera-gw`, mode 750) with a default `tenodera.cnf`, the `/var/lib/tenodera-gw` data directory, the audit log, re-groups the setuid PAM helper to `tenodera-gw`, then enables and starts `tenodera.service` — and starts the bundled local agent (its default `agent.cnf` points at `127.0.0.1:9090`).
@@ -158,7 +164,10 @@ The panel package's `postinst`/`%post` creates `/etc/tenodera` (owned `root:teno
 **Managed host** (agent only). The agent package installs but does **not** start the service — the gateway URL is host-specific:
 
 ```bash
-sudo apt install ./tenodera-agent_<version>_amd64.deb   # or: dnf install ./...rpm
+# Debian / Ubuntu
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
+sudo apt install ./tenodera-agent_amd64.deb
+# Fedora: sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
 sudo systemctl enable --now tenodera-agent
 ```
