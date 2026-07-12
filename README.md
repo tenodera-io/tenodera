@@ -41,99 +41,133 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 
 ## Install
 
+Prebuilt, **signed packages** are the fastest way in — no compiling. They're
+built for **Debian 12+ / Ubuntu 24.04+** (`.deb`, amd64 & arm64) and
+**Fedora / RHEL** (`.rpm`, x86_64 & aarch64), and attached to every
+[release](https://github.com/tenodera-io/tenodera/releases). Asset filenames
+carry no version, so the `releases/latest/download/…` URLs always fetch the
+newest release.
+
 ### 1. Panel host
 
-Run on the machine that will host the panel:
+Install the panel and the agent together.
+
+**Debian / Ubuntu**
+
+```bash
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera_amd64.deb
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
+sudo apt install ./tenodera_amd64.deb ./tenodera-agent_amd64.deb
+```
+
+**Fedora / RHEL** — `dnf` installs straight from the URL:
+
+```bash
+sudo dnf install \
+  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-x86_64.rpm \
+  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
+```
+
+The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, the
+service account, and the data dir), enables and starts the gateway on port 9090,
+and starts the local agent.
+
+Open `http://<host>:9090` and log in with any PAM system user that has `sudo`
+privileges.
+
+### 2. Managed hosts
+
+Install just the agent.
+
+**Debian / Ubuntu**
+
+```bash
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
+sudo apt install ./tenodera-agent_amd64.deb
+```
+
+**Fedora / RHEL**
+
+```bash
+sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
+```
+
+Then, on either distro, point the agent at your panel and start it:
+
+```bash
+sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
+sudo systemctl enable --now tenodera-agent
+```
+
+The agent connects outbound — no inbound ports needed. On first connect it waits
+for approval; go to **Management → Pending** in the panel and click **Approve**.
+To skip approval, generate a bootstrap token in **Management → Tokens** and pass
+it with `--token` to the curl installer below.
+
+> arm64 / aarch64: swap `amd64` → `arm64` (.deb) and `x86_64` → `aarch64` (.rpm).
+> For a specific version, replace `latest` with the tag, e.g.
+> `releases/download/v0.1.6/tenodera_amd64.deb`.
+
+### 3. Verify the download
+
+All artifacts are checksummed in `SHA256SUMS`, signed with
+[minisign](https://jedisct1.github.io/minisign/). The public key is in
+[SECURITY.md](SECURITY.md):
+
+```bash
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/SHA256SUMS
+wget https://github.com/tenodera-io/tenodera/releases/latest/download/SHA256SUMS.minisig
+minisign -Vm SHA256SUMS -P <public-key-from-SECURITY.md>
+sha256sum --ignore-missing -c SHA256SUMS
+```
+
+### 4. Install from source (curl, optional)
+
+Prefer to build from source instead of installing a package? The curl installer
+pulls build dependencies, compiles (~3–4 min), and wires up the systemd services.
+
+Panel host — installs and enrolls the local agent automatically:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
 ```
 
-Installs build dependencies, compiles from source (~3–4 min), installs systemd services, and starts the panel on port 9090. The local agent is installed and enrolled automatically.
-
-Open `http://<host>:9090` and log in with any PAM system user that has `sudo` privileges.
-
-### 2. Remote hosts
-
-Run on each host you want to manage:
+Managed hosts:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090
 ```
 
-The agent connects outbound — no inbound ports needed. On first connect it waits for approval; go to **Management → Pending** in the panel and click **Approve**.
-
-### 3. Unattended installs (optional)
-
-To skip the approval step, generate a bootstrap token first (**Management → Tokens**), then pass it to the installer:
+Unattended (skip approval) — pass a bootstrap token from **Management → Tokens**:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway http://<panel-host>:9090 --token <token>
 ```
 
-The host enrolls immediately without manual approval.
-
-### 4. Install from a package (optional)
-
-Prebuilt, signed packages for **Debian 12+ / Ubuntu 24.04+** (`.deb`, amd64 &
-arm64) and **Fedora** (`.rpm`, x86_64 & aarch64) are attached to each
-[release](https://github.com/tenodera-io/tenodera/releases). They install in
-seconds without compiling. Asset filenames carry no version, so the
-`releases/latest/download/…` URLs below always fetch the newest release.
-
-Panel host — install both the panel and the agent:
-
-```bash
-# Debian / Ubuntu
-wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera_amd64.deb
-wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
-sudo apt install ./tenodera_amd64.deb ./tenodera-agent_amd64.deb
-# Fedora (dnf installs straight from the URL)
-sudo dnf install \
-  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-x86_64.rpm \
-  https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
-```
-
-The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, sets
-up the service account, enables and starts the gateway on port 9090) and starts
-the local agent.
-
-Managed host — install just the agent, then point it at your panel:
-
-```bash
-# Debian / Ubuntu
-wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
-sudo apt install ./tenodera-agent_amd64.deb
-# Fedora: sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
-sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
-sudo systemctl enable --now tenodera-agent
-```
-
-> arm64 / aarch64: swap `amd64` → `arm64` (.deb) and `x86_64` → `aarch64` (.rpm).
-> For a specific version, replace `latest` with the tag, e.g.
-> `releases/download/v0.1.6/tenodera_amd64.deb`.
-
-**Verify the download** — all artifacts are checksummed in `SHA256SUMS`, signed
-with [minisign](https://jedisct1.github.io/minisign/). The public key is in
-[SECURITY.md](SECURITY.md):
-
-```bash
-minisign -Vm SHA256SUMS -P <public-key-from-SECURITY.md>
-sha256sum --ignore-missing -c SHA256SUMS
-```
-
 > See [DOCS.md](DOCS.md) for TLS setup, configuration reference, and more.
 
 ## Uninstall
 
+Installed from a package:
+
 ```bash
-# Panel host (removes gateway, agent, UI, config, services):
+# Debian / Ubuntu
+sudo apt remove tenodera tenodera-agent
+
+# Fedora / RHEL
+sudo dnf remove tenodera tenodera-agent
+```
+
+Installed from source (curl):
+
+```bash
+# Panel host — removes gateway, agent, UI, config, services
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh \
   | sudo bash -s -- --uninstall
 
-# Managed hosts (agent only):
+# Managed hosts — agent only
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --uninstall
 ```
