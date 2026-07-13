@@ -95,9 +95,7 @@ impl ChannelHandler for ContainersHandler {
                 let image = data.get("image").and_then(|v| v.as_str()).unwrap_or("");
                 pull_image(rt, image, password).await
             }
-            "create" => {
-                create_container(rt, data, password).await
-            }
+            "create" => create_container(rt, data, password).await,
             "logs" => {
                 let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let tail = data.get("tail").and_then(|v| v.as_u64()).unwrap_or(100);
@@ -105,15 +103,9 @@ impl ChannelHandler for ContainersHandler {
                 container_logs(rt, id, tail, owner, password).await
             }
             "service_status" => service_status(rt).await,
-            "service_start" => {
-                service_action_sudo(rt, "start", password).await
-            }
-            "service_stop" => {
-                service_action_sudo(rt, "stop", password).await
-            }
-            "service_restart" => {
-                service_action_sudo(rt, "restart", password).await
-            }
+            "service_start" => service_action_sudo(rt, "start", password).await,
+            "service_stop" => service_action_sudo(rt, "stop", password).await,
+            "service_restart" => service_action_sudo(rt, "restart", password).await,
             "stats_all" => stats_all(rt, password).await,
             "volumes_list" => volumes_list(rt, password).await,
             "volume_inspect" => {
@@ -154,17 +146,20 @@ impl ChannelHandler for ContainersHandler {
             "container_prune" => container_prune(rt, password).await,
             "image_prune" => image_prune(rt, password).await,
             "system_prune" => system_prune(rt, password).await,
-            _ => serde_json::json!({ "type": "error", "error": format!("unknown action: {action}") }),
+            _ => {
+                serde_json::json!({ "type": "error", "error": format!("unknown action: {action}") })
+            }
         };
 
         // Audit mutating container actions
         match action {
             "start" | "stop" | "restart" | "remove" | "remove_image" | "pull" | "create"
-            | "volume_create" | "volume_remove" | "volume_prune"
-            | "network_create" | "network_connect" | "network_disconnect" | "network_remove" | "network_prune"
-            | "container_prune" | "image_prune" | "system_prune"
-            | "service_start" | "service_stop" | "service_restart" => {
-                let target = data.get("id")
+            | "volume_create" | "volume_remove" | "volume_prune" | "network_create"
+            | "network_connect" | "network_disconnect" | "network_remove" | "network_prune"
+            | "container_prune" | "image_prune" | "system_prune" | "service_start"
+            | "service_stop" | "service_restart" => {
+                let target = data
+                    .get("id")
                     .or(data.get("name"))
                     .or(data.get("image"))
                     .and_then(|v| v.as_str())
@@ -236,9 +231,10 @@ async fn detect_runtime_sudo(password: &str) -> Option<String> {
                 drop(stdin);
             }
             if let Ok(out) = child.wait().await
-                && out.success() {
-                    return Some((*rt).to_string());
-                }
+                && out.success()
+            {
+                return Some((*rt).to_string());
+            }
         }
     }
     None
@@ -271,13 +267,19 @@ async fn list_containers_merged(rt: &str, password: &str) -> serde_json::Value {
         if !id.is_empty() {
             seen.insert(id);
         }
-        c.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
+        c.as_object_mut()
+            .map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
         merged.push(c);
     }
 
     // Add root containers (if password provided)
     if !password.is_empty() {
-        let root_list = run_sudo_cmd_parsed(password, rt, &["ps", "-a", "--format", "{{json .}}", "--no-trunc"]).await;
+        let root_list = run_sudo_cmd_parsed(
+            password,
+            rt,
+            &["ps", "-a", "--format", "{{json .}}", "--no-trunc"],
+        )
+        .await;
         for mut c in root_list {
             let id = container_id(&c);
             if !id.is_empty() && seen.contains(&id) {
@@ -286,7 +288,8 @@ async fn list_containers_merged(rt: &str, password: &str) -> serde_json::Value {
             if !id.is_empty() {
                 seen.insert(id);
             }
-            c.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
+            c.as_object_mut()
+                .map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
             merged.push(c);
         }
     }
@@ -305,12 +308,18 @@ async fn list_images_merged(rt: &str, password: &str) -> serde_json::Value {
         if !id.is_empty() {
             seen.insert(id);
         }
-        img.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
+        img.as_object_mut()
+            .map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
         merged.push(img);
     }
 
     if !password.is_empty() {
-        let root_list = run_sudo_cmd_parsed(password, rt, &["images", "--format", "{{json .}}", "--no-trunc"]).await;
+        let root_list = run_sudo_cmd_parsed(
+            password,
+            rt,
+            &["images", "--format", "{{json .}}", "--no-trunc"],
+        )
+        .await;
         for mut img in root_list {
             let id = image_id(&img);
             if !id.is_empty() && seen.contains(&id) {
@@ -319,7 +328,8 @@ async fn list_images_merged(rt: &str, password: &str) -> serde_json::Value {
             if !id.is_empty() {
                 seen.insert(id);
             }
-            img.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
+            img.as_object_mut()
+                .map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
             merged.push(img);
         }
     }
@@ -347,7 +357,13 @@ fn image_id(img: &serde_json::Value) -> String {
 
 // ── Container actions (owner-aware) ───────────────────────
 
-async fn container_action(rt: &str, action: &str, id: &str, owner: &str, password: &str) -> serde_json::Value {
+async fn container_action(
+    rt: &str,
+    action: &str,
+    id: &str,
+    owner: &str,
+    password: &str,
+) -> serde_json::Value {
     if id.is_empty() {
         return serde_json::json!({ "error": "no container id" });
     }
@@ -365,7 +381,13 @@ async fn container_action(rt: &str, action: &str, id: &str, owner: &str, passwor
     }
 }
 
-async fn remove_container(rt: &str, id: &str, force: bool, owner: &str, password: &str) -> serde_json::Value {
+async fn remove_container(
+    rt: &str,
+    id: &str,
+    force: bool,
+    owner: &str,
+    password: &str,
+) -> serde_json::Value {
     if id.is_empty() {
         return serde_json::json!({ "error": "no container id" });
     }
@@ -377,20 +399,30 @@ async fn remove_container(rt: &str, id: &str, force: bool, owner: &str, password
             return serde_json::json!({ "error": "password required for root containers" });
         }
         let mut args = vec![rt, "rm"];
-        if force { args.push("-f"); }
+        if force {
+            args.push("-f");
+        }
         args.push("--");
         args.push(id);
         sudo_cmd(password, &args).await
     } else {
         let mut args = vec!["rm"];
-        if force { args.push("-f"); }
+        if force {
+            args.push("-f");
+        }
         args.push("--");
         args.push(id);
         run_cmd_result(rt, &args).await
     }
 }
 
-async fn remove_image(rt: &str, id: &str, force: bool, owner: &str, password: &str) -> serde_json::Value {
+async fn remove_image(
+    rt: &str,
+    id: &str,
+    force: bool,
+    owner: &str,
+    password: &str,
+) -> serde_json::Value {
     if id.is_empty() {
         return serde_json::json!({ "error": "no image id" });
     }
@@ -402,13 +434,17 @@ async fn remove_image(rt: &str, id: &str, force: bool, owner: &str, password: &s
             return serde_json::json!({ "error": "password required for root images" });
         }
         let mut args = vec![rt, "rmi"];
-        if force { args.push("-f"); }
+        if force {
+            args.push("-f");
+        }
         args.push("--");
         args.push(id);
         sudo_cmd(password, &args).await
     } else {
         let mut args = vec!["rmi"];
-        if force { args.push("-f"); }
+        if force {
+            args.push("-f");
+        }
         args.push("--");
         args.push(id);
         run_cmd_result(rt, &args).await
@@ -429,7 +465,13 @@ async fn inspect_container(rt: &str, id: &str, owner: &str, password: &str) -> s
     }
 }
 
-async fn container_logs(rt: &str, id: &str, tail: u64, owner: &str, password: &str) -> serde_json::Value {
+async fn container_logs(
+    rt: &str,
+    id: &str,
+    tail: u64,
+    owner: &str,
+    password: &str,
+) -> serde_json::Value {
     if id.is_empty() {
         return serde_json::json!({ "error": "no container id" });
     }
@@ -440,7 +482,12 @@ async fn container_logs(rt: &str, id: &str, tail: u64, owner: &str, password: &s
 
     if owner == "root" && !password.is_empty() {
         // Use sudo for root containers
-        let output = run_sudo_cmd_raw(password, rt, &["logs", "--tail", &tail_str, "--timestamps", "--", id]).await;
+        let output = run_sudo_cmd_raw(
+            password,
+            rt,
+            &["logs", "--tail", &tail_str, "--timestamps", "--", id],
+        )
+        .await;
         return match output {
             Ok((stdout, stderr)) => {
                 let combined = if stderr.is_empty() {
@@ -495,7 +542,9 @@ async fn pull_image(rt: &str, image: &str, password: &str) -> serde_json::Value 
     .await;
     match output {
         Ok(res) => res,
-        Err(_) => serde_json::json!({ "ok": false, "error": "pull timed out after 5 minutes", "action": "pull" }),
+        Err(_) => {
+            serde_json::json!({ "ok": false, "error": "pull timed out after 5 minutes", "action": "pull" })
+        }
     }
 }
 
@@ -561,13 +610,14 @@ async fn create_container(rt: &str, data: &serde_json::Value, password: &str) ->
 
     // Container name
     if let Some(name) = data.get("name").and_then(|v| v.as_str())
-        && !name.is_empty() {
-            if !is_valid_container_ref(name) {
-                return serde_json::json!({ "error": "invalid container name" });
-            }
-            args.push("--name".into());
-            args.push(name.into());
+        && !name.is_empty()
+    {
+        if !is_valid_container_ref(name) {
+            return serde_json::json!({ "error": "invalid container name" });
         }
+        args.push("--name".into());
+        args.push(name.into());
+    }
 
     // Port mappings: [{host: "8080", container: "80"}]
     if let Some(ports) = data.get("ports").and_then(|v| v.as_array()) {
@@ -613,13 +663,14 @@ async fn create_container(rt: &str, data: &serde_json::Value, password: &str) ->
 
     // Restart policy
     if let Some(restart) = data.get("restart").and_then(|v| v.as_str())
-        && !restart.is_empty() {
-            if !is_valid_restart_policy(restart) {
-                return serde_json::json!({ "error": format!("invalid restart policy: {restart}") });
-            }
-            args.push("--restart".into());
-            args.push(restart.into());
+        && !restart.is_empty()
+    {
+        if !is_valid_restart_policy(restart) {
+            return serde_json::json!({ "error": format!("invalid restart policy: {restart}") });
         }
+        args.push("--restart".into());
+        args.push(restart.into());
+    }
 
     args.push("--".into());
     args.push(image.into());
@@ -633,11 +684,12 @@ async fn create_container(rt: &str, data: &serde_json::Value, password: &str) ->
             }
         }
     } else if let Some(cmd) = data.get("command").and_then(|v| v.as_str())
-        && !cmd.is_empty() {
-            for part in cmd.split_whitespace() {
-                args.push(part.into());
-            }
+        && !cmd.is_empty()
+    {
+        for part in cmd.split_whitespace() {
+            args.push(part.into());
         }
+    }
 
     let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     sudo_cmd(password, &str_args).await
@@ -646,7 +698,11 @@ async fn create_container(rt: &str, data: &serde_json::Value, password: &str) ->
 // ── Service management ────────────────────────────────────
 
 async fn service_status(rt: &str) -> serde_json::Value {
-    let service_name = if rt == "podman" { "podman.socket" } else { "docker.service" };
+    let service_name = if rt == "podman" {
+        "podman.socket"
+    } else {
+        "docker.service"
+    };
     let output = tokio::process::Command::new("systemctl")
         .args(["is-active", service_name])
         .output()
@@ -675,7 +731,11 @@ async fn service_status(rt: &str) -> serde_json::Value {
 }
 
 async fn service_action_sudo(rt: &str, action: &str, password: &str) -> serde_json::Value {
-    let service_name = if rt == "podman" { "podman.socket" } else { "docker.service" };
+    let service_name = if rt == "podman" {
+        "podman.socket"
+    } else {
+        "docker.service"
+    };
     if password.is_empty() {
         return serde_json::json!({ "error": "password required" });
     }
@@ -711,11 +771,16 @@ async fn sudo_cmd(password: &str, args: &[&str]) -> serde_json::Value {
         Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let clean = stderr.lines()
+            let clean = stderr
+                .lines()
                 .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            let msg = if clean.is_empty() { "authentication failed".to_string() } else { clean };
+            let msg = if clean.is_empty() {
+                "authentication failed".to_string()
+            } else {
+                clean
+            };
             serde_json::json!({ "error": msg })
         }
         Err(e) => serde_json::json!({ "error": e.to_string() }),
@@ -724,10 +789,7 @@ async fn sudo_cmd(password: &str, args: &[&str]) -> serde_json::Value {
 
 /// Run a container runtime command and parse the JSON output.
 async fn run_cmd(rt: &str, args: &[&str]) -> serde_json::Value {
-    let output = tokio::process::Command::new(rt)
-        .args(args)
-        .output()
-        .await;
+    let output = tokio::process::Command::new(rt).args(args).output().await;
 
     match output {
         Ok(out) if out.status.success() => parse_json_output(&out.stdout),
@@ -741,16 +803,17 @@ async fn run_cmd(rt: &str, args: &[&str]) -> serde_json::Value {
 
 /// Run a container runtime command and return ok/error (for actions).
 async fn run_cmd_result(rt: &str, args: &[&str]) -> serde_json::Value {
-    let output = tokio::process::Command::new(rt)
-        .args(args)
-        .output()
-        .await;
+    let output = tokio::process::Command::new(rt).args(args).output().await;
 
     match output {
         Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let msg = if stderr.is_empty() { "command failed".to_string() } else { stderr };
+            let msg = if stderr.is_empty() {
+                "command failed".to_string()
+            } else {
+                stderr
+            };
             serde_json::json!({ "error": msg })
         }
         Err(e) => serde_json::json!({ "error": e.to_string() }),
@@ -785,11 +848,16 @@ async fn run_sudo_cmd(password: &str, rt: &str, args: &[&str]) -> serde_json::Va
         Ok(out) if out.status.success() => parse_json_output(&out.stdout),
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let clean = stderr.lines()
+            let clean = stderr
+                .lines()
                 .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            let msg = if clean.is_empty() { "command failed".to_string() } else { clean };
+            let msg = if clean.is_empty() {
+                "command failed".to_string()
+            } else {
+                clean
+            };
             serde_json::json!({ "error": msg })
         }
         Err(e) => serde_json::json!({ "error": e.to_string() }),
@@ -797,7 +865,11 @@ async fn run_sudo_cmd(password: &str, rt: &str, args: &[&str]) -> serde_json::Va
 }
 
 /// Run a sudo command returning raw stdout + stderr strings.
-async fn run_sudo_cmd_raw(password: &str, rt: &str, args: &[&str]) -> Result<(String, String), String> {
+async fn run_sudo_cmd_raw(
+    password: &str,
+    rt: &str,
+    args: &[&str],
+) -> Result<(String, String), String> {
     use tokio::io::AsyncWriteExt;
 
     let mut cmd_args = vec!["-S", rt];
@@ -825,7 +897,8 @@ async fn run_sudo_cmd_raw(password: &str, rt: &str, args: &[&str]) -> Result<(St
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
             let stderr_raw = String::from_utf8_lossy(&out.stderr).to_string();
             // Filter sudo prompt lines from stderr
-            let stderr: String = stderr_raw.lines()
+            let stderr: String = stderr_raw
+                .lines()
                 .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -867,10 +940,7 @@ async fn run_sudo_cmd_parsed(password: &str, rt: &str, args: &[&str]) -> Vec<ser
 
 /// Run a user-level command and parse JSON output into a Vec.
 async fn run_cmd_parsed(rt: &str, args: &[&str]) -> Vec<serde_json::Value> {
-    let output = tokio::process::Command::new(rt)
-        .args(args)
-        .output()
-        .await;
+    let output = tokio::process::Command::new(rt).args(args).output().await;
 
     match output {
         Ok(out) if out.status.success() => parse_json_array(&out.stdout),
@@ -897,7 +967,9 @@ fn parse_json_output(stdout: &[u8]) -> serde_json::Value {
         let mut items = Vec::new();
         for line in trimmed.lines() {
             let line = line.trim();
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
                 items.push(v);
             }
@@ -921,14 +993,17 @@ fn parse_json_array(stdout: &[u8]) -> Vec<serde_json::Value> {
         return arr;
     }
     // Try as single object
-    if let Ok(v @ serde_json::Value::Object(_)) = serde_json::from_str::<serde_json::Value>(trimmed) {
+    if let Ok(v @ serde_json::Value::Object(_)) = serde_json::from_str::<serde_json::Value>(trimmed)
+    {
         return vec![v];
     }
     // Try line-by-line
     let mut items = Vec::new();
     for line in trimmed.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(line) {
             items.push(v);
         }
@@ -951,7 +1026,9 @@ fn is_valid_image_ref(image: &str) -> bool {
     !image.is_empty()
         && image.len() <= 512
         && !image.starts_with('-')
-        && image.chars().all(|c| c.is_alphanumeric() || "-_./: ".contains(c))
+        && image
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-_./: ".contains(c))
         && !image.contains("..")
 }
 
@@ -960,7 +1037,8 @@ fn is_valid_restart_policy(policy: &str) -> bool {
     matches!(policy, "no" | "always" | "unless-stopped")
         || policy == "on-failure"
         || policy.starts_with("on-failure:")
-            && policy.strip_prefix("on-failure:")
+            && policy
+                .strip_prefix("on-failure:")
                 .is_some_and(|n| !n.is_empty() && n.parse::<u32>().is_ok())
 }
 
@@ -984,25 +1062,36 @@ async fn volumes_list(rt: &str, password: &str) -> serde_json::Value {
     let mut merged: Vec<serde_json::Value> = Vec::new();
 
     for mut v in user_vols {
-        let name = v.get("Name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+        let name = v
+            .get("Name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
         if !name.is_empty() {
             seen.insert(name);
         }
-        v.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
+        v.as_object_mut()
+            .map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
         merged.push(v);
     }
 
     if !password.is_empty() {
-        let root_vols = run_sudo_cmd_parsed(password, rt, &["volume", "ls", "--format", "{{json .}}"]).await;
+        let root_vols =
+            run_sudo_cmd_parsed(password, rt, &["volume", "ls", "--format", "{{json .}}"]).await;
         for mut v in root_vols {
-            let name = v.get("Name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+            let name = v
+                .get("Name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("")
+                .to_string();
             if !name.is_empty() && seen.contains(&name) {
                 continue;
             }
             if !name.is_empty() {
                 seen.insert(name);
             }
-            v.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
+            v.as_object_mut()
+                .map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
             merged.push(v);
         }
     }
@@ -1043,27 +1132,40 @@ async fn networks_list(rt: &str, password: &str) -> serde_json::Value {
     let mut merged: Vec<serde_json::Value> = Vec::new();
 
     for mut n in user_nets {
-        let id = n.get("ID").or(n.get("Id")).or(n.get("id"))
-            .and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let id = n
+            .get("ID")
+            .or(n.get("Id"))
+            .or(n.get("id"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if !id.is_empty() {
             seen.insert(id);
         }
-        n.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
+        n.as_object_mut()
+            .map(|o| o.insert("_owner".to_string(), serde_json::json!("user")));
         merged.push(n);
     }
 
     if !password.is_empty() {
-        let root_nets = run_sudo_cmd_parsed(password, rt, &["network", "ls", "--format", "{{json .}}"]).await;
+        let root_nets =
+            run_sudo_cmd_parsed(password, rt, &["network", "ls", "--format", "{{json .}}"]).await;
         for mut n in root_nets {
-            let id = n.get("ID").or(n.get("Id")).or(n.get("id"))
-                .and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let id = n
+                .get("ID")
+                .or(n.get("Id"))
+                .or(n.get("id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if !id.is_empty() && seen.contains(&id) {
                 continue;
             }
             if !id.is_empty() {
                 seen.insert(id);
             }
-            n.as_object_mut().map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
+            n.as_object_mut()
+                .map(|o| o.insert("_owner".to_string(), serde_json::json!("root")));
             merged.push(n);
         }
     }
@@ -1140,7 +1242,11 @@ async fn network_create(rt: &str, data: &serde_json::Value, password: &str) -> s
 
     let mut sub_args: Vec<String> = vec!["network".into(), "create".into()];
 
-    if let Some(driver) = data.get("driver").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    if let Some(driver) = data
+        .get("driver")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
         if !is_valid_network_driver(driver) {
             return serde_json::json!({ "error": "invalid network driver" });
         }
@@ -1148,7 +1254,11 @@ async fn network_create(rt: &str, data: &serde_json::Value, password: &str) -> s
         sub_args.push(driver.into());
     }
 
-    if let Some(subnet) = data.get("subnet").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    if let Some(subnet) = data
+        .get("subnet")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
         if !is_valid_cidr(subnet) {
             return serde_json::json!({ "error": "invalid subnet — use CIDR, e.g. 192.168.1.0/24" });
         }
@@ -1156,7 +1266,11 @@ async fn network_create(rt: &str, data: &serde_json::Value, password: &str) -> s
         sub_args.push(subnet.into());
     }
 
-    if let Some(gateway) = data.get("gateway").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    if let Some(gateway) = data
+        .get("gateway")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
         if !is_valid_ip(gateway) {
             return serde_json::json!({ "error": "invalid gateway IP address" });
         }
@@ -1164,7 +1278,11 @@ async fn network_create(rt: &str, data: &serde_json::Value, password: &str) -> s
         sub_args.push(gateway.into());
     }
 
-    if data.get("internal").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if data
+        .get("internal")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         sub_args.push("--internal".into());
     }
     if data.get("ipv6").and_then(|v| v.as_bool()).unwrap_or(false) {
@@ -1184,7 +1302,12 @@ async fn network_create(rt: &str, data: &serde_json::Value, password: &str) -> s
     }
 }
 
-async fn network_connect(rt: &str, network: &str, container: &str, password: &str) -> serde_json::Value {
+async fn network_connect(
+    rt: &str,
+    network: &str,
+    container: &str,
+    password: &str,
+) -> serde_json::Value {
     if network.is_empty() || !is_valid_container_ref(network) {
         return serde_json::json!({ "error": "invalid network name" });
     }
@@ -1194,11 +1317,20 @@ async fn network_connect(rt: &str, network: &str, container: &str, password: &st
     if password.is_empty() {
         run_cmd_result(rt, &["network", "connect", "--", network, container]).await
     } else {
-        sudo_cmd(password, &[rt, "network", "connect", "--", network, container]).await
+        sudo_cmd(
+            password,
+            &[rt, "network", "connect", "--", network, container],
+        )
+        .await
     }
 }
 
-async fn network_disconnect(rt: &str, network: &str, container: &str, password: &str) -> serde_json::Value {
+async fn network_disconnect(
+    rt: &str,
+    network: &str,
+    container: &str,
+    password: &str,
+) -> serde_json::Value {
     if network.is_empty() || !is_valid_container_ref(network) {
         return serde_json::json!({ "error": "invalid network name" });
     }
@@ -1208,7 +1340,11 @@ async fn network_disconnect(rt: &str, network: &str, container: &str, password: 
     if password.is_empty() {
         run_cmd_result(rt, &["network", "disconnect", "--", network, container]).await
     } else {
-        sudo_cmd(password, &[rt, "network", "disconnect", "--", network, container]).await
+        sudo_cmd(
+            password,
+            &[rt, "network", "disconnect", "--", network, container],
+        )
+        .await
     }
 }
 
@@ -1247,7 +1383,11 @@ async fn volume_create(rt: &str, data: &serde_json::Value, password: &str) -> se
 
     let mut sub_args: Vec<String> = vec!["volume".into(), "create".into()];
 
-    if let Some(driver) = data.get("driver").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+    if let Some(driver) = data
+        .get("driver")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+    {
         if !is_valid_volume_driver_name(driver) {
             return serde_json::json!({ "error": "invalid volume driver name" });
         }
@@ -1286,13 +1426,18 @@ async fn volume_create(rt: &str, data: &serde_json::Value, password: &str) -> se
 // ── Additional validators ──────────────────────────────────
 
 fn is_valid_network_driver(driver: &str) -> bool {
-    matches!(driver, "bridge" | "overlay" | "host" | "none" | "macvlan" | "ipvlan" | "null")
+    matches!(
+        driver,
+        "bridge" | "overlay" | "host" | "none" | "macvlan" | "ipvlan" | "null"
+    )
 }
 
 fn is_valid_cidr(cidr: &str) -> bool {
     !cidr.is_empty()
         && cidr.len() <= 43
-        && cidr.chars().all(|c| c.is_ascii_alphanumeric() || ".:/%".contains(c))
+        && cidr
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".:/%".contains(c))
         && cidr.contains('/')
         && !cidr.starts_with('/')
 }
@@ -1300,19 +1445,25 @@ fn is_valid_cidr(cidr: &str) -> bool {
 fn is_valid_ip(ip: &str) -> bool {
     !ip.is_empty()
         && ip.len() <= 39
-        && ip.chars().all(|c| c.is_ascii_alphanumeric() || ".:".contains(c))
+        && ip
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ".:".contains(c))
 }
 
 fn is_valid_label_key(key: &str) -> bool {
     !key.is_empty()
         && key.len() <= 128
         && !key.starts_with('-')
-        && key.chars().all(|c| c.is_alphanumeric() || "-_./".contains(c))
+        && key
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-_./".contains(c))
 }
 
 fn is_valid_volume_driver_name(driver: &str) -> bool {
     !driver.is_empty()
         && driver.len() <= 64
         && !driver.starts_with('-')
-        && driver.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c))
+        && driver
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-_.".contains(c))
 }

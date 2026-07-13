@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::fs;
 
 use crate::handler::ChannelHandler;
@@ -13,14 +13,24 @@ pub struct HostConfigHandler;
 
 #[async_trait]
 impl ChannelHandler for HostConfigHandler {
-    fn payload_type(&self) -> &str { "host.config" }
+    fn payload_type(&self) -> &str {
+        "host.config"
+    }
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         let data = read_host_config().await;
         vec![
-            Message::Ready  { channel: channel.into() },
-            Message::Data   { channel: channel.into(), data },
-            Message::Close  { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -51,7 +61,9 @@ async fn read_host_config() -> Value {
         .lines()
         .filter_map(|line| {
             let line = line.trim();
-            if line.starts_with('#') || line.is_empty() { return None; }
+            if line.starts_with('#') || line.is_empty() {
+                return None;
+            }
             let (key, val) = line.split_once('=')?;
             if key.trim().eq_ignore_ascii_case("role") {
                 Some(val.trim().to_string())
@@ -80,38 +92,69 @@ pub struct HostActionHandler;
 
 #[async_trait]
 impl ChannelHandler for HostActionHandler {
-    fn payload_type(&self) -> &str { "host.action" }
+    fn payload_type(&self) -> &str {
+        "host.action"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
         let extra = Value::Object(options.extra.clone());
 
         if let Some(err) = require_admin(&extra) {
             return vec![
-                Message::Ready { channel: channel.into() },
-                Message::Data  { channel: channel.into(), data: err },
-                Message::Close { channel: channel.into(), problem: None },
+                Message::Ready {
+                    channel: channel.into(),
+                },
+                Message::Data {
+                    channel: channel.into(),
+                    data: err,
+                },
+                Message::Close {
+                    channel: channel.into(),
+                    problem: None,
+                },
             ];
         }
 
-        let action   = options.extra.get("action").and_then(|v| v.as_str()).unwrap_or("");
-        let password = options.extra.get("password").and_then(|v| v.as_str()).unwrap_or("");
+        let action = options
+            .extra
+            .get("action")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let password = options
+            .extra
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         let result = match action {
             "set_role" => set_role(&extra, password).await,
-            "restart"  => restart_host(password).await,
-            other      => json!({ "error": format!("unknown action: {other}") }),
+            "restart" => restart_host(password).await,
+            other => json!({ "error": format!("unknown action: {other}") }),
         };
 
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data  { channel: channel.into(), data: result },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data: result,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
 
 async fn set_role(data: &Value, password: &str) -> Value {
-    let role = data.get("role").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let role = data
+        .get("role")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
 
     let env_path = "/etc/tenodera/agent.cnf";
     let content = fs::read_to_string(env_path).await.unwrap_or_default();

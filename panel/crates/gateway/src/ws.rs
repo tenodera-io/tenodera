@@ -2,19 +2,22 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::{
-    extract::{State, WebSocketUpgrade, ws::{Message, WebSocket}},
+    extract::{
+        State, WebSocketUpgrade,
+        ws::{Message, WebSocket},
+    },
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use tenodera_protocol::channel::ChannelId;
 use tenodera_protocol::message;
 
 use crate::AppState;
-use crate::audit;
 use crate::agent_registry::session_prefix;
+use crate::audit;
 use crate::security_headers::origin_matches_host;
 
 const MAX_CHANNELS_PER_SESSION: usize = 512;
@@ -126,10 +129,14 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             message::AuthCredentials::Token { token } => token,
             _ => {
                 let err = message::Message::AuthResult {
-                    success: false, problem: Some("token-scheme-required".into()), user: None,
+                    success: false,
+                    problem: Some("token-scheme-required".into()),
+                    user: None,
                 };
                 let mut s = sink.lock().await;
-                let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+                let _ = s
+                    .send(Message::Text(serde_json::to_string(&err).unwrap().into()))
+                    .await;
                 return;
             }
         };
@@ -138,10 +145,14 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             Some(s) => s,
             None => {
                 let err = message::Message::AuthResult {
-                    success: false, problem: Some("invalid-session".into()), user: None,
+                    success: false,
+                    problem: Some("invalid-session".into()),
+                    user: None,
                 };
                 let mut s = sink.lock().await;
-                let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+                let _ = s
+                    .send(Message::Text(serde_json::to_string(&err).unwrap().into()))
+                    .await;
                 return;
             }
         };
@@ -149,10 +160,14 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         if session.last_activity.elapsed().as_secs() > state.config.idle_timeout_secs {
             state.sessions.remove(&token).await;
             let err = message::Message::AuthResult {
-                success: false, problem: Some("session-expired".into()), user: None,
+                success: false,
+                problem: Some("session-expired".into()),
+                user: None,
             };
             let mut s = sink.lock().await;
-            let _ = s.send(Message::Text(serde_json::to_string(&err).unwrap().into())).await;
+            let _ = s
+                .send(Message::Text(serde_json::to_string(&err).unwrap().into()))
+                .await;
             return;
         }
 
@@ -160,14 +175,29 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
         let user = session.user.clone();
         let role = session.role;
 
-        let ok = message::Message::AuthResult { success: true, problem: None, user: Some(user.clone()) };
-        { let mut s = sink.lock().await; let _ = s.send(Message::Text(serde_json::to_string(&ok).unwrap().into())).await; }
+        let ok = message::Message::AuthResult {
+            success: true,
+            problem: None,
+            user: Some(user.clone()),
+        };
+        {
+            let mut s = sink.lock().await;
+            let _ = s
+                .send(Message::Text(serde_json::to_string(&ok).unwrap().into()))
+                .await;
+        }
 
         tracing::info!(user = %user, role = %role.as_str(), "WS authenticated");
         (token, user, role)
     };
 
-    audit::log(&user, "ws_connect", "websocket", true, "WebSocket connection established");
+    audit::log(
+        &user,
+        "ws_connect",
+        "websocket",
+        true,
+        "WebSocket connection established",
+    );
 
     let (close_tx, mut close_rx) = mpsc::unbounded_channel::<ChannelId>();
 
@@ -176,7 +206,8 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
     // host_id → (proxy sender, conn liveness token) for the remote agent session.
     // The Weak<()> becomes non-upgradeable when the AgentConn is replaced (reconnect)
     // or removed (disconnect), allowing stale-connection detection without a round-trip.
-    let mut remote_senders: HashMap<String, (mpsc::Sender<message::Message>, std::sync::Weak<()>)> = HashMap::new();
+    let mut remote_senders: HashMap<String, (mpsc::Sender<message::Message>, std::sync::Weak<()>)> =
+        HashMap::new();
 
     let mut session_check = tokio::time::interval(std::time::Duration::from_secs(5));
     session_check.tick().await;
@@ -310,11 +341,10 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                 let is_close = matches!(&parsed, message::Message::Close { .. });
 
                                 if let Some(ch) = ch {
-                                    if let Some(sender) = channel_routes.get(&ch) {
-                                        if sender.send(parsed).await.is_err() {
+                                    if let Some(sender) = channel_routes.get(&ch)
+                                        && sender.send(parsed).await.is_err() {
                                             channel_routes.remove(&ch);
                                         }
-                                    }
                                     if is_close {
                                         channel_routes.remove(&ch);
                                     }
@@ -344,5 +374,11 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
 
     drop(remote_senders);
     drop(channel_routes);
-    audit::log(&user, "ws_disconnect", "websocket", true, "WebSocket connection ended");
+    audit::log(
+        &user,
+        "ws_disconnect",
+        "websocket",
+        true,
+        "WebSocket connection ended",
+    );
 }

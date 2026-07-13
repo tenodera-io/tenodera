@@ -18,15 +18,19 @@ pub struct FileReadHandler;
 
 #[async_trait]
 impl ChannelHandler for FileReadHandler {
-    fn payload_type(&self) -> &str { "file.read" }
+    fn payload_type(&self) -> &str {
+        "file.read"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
-        let path     = get_str(options, "path");
+        let path = get_str(options, "path");
         let password = get_str(options, "password");
-        let user     = get_str(options, "_user");
-        let offset   = get_usize(options, "offset");
+        let user = get_str(options, "_user");
+        let offset = get_usize(options, "offset");
 
-        if path.is_empty() { return err_msgs(channel, "path required"); }
+        if path.is_empty() {
+            return err_msgs(channel, "path required");
+        }
 
         let data = read_file(path, user, password, offset).await;
         ok_msgs(channel, data)
@@ -39,15 +43,19 @@ pub struct FileWriteHandler;
 
 #[async_trait]
 impl ChannelHandler for FileWriteHandler {
-    fn payload_type(&self) -> &str { "file.write" }
+    fn payload_type(&self) -> &str {
+        "file.write"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
-        let path     = get_str(options, "path");
+        let path = get_str(options, "path");
         let password = get_str(options, "password");
-        let user     = get_str(options, "_user");
-        let content  = get_str(options, "content");
+        let user = get_str(options, "_user");
+        let content = get_str(options, "content");
 
-        if path.is_empty() { return err_msgs(channel, "path required"); }
+        if path.is_empty() {
+            return err_msgs(channel, "path required");
+        }
 
         let data = if password.is_empty() {
             write_as_user(path, content, user).await
@@ -64,14 +72,18 @@ pub struct FileMkdirHandler;
 
 #[async_trait]
 impl ChannelHandler for FileMkdirHandler {
-    fn payload_type(&self) -> &str { "file.mkdir" }
+    fn payload_type(&self) -> &str {
+        "file.mkdir"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
-        let path     = get_str(options, "path");
+        let path = get_str(options, "path");
         let password = get_str(options, "password");
-        let user     = get_str(options, "_user");
+        let user = get_str(options, "_user");
 
-        if path.is_empty() { return err_msgs(channel, "path required"); }
+        if path.is_empty() {
+            return err_msgs(channel, "path required");
+        }
 
         let data = if password.is_empty() {
             mkdir_as_user(path, user).await
@@ -88,14 +100,18 @@ pub struct FileDeleteHandler;
 
 #[async_trait]
 impl ChannelHandler for FileDeleteHandler {
-    fn payload_type(&self) -> &str { "file.delete" }
+    fn payload_type(&self) -> &str {
+        "file.delete"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
-        let path     = get_str(options, "path");
+        let path = get_str(options, "path");
         let password = get_str(options, "password");
-        let user     = get_str(options, "_user");
+        let user = get_str(options, "_user");
 
-        if path.is_empty() { return err_msgs(channel, "path required"); }
+        if path.is_empty() {
+            return err_msgs(channel, "path required");
+        }
 
         let data = if password.is_empty() {
             delete_as_user(path, user).await
@@ -156,17 +172,22 @@ async fn read_file(path: &str, user: &str, password: &str, offset: usize) -> ser
         return json!({ "error": "Permission denied" });
     }
 
-    let total_lines: usize = wc_raw.split_whitespace().next()
+    let total_lines: usize = wc_raw
+        .split_whitespace()
+        .next()
         .and_then(|s| s.parse().ok())
         .unwrap_or(0);
 
     // Read the requested page via sed (sed uses 1-based line numbers)
     let start = offset + 1;
-    let end   = start + PAGE_LINES - 1;
+    let end = start + PAGE_LINES - 1;
     let range = format!("{start},{end}p");
 
     let content = if as_user {
-        run_cmd(&["sudo", "-n", "-u", user, "--", "sed", "-n", &range, "--", &resolved]).await
+        run_cmd(&[
+            "sudo", "-n", "-u", user, "--", "sed", "-n", &range, "--", &resolved,
+        ])
+        .await
     } else if am_root {
         run_cmd(&["sed", "-n", &range, "--", &resolved]).await
     } else {
@@ -215,11 +236,12 @@ async fn write_as_user(path: &str, content: &str, user: &str) -> serde_json::Val
     }
 
     // Limited access is confined to the user's home directory.
-    let canonical = match std::path::Path::new(path).parent()
+    let canonical = match std::path::Path::new(path)
+        .parent()
         .and_then(|p| p.canonicalize().ok())
     {
         Some(dir) => dir.join(std::path::Path::new(path).file_name().unwrap_or_default()),
-        None      => std::path::PathBuf::from(path),
+        None => std::path::PathBuf::from(path),
     };
     let home = std::path::Path::new("/home").join(user);
     if !canonical.starts_with(&home) {
@@ -227,7 +249,7 @@ async fn write_as_user(path: &str, content: &str, user: &str) -> serde_json::Val
     }
 
     use base64::Engine;
-    let b64    = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
+    let b64 = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
     let script = format!(
         "printf '{}' | base64 -d | tee -- {}",
         b64,
@@ -261,7 +283,7 @@ async fn mkdir_as_user(path: &str, user: &str) -> serde_json::Value {
     let p = std::path::Path::new(path);
     let canonical = match p.parent().and_then(|parent| parent.canonicalize().ok()) {
         Some(dir) => dir.join(p.file_name().unwrap_or_default()),
-        None      => std::path::PathBuf::from(path),
+        None => std::path::PathBuf::from(path),
     };
     let home = std::path::Path::new("/home").join(user);
     if !canonical.starts_with(&home) {
@@ -293,7 +315,7 @@ async fn delete_as_user(path: &str, user: &str) -> serde_json::Value {
 
     // Limited access is confined to the user's home directory.
     let canonical = match std::path::Path::new(path).canonicalize() {
-        Ok(p)  => p,
+        Ok(p) => p,
         Err(_) => return json!({ "error": "file not found" }),
     };
     let home = std::path::Path::new("/home").join(user);
@@ -347,28 +369,45 @@ async fn sudo_read(password: &str, args: &[&str]) -> String {
 
     match child.wait_with_output().await {
         Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
-        Err(e)  => format!("error: {e}"),
+        Err(e) => format!("error: {e}"),
     }
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
 fn get_str<'a>(options: &'a ChannelOpenOptions, key: &str) -> &'a str {
-    options.extra.get(key).and_then(|v| v.as_str()).unwrap_or("")
+    options
+        .extra
+        .get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
 }
 
 fn get_usize(options: &ChannelOpenOptions, key: &str) -> usize {
-    options.extra.get(key).and_then(|v| {
-        v.as_u64().map(|n| n as usize)
-            .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-    }).unwrap_or(0)
+    options
+        .extra
+        .get(key)
+        .and_then(|v| {
+            v.as_u64()
+                .map(|n| n as usize)
+                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+        })
+        .unwrap_or(0)
 }
 
 fn ok_msgs(channel: &str, data: serde_json::Value) -> Vec<Message> {
     vec![
-        Message::Ready { channel: channel.into() },
-        Message::Data  { channel: channel.into(), data },
-        Message::Close { channel: channel.into(), problem: None },
+        Message::Ready {
+            channel: channel.into(),
+        },
+        Message::Data {
+            channel: channel.into(),
+            data,
+        },
+        Message::Close {
+            channel: channel.into(),
+            problem: None,
+        },
     ]
 }
 

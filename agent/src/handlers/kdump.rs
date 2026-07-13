@@ -25,9 +25,17 @@ impl ChannelHandler for KdumpInfoHandler {
         });
 
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data: info },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data: info,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 
@@ -58,7 +66,11 @@ async fn collect_kdump_status() -> serde_json::Value {
     let kexec_tools_installed = tokio::fs::metadata("/usr/sbin/makedumpfile").await.is_ok()
         || tokio::fs::metadata("/usr/bin/makedumpfile").await.is_ok();
 
-    let service_name = if kdump_tools_installed { "kdump-tools" } else { "kdump" };
+    let service_name = if kdump_tools_installed {
+        "kdump-tools"
+    } else {
+        "kdump"
+    };
     let service_active = check_service_active(service_name).await;
     let service_enabled = check_service_enabled(service_name).await;
 
@@ -112,7 +124,9 @@ async fn check_service_enabled(name: &str) -> String {
 }
 
 async fn read_crashkernel_param() -> serde_json::Value {
-    let cmdline = tokio::fs::read_to_string("/proc/cmdline").await.unwrap_or_default();
+    let cmdline = tokio::fs::read_to_string("/proc/cmdline")
+        .await
+        .unwrap_or_default();
     let param = cmdline
         .split_whitespace()
         .find(|s| s.starts_with("crashkernel="))
@@ -276,8 +290,11 @@ async fn read_dump_details(path: &str) -> serde_json::Value {
                     Ok(data) => {
                         let content = if data.len() > max_read {
                             let slice = &data[..max_read];
-                            format!("{}\n\n[... truncated at 64KB, total {} bytes ...]",
-                                String::from_utf8_lossy(slice), data.len())
+                            format!(
+                                "{}\n\n[... truncated at 64KB, total {} bytes ...]",
+                                String::from_utf8_lossy(slice),
+                                data.len()
+                            )
                         } else {
                             String::from_utf8_lossy(&data).to_string()
                         };
@@ -325,18 +342,19 @@ async fn read_dmesg_log(dir_path: &str) -> serde_json::Value {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let name = entry.file_name().to_string_lossy().to_string();
             if (name.ends_with(".txt") || name.ends_with(".log") || name.contains("dmesg"))
-                && let Ok(content) = tokio::fs::read_to_string(entry.path()).await {
-                    let truncated = if content.len() > 65536 {
-                        format!("{}\n\n[... truncated at 64KB ...]", &content[..65536])
-                    } else {
-                        content
-                    };
-                    return serde_json::json!({
-                        "ok": true,
-                        "path": entry.path().to_string_lossy(),
-                        "content": truncated,
-                    });
-                }
+                && let Ok(content) = tokio::fs::read_to_string(entry.path()).await
+            {
+                let truncated = if content.len() > 65536 {
+                    format!("{}\n\n[... truncated at 64KB ...]", &content[..65536])
+                } else {
+                    content
+                };
+                return serde_json::json!({
+                    "ok": true,
+                    "path": entry.path().to_string_lossy(),
+                    "content": truncated,
+                });
+            }
         }
     }
 

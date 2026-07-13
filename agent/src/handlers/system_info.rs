@@ -52,7 +52,11 @@ fn get_hostname() -> String {
 fn get_uptime() -> (u64, String) {
     let uptime_secs = std::fs::read_to_string("/proc/uptime")
         .ok()
-        .and_then(|s| s.split_whitespace().next().and_then(|v| v.parse::<f64>().ok()))
+        .and_then(|s| {
+            s.split_whitespace()
+                .next()
+                .and_then(|v| v.parse::<f64>().ok())
+        })
         .map(|f| f as u64)
         .unwrap_or(0);
 
@@ -103,7 +107,10 @@ fn get_os_release() -> serde_json::Value {
     for line in content.lines() {
         if let Some((key, val)) = line.split_once('=') {
             let val = val.trim_matches('"');
-            map.insert(key.to_lowercase().to_string(), serde_json::Value::String(val.to_string()));
+            map.insert(
+                key.to_lowercase().to_string(),
+                serde_json::Value::String(val.to_string()),
+            );
         }
     }
     serde_json::Value::Object(map)

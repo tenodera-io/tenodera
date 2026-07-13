@@ -2,7 +2,7 @@ use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 use tokio::io::AsyncWriteExt;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::handler::ChannelHandler;
 use crate::util::{extract_string_array, run_cmd, sudo_stdin_write};
@@ -31,10 +31,15 @@ impl ChannelHandler for UsersManageHandler {
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
-        if !matches!(action, "list" | "list_groups" | "list_shells" | "check_exists") {
-            if let Some(err) = crate::util::require_admin(data) {
-                return vec![Message::Data { channel: channel.into(), data: err }];
-            }
+        if !matches!(
+            action,
+            "list" | "list_groups" | "list_shells" | "check_exists"
+        ) && let Some(err) = crate::util::require_admin(data)
+        {
+            return vec![Message::Data {
+                channel: channel.into(),
+                data: err,
+            }];
         }
 
         let result = match action {
@@ -64,7 +69,10 @@ impl ChannelHandler for UsersManageHandler {
             }
             "delete" => {
                 let target = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
-                let remove_home = data.get("remove_home").and_then(|v| v.as_bool()).unwrap_or(false);
+                let remove_home = data
+                    .get("remove_home")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let r = delete_user(target, remove_home, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.delete", target, ok, "");
@@ -86,8 +94,14 @@ impl ChannelHandler for UsersManageHandler {
             }
             "set_password" => {
                 let target = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
-                let new_pw = data.get("new_password").and_then(|v| v.as_str()).unwrap_or("");
-                let force_change = data.get("force_change").and_then(|v| v.as_bool()).unwrap_or(false);
+                let new_pw = data
+                    .get("new_password")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let force_change = data
+                    .get("force_change")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 let r = set_password(target, new_pw, force_change, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.set_password", target, ok, "");
@@ -117,9 +131,11 @@ impl ChannelHandler for UsersManageHandler {
         // Always echo back the action field so the frontend can match responses
         let mut result = result;
         if let Some(obj) = result.as_object_mut()
-            && !obj.contains_key("action") && !action.is_empty() {
-                obj.insert("action".to_string(), json!(action));
-            }
+            && !obj.contains_key("action")
+            && !action.is_empty()
+        {
+            obj.insert("action".to_string(), json!(action));
+        }
 
         vec![Message::Data {
             channel: channel.into(),
@@ -251,7 +267,9 @@ async fn build_group_map() -> std::collections::HashMap<String, Vec<String>> {
     let content = {
         let out = run_cmd(&["getent", "group"]).await;
         if out.is_empty() || out.starts_with("error:") {
-            tokio::fs::read_to_string("/etc/group").await.unwrap_or_default()
+            tokio::fs::read_to_string("/etc/group")
+                .await
+                .unwrap_or_default()
         } else {
             out
         }
@@ -415,10 +433,9 @@ async fn read_valid_shells() -> Vec<String> {
 
     // Always include nologin options if not already present
     for nologin in &["/usr/sbin/nologin", "/sbin/nologin", "/bin/false"] {
-        if !shells.iter().any(|s| s == nologin)
-            && std::path::Path::new(nologin).exists() {
-                shells.push(nologin.to_string());
-            }
+        if !shells.iter().any(|s| s == nologin) && std::path::Path::new(nologin).exists() {
+            shells.push(nologin.to_string());
+        }
     }
 
     shells
@@ -439,9 +456,18 @@ async fn create_user(data: &Value, password: &str) -> Value {
     let gecos = data.get("gecos").and_then(|v| v.as_str()).unwrap_or("");
     let home = data.get("home").and_then(|v| v.as_str()).unwrap_or("");
     let shell = data.get("shell").and_then(|v| v.as_str()).unwrap_or("");
-    let create_home = data.get("create_home").and_then(|v| v.as_bool()).unwrap_or(true);
-    let new_password = data.get("new_password").and_then(|v| v.as_str()).unwrap_or("");
-    let force_change = data.get("force_change").and_then(|v| v.as_bool()).unwrap_or(false);
+    let create_home = data
+        .get("create_home")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let new_password = data
+        .get("new_password")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let force_change = data
+        .get("force_change")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let groups = extract_string_array(data, "groups");
 
     // Validate username
@@ -549,26 +575,32 @@ async fn modify_user(data: &Value, password: &str) -> Value {
         }
         args.push("-d".into());
         args.push(home.to_string());
-        if data.get("move_home").and_then(|v| v.as_bool()).unwrap_or(false) {
+        if data
+            .get("move_home")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
             args.push("-m".into());
         }
         changed = true;
     }
 
     if let Some(groups_val) = data.get("groups")
-        && let Some(arr) = groups_val.as_array() {
-            let groups: Vec<String> = arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect();
-            for g in &groups {
-                if !is_valid_groupname(g) {
-                    return json!({ "error": format!("Invalid group name: {g}") });
-                }
+        && let Some(arr) = groups_val.as_array()
+    {
+        let groups: Vec<String> = arr
+            .iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect();
+        for g in &groups {
+            if !is_valid_groupname(g) {
+                return json!({ "error": format!("Invalid group name: {g}") });
             }
-            args.push("-G".into());
-            args.push(groups.join(","));
-            changed = true;
         }
+        args.push("-G".into());
+        args.push(groups.join(","));
+        changed = true;
+    }
 
     if !changed {
         return json!({ "error": "No changes specified" });
@@ -639,7 +671,12 @@ async fn set_password(username: &str, new_pw: &str, force_change: bool, sudo_pw:
     set_password_internal(username, new_pw, force_change, sudo_pw).await
 }
 
-async fn set_password_internal(username: &str, new_pw: &str, force_change: bool, sudo_pw: &str) -> Value {
+async fn set_password_internal(
+    username: &str,
+    new_pw: &str,
+    force_change: bool,
+    sudo_pw: &str,
+) -> Value {
     // Use chpasswd via stdin: "username:password\n"
     let input = format!("{username}:{new_pw}\n");
     let result = sudo_stdin_write(sudo_pw, &["chpasswd"], &input).await;
@@ -706,7 +743,8 @@ fn is_valid_username(name: &str) -> bool {
     } else {
         (&bytes[1..], false)
     };
-    body.iter().all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+    body.iter()
+        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
 }
 
 fn is_valid_groupname(name: &str) -> bool {
@@ -716,16 +754,17 @@ fn is_valid_groupname(name: &str) -> bool {
 
 fn is_valid_path(path: &str) -> bool {
     // Must be absolute, no .. traversal
-    path.starts_with('/')
-        && !path.contains("..")
-        && !path.contains('\0')
-        && path.len() <= 4096
+    path.starts_with('/') && !path.contains("..") && !path.contains('\0') && path.len() <= 4096
 }
 
 /// Check whether a user account exists via NSS (works with local, SSSD, FreeIPA, LDAP).
 async fn check_user_exists(username: &str) -> Value {
     // Basic sanity check — colon and newline would corrupt /etc/passwd fields.
-    if username.is_empty() || username.contains(':') || username.contains('\n') || username.len() > 256 {
+    if username.is_empty()
+        || username.contains(':')
+        || username.contains('\n')
+        || username.len() > 256
+    {
         return json!({ "exists": false });
     }
     let out = run_cmd(&["getent", "passwd", username]).await;
@@ -742,10 +781,7 @@ fn is_valid_gecos(gecos: &str) -> bool {
     // Colon is the /etc/passwd field separator — must never appear in gecos.
     // Newlines/carriage-returns would inject new passwd lines.
     // Null bytes could truncate strings in C-level tools.
-    !gecos.contains(':')
-        && !gecos.contains('\n')
-        && !gecos.contains('\r')
-        && !gecos.contains('\0')
+    !gecos.contains(':') && !gecos.contains('\n') && !gecos.contains('\r') && !gecos.contains('\0')
 }
 
 // ──────────────────────────────────────────────────────────────

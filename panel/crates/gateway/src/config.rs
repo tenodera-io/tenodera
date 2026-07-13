@@ -42,14 +42,16 @@ impl GatewayConfig {
                 if meta.permissions().mode() & 0o111 == 0 {
                     anyhow::bail!(
                         "agent binary '{}' exists but is not executable — run: chmod +x {}",
-                        agent_path.display(), agent_path.display()
+                        agent_path.display(),
+                        agent_path.display()
                     );
                 }
             }
             Err(e) => {
                 anyhow::bail!(
                     "agent binary '{}' not found: {} — build and install tenodera-agent first",
-                    self.agent_bin, e
+                    self.agent_bin,
+                    e
                 );
             }
         }
@@ -58,12 +60,10 @@ impl GatewayConfig {
         match (&self.tls_cert, &self.tls_key) {
             (Some(cert), Some(key)) => {
                 // Both set — verify both paths are readable
-                std::fs::File::open(cert).map_err(|e| {
-                    anyhow::anyhow!("TLS cert '{}' not readable: {}", cert, e)
-                })?;
-                std::fs::File::open(key).map_err(|e| {
-                    anyhow::anyhow!("TLS key '{}' not readable: {}", key, e)
-                })?;
+                std::fs::File::open(cert)
+                    .map_err(|e| anyhow::anyhow!("TLS cert '{}' not readable: {}", cert, e))?;
+                std::fs::File::open(key)
+                    .map_err(|e| anyhow::anyhow!("TLS key '{}' not readable: {}", key, e))?;
             }
             (Some(_), None) => {
                 anyhow::bail!(

@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 
+use serde_json::{Value, json};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
-use serde_json::{json, Value};
 
 use crate::handler::ChannelHandler;
 
@@ -57,7 +57,9 @@ async fn save_config(config: &HostsConfig) -> Result<(), String> {
     let am_root = unsafe { libc::geteuid() } == 0;
 
     if am_root {
-        tokio::fs::write(&path, json.as_bytes()).await.map_err(|e| e.to_string())?;
+        tokio::fs::write(&path, json.as_bytes())
+            .await
+            .map_err(|e| e.to_string())?;
     } else {
         // Running as session user — write via `sudo -n tee` so the gateway-owned
         // config directory stays accessible. Requires the sudoers rule installed
@@ -72,12 +74,19 @@ async fn save_config(config: &HostsConfig) -> Result<(), String> {
             .map_err(|e| format!("sudo tee: {e}"))?;
 
         if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(json.as_bytes()).await.map_err(|e| e.to_string())?;
+            stdin
+                .write_all(json.as_bytes())
+                .await
+                .map_err(|e| e.to_string())?;
         }
         let out = child.wait_with_output().await.map_err(|e| e.to_string())?;
         if !out.status.success() {
             let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            return Err(if err.is_empty() { "permission denied writing hosts.json".into() } else { err });
+            return Err(if err.is_empty() {
+                "permission denied writing hosts.json".into()
+            } else {
+                err
+            });
         }
     }
 
@@ -104,29 +113,26 @@ impl ChannelHandler for HostsManageHandler {
         let action = data.get("action").and_then(|a| a.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
-        if !matches!(action, "list" | "keyscan") {
-            if let Some(err) = crate::util::require_admin(data) {
-                return vec![Message::Data { channel: channel.into(), data: err }];
-            }
+        if !matches!(action, "list" | "keyscan")
+            && let Some(err) = crate::util::require_admin(data)
+        {
+            return vec![Message::Data {
+                channel: channel.into(),
+                data: err,
+            }];
         }
         let result = match action {
             "list" => action_list().await,
             "keyscan" => {
                 let address = data.get("address").and_then(|v| v.as_str()).unwrap_or("");
-                let ssh_port = data
-                    .get("ssh_port")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(22) as u16;
+                let ssh_port = data.get("ssh_port").and_then(|v| v.as_u64()).unwrap_or(22) as u16;
                 action_keyscan(address, ssh_port).await
             }
             "add" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let address = data.get("address").and_then(|v| v.as_str()).unwrap_or("");
                 let user_field = data.get("user").and_then(|v| v.as_str()).unwrap_or("");
-                let ssh_port = data
-                    .get("ssh_port")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(22) as u16;
+                let ssh_port = data.get("ssh_port").and_then(|v| v.as_u64()).unwrap_or(22) as u16;
                 let host_key = data.get("host_key").and_then(|v| v.as_str()).unwrap_or("");
                 let r = action_add(name, address, user_field, ssh_port, host_key).await;
                 let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -138,10 +144,7 @@ impl ChannelHandler for HostsManageHandler {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let address = data.get("address").and_then(|v| v.as_str()).unwrap_or("");
                 let user_field = data.get("user").and_then(|v| v.as_str()).unwrap_or("");
-                let ssh_port = data
-                    .get("ssh_port")
-                    .and_then(|v| v.as_u64())
-                    .unwrap_or(22) as u16;
+                let ssh_port = data.get("ssh_port").and_then(|v| v.as_u64()).unwrap_or(22) as u16;
                 let host_key = data.get("host_key").and_then(|v| v.as_str()).unwrap_or("");
                 let r = action_edit(id, name, address, user_field, ssh_port, host_key).await;
                 let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -196,7 +199,14 @@ async fn action_add(name: &str, address: &str, user: &str, ssh_port: u16, host_k
     }
 }
 
-async fn action_edit(id: &str, name: &str, address: &str, user: &str, ssh_port: u16, host_key: &str) -> Value {
+async fn action_edit(
+    id: &str,
+    name: &str,
+    address: &str,
+    user: &str,
+    ssh_port: u16,
+    host_key: &str,
+) -> Value {
     if id.is_empty() || name.is_empty() || address.is_empty() {
         return json!({ "action": "edit", "ok": false, "error": "id, name and address are required" });
     }
@@ -246,7 +256,10 @@ async fn action_keyscan(address: &str, ssh_port: u16) -> Value {
     }
 
     // Validate address: only allow alphanumeric, dots, hyphens, colons (IPv6), brackets
-    if !address.chars().all(|c| c.is_alphanumeric() || ".-:[]:".contains(c)) {
+    if !address
+        .chars()
+        .all(|c| c.is_alphanumeric() || ".-:[]:".contains(c))
+    {
         return json!({ "action": "keyscan", "ok": false, "error": "invalid address" });
     }
 
@@ -264,7 +277,8 @@ async fn action_keyscan(address: &str, ssh_port: u16) -> Value {
     };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let lines: Vec<&str> = stdout.lines()
+    let lines: Vec<&str> = stdout
+        .lines()
         .filter(|l| !l.starts_with('#') && !l.is_empty())
         .collect();
 
@@ -278,7 +292,8 @@ async fn action_keyscan(address: &str, ssh_port: u16) -> Value {
 
     // Prefer ed25519 > ecdsa > rsa
     let preferred = ["ssh-ed25519", "ecdsa-sha2-nistp256", "ssh-rsa"];
-    let host_key_line = preferred.iter()
+    let host_key_line = preferred
+        .iter()
         .find_map(|alg| lines.iter().find(|l| l.contains(alg)))
         .unwrap_or(&lines[0]);
 

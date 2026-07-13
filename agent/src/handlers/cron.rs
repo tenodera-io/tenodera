@@ -1,7 +1,7 @@
 use crate::handler::ChannelHandler;
 use crate::util::{require_admin, sudo_stdin_write};
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 use tokio::fs;
@@ -19,9 +19,17 @@ impl ChannelHandler for CronListHandler {
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         let data = list_cron_jobs().await;
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -48,12 +56,17 @@ impl ChannelHandler for CronManageHandler {
         } else {
             match action {
                 "set_user_crontab" => {
-                    let target = data.get("target_user").and_then(|v| v.as_str()).unwrap_or(user);
+                    let target = data
+                        .get("target_user")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(user);
                     let content = data.get("content").and_then(|v| v.as_str()).unwrap_or("");
                     if !is_safe_username(target) {
                         json!({ "ok": false, "error": "invalid username" })
                     } else {
-                        let r = sudo_stdin_write(password, &["crontab", "-u", target, "-"], content).await;
+                        let r =
+                            sudo_stdin_write(password, &["crontab", "-u", target, "-"], content)
+                                .await;
                         let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                         crate::audit::log(user, "cron.set", target, ok, "");
                         r
@@ -76,9 +89,17 @@ impl ChannelHandler for CronManageHandler {
         };
 
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data: result },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data: result,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -154,20 +175,20 @@ async fn list_cron_jobs() -> Value {
             .args(["-n", "crontab", "-u", &username, "-l"])
             .output()
             .await;
-        if let Ok(out) = out {
-            if out.status.success() {
-                let content = String::from_utf8_lossy(&out.stdout).to_string();
-                if !content.trim().is_empty() && !content.trim_start().starts_with("no crontab") {
-                    let entries = parse_user_crontab(&content, &username);
-                    sources.push(CronSource {
-                        source: format!("crontab:{username}"),
-                        path: String::new(),
-                        source_type: "user_crontab".into(),
-                        user: Some(username),
-                        content,
-                        entries,
-                    });
-                }
+        if let Ok(out) = out
+            && out.status.success()
+        {
+            let content = String::from_utf8_lossy(&out.stdout).to_string();
+            if !content.trim().is_empty() && !content.trim_start().starts_with("no crontab") {
+                let entries = parse_user_crontab(&content, &username);
+                sources.push(CronSource {
+                    source: format!("crontab:{username}"),
+                    path: String::new(),
+                    source_type: "user_crontab".into(),
+                    user: Some(username),
+                    content,
+                    entries,
+                });
             }
         }
     }
@@ -192,16 +213,15 @@ async fn get_crontab_users() -> Vec<String> {
         .args(["-n", "ls", "/var/spool/cron/crontabs"])
         .output()
         .await
+        && out.status.success()
     {
-        if out.status.success() {
-            let mut users: Vec<String> = String::from_utf8_lossy(&out.stdout)
-                .lines()
-                .filter(|l| !l.is_empty())
-                .map(|l| l.to_string())
-                .collect();
-            users.sort();
-            return users;
-        }
+        let mut users: Vec<String> = String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect();
+        users.sort();
+        return users;
     }
     Vec::new()
 }
@@ -217,16 +237,24 @@ fn parse_system_crontab(content: &str) -> Vec<CronEntry> {
         if trimmed.starts_with('#') {
             let c = trimmed.trim_start_matches('#').trim();
             if !c.is_empty() {
-                if !pending_comment.is_empty() { pending_comment.push(' '); }
+                if !pending_comment.is_empty() {
+                    pending_comment.push(' ');
+                }
                 pending_comment.push_str(c);
             }
             continue;
         }
-        if trimmed.is_empty() { pending_comment.clear(); continue; }
+        if trimmed.is_empty() {
+            pending_comment.clear();
+            continue;
+        }
         // Skip env var assignments
         if let Some(eq) = trimmed.find('=') {
             let before = &trimmed[..eq];
-            if before.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if before
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 pending_comment.clear();
                 continue;
             }
@@ -248,15 +276,23 @@ fn parse_user_crontab(content: &str, username: &str) -> Vec<CronEntry> {
         if trimmed.starts_with('#') {
             let c = trimmed.trim_start_matches('#').trim();
             if !c.is_empty() {
-                if !pending_comment.is_empty() { pending_comment.push(' '); }
+                if !pending_comment.is_empty() {
+                    pending_comment.push(' ');
+                }
                 pending_comment.push_str(c);
             }
             continue;
         }
-        if trimmed.is_empty() { pending_comment.clear(); continue; }
+        if trimmed.is_empty() {
+            pending_comment.clear();
+            continue;
+        }
         if let Some(eq) = trimmed.find('=') {
             let before = &trimmed[..eq];
-            if before.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            if before
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            {
                 pending_comment.clear();
                 continue;
             }
@@ -271,11 +307,15 @@ fn parse_user_crontab(content: &str, username: &str) -> Vec<CronEntry> {
 
 fn parse_system_line(line: &str, comment: &str) -> Option<CronEntry> {
     let tokens: Vec<&str> = line.split_whitespace().collect();
-    if tokens.is_empty() { return None; }
+    if tokens.is_empty() {
+        return None;
+    }
 
     if tokens[0].starts_with('@') {
         // @special user command...
-        if tokens.len() < 3 { return None; }
+        if tokens.len() < 3 {
+            return None;
+        }
         return Some(CronEntry {
             schedule: tokens[0].to_string(),
             user: tokens[1].to_string(),
@@ -285,7 +325,9 @@ fn parse_system_line(line: &str, comment: &str) -> Option<CronEntry> {
     }
 
     // min hour dom month dow user command...
-    if tokens.len() < 7 { return None; }
+    if tokens.len() < 7 {
+        return None;
+    }
     Some(CronEntry {
         schedule: tokens[..5].join(" "),
         user: tokens[5].to_string(),
@@ -296,10 +338,14 @@ fn parse_system_line(line: &str, comment: &str) -> Option<CronEntry> {
 
 fn parse_user_line(line: &str, username: &str, comment: &str) -> Option<CronEntry> {
     let tokens: Vec<&str> = line.split_whitespace().collect();
-    if tokens.is_empty() { return None; }
+    if tokens.is_empty() {
+        return None;
+    }
 
     if tokens[0].starts_with('@') {
-        if tokens.len() < 2 { return None; }
+        if tokens.len() < 2 {
+            return None;
+        }
         return Some(CronEntry {
             schedule: tokens[0].to_string(),
             user: username.to_string(),
@@ -308,7 +354,9 @@ fn parse_user_line(line: &str, username: &str, comment: &str) -> Option<CronEntr
         });
     }
 
-    if tokens.len() < 6 { return None; }
+    if tokens.len() < 6 {
+        return None;
+    }
     Some(CronEntry {
         schedule: tokens[..5].join(" "),
         user: username.to_string(),
@@ -322,18 +370,24 @@ fn parse_user_line(line: &str, username: &str, comment: &str) -> Option<CronEntr
 fn is_safe_cron_path(path: &str) -> bool {
     use std::path::Path;
     let p = Path::new(path);
-    if p == Path::new("/etc/crontab") { return true; }
-    if let Some(parent) = p.parent() {
-        if parent == Path::new("/etc/cron.d") {
-            if let Some(name) = p.file_name() {
-                let name = name.to_string_lossy();
-                return name.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
-            }
-        }
+    if p == Path::new("/etc/crontab") {
+        return true;
+    }
+    if let Some(parent) = p.parent()
+        && parent == Path::new("/etc/cron.d")
+        && let Some(name) = p.file_name()
+    {
+        let name = name.to_string_lossy();
+        return name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c));
     }
     false
 }
 
 fn is_safe_username(name: &str) -> bool {
-    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
 }

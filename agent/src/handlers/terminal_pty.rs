@@ -6,7 +6,7 @@ use std::sync::Arc;
 use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 use tokio::io::unix::AsyncFd;
-use tokio::sync::{mpsc, watch, Mutex};
+use tokio::sync::{Mutex, mpsc, watch};
 
 use crate::handler::ChannelHandler;
 
@@ -57,7 +57,10 @@ impl ChannelHandler for TerminalPtyHandler {
             .extra
             .get("_user")
             .and_then(|v| v.as_str())
-            .filter(|u| u.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.'))
+            .filter(|u| {
+                u.chars()
+                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+            })
             .map(|s| s.to_string());
         let user_info = target_user.as_deref().and_then(lookup_user);
 
@@ -75,8 +78,14 @@ impl ChannelHandler for TerminalPtyHandler {
 
         // Validate shell path against allowed shells
         const ALLOWED_SHELLS: &[&str] = &[
-            "/bin/sh", "/bin/bash", "/bin/zsh", "/bin/fish",
-            "/usr/bin/sh", "/usr/bin/bash", "/usr/bin/zsh", "/usr/bin/fish",
+            "/bin/sh",
+            "/bin/bash",
+            "/bin/zsh",
+            "/bin/fish",
+            "/usr/bin/sh",
+            "/usr/bin/bash",
+            "/usr/bin/zsh",
+            "/usr/bin/fish",
         ];
         if !ALLOWED_SHELLS.contains(&shell.as_str()) {
             tracing::warn!(shell = %shell, "rejected non-whitelisted shell");
@@ -115,22 +124,29 @@ impl ChannelHandler for TerminalPtyHandler {
 
         // Audit log: terminal open
         let audit_user = target_user.as_deref().unwrap_or("unknown");
-        crate::audit::log(audit_user, "terminal.open", &format!("shell={shell}"), true, "");
+        crate::audit::log(
+            audit_user,
+            "terminal.open",
+            &format!("shell={shell}"),
+            true,
+            "",
+        );
 
         // Open PTY — returns (async reader via AsyncFd, writer OwnedFd, child process)
-        let (reader, writer, child) = match open_pty(&shell, cols, rows, cwd, target_user.as_deref()) {
-            Ok(tuple) => tuple,
-            Err(e) => {
-                tracing::error!(error = %e, "failed to open PTY");
-                let _ = tx
-                    .send(Message::Close {
-                        channel,
-                        problem: Some(format!("pty-error: {e}")),
-                    })
-                    .await;
-                return;
-            }
-        };
+        let (reader, writer, child) =
+            match open_pty(&shell, cols, rows, cwd, target_user.as_deref()) {
+                Ok(tuple) => tuple,
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to open PTY");
+                    let _ = tx
+                        .send(Message::Close {
+                            channel,
+                            problem: Some(format!("pty-error: {e}")),
+                        })
+                        .await;
+                    return;
+                }
+            };
 
         // Spawn a background task to reap the child process.
         // Without this, the child becomes a zombie after exit because
@@ -264,7 +280,13 @@ fn get_user_shell() -> Option<String> {
     let mut buf = vec![0u8; 4096];
     let mut result: *mut libc::passwd = std::ptr::null_mut();
     let ret = unsafe {
-        libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr().cast::<libc::c_char>(), buf.len(), &mut result)
+        libc::getpwuid_r(
+            uid,
+            &mut pwd,
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            &mut result,
+        )
     };
     if ret != 0 || result.is_null() {
         return None;
@@ -357,9 +379,8 @@ fn open_pty(
     };
 
     // Resolve user info for pre_exec (uid, gid, home, username)
-    let user_info = run_as_user.and_then(|u| {
-        lookup_user(u).map(|(uid, gid, home, _)| (uid, gid, home, u.to_string()))
-    });
+    let user_info = run_as_user
+        .and_then(|u| lookup_user(u).map(|(uid, gid, home, _)| (uid, gid, home, u.to_string())));
     let shell_for_env = shell.to_string();
 
     let mut cmd = Command::new(shell);
@@ -405,9 +426,9 @@ fn open_pty(
     }
 
     // Spawn the child process — this does fork+exec safely
-    let child = cmd.spawn().map_err(|e| {
-        anyhow::anyhow!("failed to spawn shell {shell}: {e}")
-    })?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("failed to spawn shell {shell}: {e}"))?;
 
     // Close slave fds in parent — they're only needed by the child
     drop(pty.slave);

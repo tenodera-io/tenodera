@@ -76,7 +76,9 @@ mod tests {
     use super::*;
     use std::net::IpAddr;
 
-    fn ip(s: &str) -> IpAddr { s.parse().unwrap() }
+    fn ip(s: &str) -> IpAddr {
+        s.parse().unwrap()
+    }
 
     #[tokio::test]
     async fn not_limited_below_threshold() {

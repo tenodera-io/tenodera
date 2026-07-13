@@ -45,7 +45,9 @@ fn main() {
 /// Mode 2: verify sudo privileges for <user> by running `sudo -l -U <user>` as root.
 fn check_sudo_mode(user: &str) {
     if user.is_empty()
-        || user.bytes().any(|b| matches!(b, 0 | b'\n' | b' ' | b';' | b'&' | b'|' | b'`' | b'$'))
+        || user
+            .bytes()
+            .any(|b| matches!(b, 0 | b'\n' | b' ' | b';' | b'&' | b'|' | b'`' | b'$'))
     {
         eprintln!("error: invalid username for sudo check");
         std::process::exit(3);

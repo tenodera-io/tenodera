@@ -1,5 +1,5 @@
 use crate::handler::ChannelHandler;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -7,14 +7,24 @@ pub struct SystemdTimersHandler;
 
 #[async_trait::async_trait]
 impl ChannelHandler for SystemdTimersHandler {
-    fn payload_type(&self) -> &str { "systemd.timers" }
+    fn payload_type(&self) -> &str {
+        "systemd.timers"
+    }
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         let data = list_timers().await;
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -22,18 +32,23 @@ impl ChannelHandler for SystemdTimersHandler {
 async fn list_timers() -> Value {
     // Step 1: get timer unit names
     let names_out = tokio::process::Command::new("systemctl")
-        .args(["list-units", "--type=timer", "--all", "--plain", "--no-legend", "--no-pager"])
+        .args([
+            "list-units",
+            "--type=timer",
+            "--all",
+            "--plain",
+            "--no-legend",
+            "--no-pager",
+        ])
         .output()
         .await;
 
     let names: Vec<String> = match names_out {
-        Ok(o) if o.status.success() => {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .filter_map(|l| l.split_whitespace().next().map(|s| s.to_string()))
-                .filter(|s| s.ends_with(".timer"))
-                .collect()
-        }
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .filter_map(|l| l.split_whitespace().next().map(|s| s.to_string()))
+            .filter(|s| s.ends_with(".timer"))
+            .collect(),
         _ => return json!([]),
     };
 
@@ -80,14 +95,14 @@ fn parse_timer_block(block: &str) -> Value {
     for line in block.lines() {
         if let Some((k, v)) = line.split_once('=') {
             match k {
-                "Id"                        => id = v.to_string(),
-                "ActiveState"               => active = v.to_string(),
-                "SubState"                  => sub = v.to_string(),
-                "Description"               => description = v.to_string(),
-                "NextElapseUSecRealtime"    => next = normalise_ts(v),
-                "LastTriggerUSec"           => last = normalise_ts(v),
-                "UnitFileState"             => enabled = v.to_string(),
-                "Triggers"                  => triggers = v.to_string(),
+                "Id" => id = v.to_string(),
+                "ActiveState" => active = v.to_string(),
+                "SubState" => sub = v.to_string(),
+                "Description" => description = v.to_string(),
+                "NextElapseUSecRealtime" => next = normalise_ts(v),
+                "LastTriggerUSec" => last = normalise_ts(v),
+                "UnitFileState" => enabled = v.to_string(),
+                "Triggers" => triggers = v.to_string(),
                 _ => {}
             }
         }
@@ -114,7 +129,8 @@ fn normalise_ts(raw: &str) -> String {
     }
     // Strip leading weekday token if present: "Sat 2026-06-27 …" → "2026-06-27 …"
     let parts: Vec<&str> = s.splitn(2, ' ').collect();
-    if parts.len() == 2 && parts[0].len() == 3 && parts[0].chars().all(|c| c.is_ascii_alphabetic()) {
+    if parts.len() == 2 && parts[0].len() == 3 && parts[0].chars().all(|c| c.is_ascii_alphabetic())
+    {
         parts[1].to_string()
     } else {
         s.to_string()

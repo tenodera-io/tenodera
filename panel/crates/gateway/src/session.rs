@@ -79,7 +79,10 @@ impl SessionStore {
             created_at: now,
             last_activity: now,
         };
-        self.inner.write().await.insert(session.id.clone(), session.clone());
+        self.inner
+            .write()
+            .await
+            .insert(session.id.clone(), session.clone());
         session
     }
 
@@ -207,10 +210,7 @@ mod tests {
 
     #[test]
     fn role_serializes_to_lowercase() {
-        assert_eq!(
-            serde_json::to_string(&Role::Admin).unwrap(),
-            r#""admin""#
-        );
+        assert_eq!(serde_json::to_string(&Role::Admin).unwrap(), r#""admin""#);
         assert_eq!(
             serde_json::to_string(&Role::Readonly).unwrap(),
             r#""readonly""#

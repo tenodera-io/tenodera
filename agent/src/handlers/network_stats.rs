@@ -83,10 +83,9 @@ fn get_network_stats() -> Vec<serde_json::Value> {
             .unwrap_or_default();
 
         // Try to get speed (Mbps)
-        let speed: Option<u64> =
-            std::fs::read_to_string(format!("/sys/class/net/{iface}/speed"))
-                .ok()
-                .and_then(|s| s.trim().parse().ok());
+        let speed: Option<u64> = std::fs::read_to_string(format!("/sys/class/net/{iface}/speed"))
+            .ok()
+            .and_then(|s| s.trim().parse().ok());
 
         // Get IP addresses via `ip -j addr show <iface>`
         let (ipv4_addrs, ipv6_addrs) = get_ip_addresses(iface);

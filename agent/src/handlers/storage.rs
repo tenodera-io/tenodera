@@ -127,7 +127,11 @@ async fn read_diskstats() -> Vec<DiskStat> {
 
         let read_sectors = parts[5].parse::<u64>().unwrap_or(0);
         let write_sectors = parts[9].parse::<u64>().unwrap_or(0);
-        results.push(DiskStat { name, read_sectors, write_sectors });
+        results.push(DiskStat {
+            name,
+            read_sectors,
+            write_sectors,
+        });
     }
     results
 }
@@ -143,10 +147,13 @@ fn compute_io_rates(prev: &[DiskStat], curr: &[DiskStat], dt: f64) -> serde_json
             let w = c.write_sectors.saturating_sub(p.write_sectors);
             total_read += r;
             total_write += w;
-            disks.insert(c.name.clone(), serde_json::json!({
-                "read_bytes_sec": ((r * 512) as f64 / dt).round() as u64,
-                "write_bytes_sec": ((w * 512) as f64 / dt).round() as u64,
-            }));
+            disks.insert(
+                c.name.clone(),
+                serde_json::json!({
+                    "read_bytes_sec": ((r * 512) as f64 / dt).round() as u64,
+                    "write_bytes_sec": ((w * 512) as f64 / dt).round() as u64,
+                }),
+            );
         }
     }
 
@@ -168,7 +175,9 @@ struct VmstatSwap {
 }
 
 async fn read_vmstat_swap() -> VmstatSwap {
-    let content = tokio::fs::read_to_string("/proc/vmstat").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/vmstat")
+        .await
+        .unwrap_or_default();
     let mut pswpin = 0u64;
     let mut pswpout = 0u64;
     for line in content.lines() {
@@ -192,24 +201,34 @@ fn compute_swap_io_rates(prev: &VmstatSwap, curr: &VmstatSwap, dt: f64) -> serde
 }
 
 async fn read_swap() -> serde_json::Value {
-    let content = tokio::fs::read_to_string("/proc/meminfo").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/meminfo")
+        .await
+        .unwrap_or_default();
     let mut swap_total: u64 = 0;
     let mut swap_free: u64 = 0;
     for line in content.lines() {
         if let Some(rest) = line.strip_prefix("SwapTotal:") {
-            swap_total = rest.split_whitespace().next()
+            swap_total = rest
+                .split_whitespace()
+                .next()
                 .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(0) * 1024;
+                .unwrap_or(0)
+                * 1024;
         } else if let Some(rest) = line.strip_prefix("SwapFree:") {
-            swap_free = rest.split_whitespace().next()
+            swap_free = rest
+                .split_whitespace()
+                .next()
                 .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(0) * 1024;
+                .unwrap_or(0)
+                * 1024;
         }
     }
     let used = swap_total.saturating_sub(swap_free);
     let pct = if swap_total > 0 {
         ((used as f64 / swap_total as f64) * 100.0).round() as u64
-    } else { 0 };
+    } else {
+        0
+    };
     serde_json::json!({ "total": swap_total, "free": swap_free, "used": used, "use_pct": pct })
 }
 
@@ -265,11 +284,12 @@ fn normalize_mountpoints(val: &mut serde_json::Value) {
             obj.insert("mountpoints".to_string(), arr);
         }
         if let Some(children) = obj.get_mut("children")
-            && let Some(arr) = children.as_array_mut() {
-                for child in arr {
-                    normalize_mountpoints(child);
-                }
+            && let Some(arr) = children.as_array_mut()
+        {
+            for child in arr {
+                normalize_mountpoints(child);
             }
+        }
     }
     // Top-level: recurse into blockdevices array
     if let Some(arr) = val.get_mut("blockdevices").and_then(|v| v.as_array_mut()) {
@@ -346,7 +366,9 @@ fn enrich_device(dev: &serde_json::Value) -> serde_json::Value {
     });
 
     if let Some(ch) = children {
-        obj.as_object_mut().unwrap().insert("children".to_string(), serde_json::json!(ch));
+        obj.as_object_mut()
+            .unwrap()
+            .insert("children".to_string(), serde_json::json!(ch));
     }
 
     obj

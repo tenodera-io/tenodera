@@ -27,9 +27,17 @@ impl ChannelHandler for HardwareInfoHandler {
         });
 
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data: info },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data: info,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -58,7 +66,10 @@ fn get_cpu_info() -> (String, u32, u32, f64) {
                 }
                 "cpu MHz" => {
                     if let Ok(mhz) = val.parse::<f64>()
-                        && mhz > max_mhz { max_mhz = mhz; }
+                        && mhz > max_mhz
+                    {
+                        max_mhz = mhz;
+                    }
                 }
                 "processor" => {
                     logical_count += 1;
@@ -75,7 +86,11 @@ fn get_cpu_info() -> (String, u32, u32, f64) {
         }
     }
 
-    let physical_cores = if core_ids.is_empty() { logical_count } else { core_ids.len() as u32 };
+    let physical_cores = if core_ids.is_empty() {
+        logical_count
+    } else {
+        core_ids.len() as u32
+    };
 
     (model, physical_cores, logical_count, max_mhz)
 }
@@ -95,7 +110,9 @@ fn get_kernel_info() -> (String, String) {
 /// Read temperature sensors from /sys/class/hwmon/
 fn get_temperatures() -> Vec<serde_json::Value> {
     let mut temps = Vec::new();
-    let Ok(entries) = std::fs::read_dir("/sys/class/hwmon") else { return temps };
+    let Ok(entries) = std::fs::read_dir("/sys/class/hwmon") else {
+        return temps;
+    };
 
     for entry in entries.flatten() {
         let hwmon = entry.path();
@@ -106,8 +123,12 @@ fn get_temperatures() -> Vec<serde_json::Value> {
         // Look for temp*_input files
         for i in 1..=20 {
             let input_path = hwmon.join(format!("temp{i}_input"));
-            let Ok(raw) = std::fs::read_to_string(&input_path) else { continue };
-            let Ok(millideg) = raw.trim().parse::<i64>() else { continue };
+            let Ok(raw) = std::fs::read_to_string(&input_path) else {
+                continue;
+            };
+            let Ok(millideg) = raw.trim().parse::<i64>() else {
+                continue;
+            };
             let temp_c = millideg as f64 / 1000.0;
 
             let label = std::fs::read_to_string(hwmon.join(format!("temp{i}_label")))

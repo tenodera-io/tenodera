@@ -16,7 +16,9 @@ impl ChannelHandler for LogFilesHandler {
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         // Only send Ready — keep channel open for bidirectional commands.
-        vec![Message::Ready { channel: channel.into() }]
+        vec![Message::Ready {
+            channel: channel.into(),
+        }]
     }
 
     async fn data(&self, channel: &str, data: &serde_json::Value) -> Vec<Message> {
@@ -42,7 +44,10 @@ impl ChannelHandler for LogFilesHandler {
                 let date_from = data.get("date_from").and_then(|d| d.as_str());
                 let date_to = data.get("date_to").and_then(|d| d.as_str());
                 let no_limit = date_from.is_some() || date_to.is_some();
-                search_log(path, query, lines, before, after, date_from, date_to, no_limit, password).await
+                search_log(
+                    path, query, lines, before, after, date_from, date_to, no_limit, password,
+                )
+                .await
             }
             "filter" => {
                 // Date-only filtering: read file, filter lines by timestamp
@@ -101,9 +106,7 @@ async fn run_cmd(password: &str, args: &[&str]) -> Result<String, String> {
     }
 
     match child.wait_with_output().await {
-        Ok(out) if out.status.success() => {
-            Ok(String::from_utf8_lossy(&out.stdout).to_string())
-        }
+        Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).to_string()),
         Ok(out) => {
             let stderr = String::from_utf8_lossy(&out.stderr);
             let clean = stderr
@@ -187,10 +190,20 @@ async fn list_log_files_direct(base: &str) -> Vec<serde_json::Value> {
 async fn list_log_files_sudo(base: &str, password: &str) -> Vec<serde_json::Value> {
     // Use find to list all files recursively (maxdepth 5 = base + 4 levels)
     // Output: path\tsize\tmodified_epoch for each file
-    let output = run_cmd(password, &[
-        "find", base, "-maxdepth", "5", "-type", "f",
-        "-printf", "%p\\t%s\\t%T@\\n",
-    ]).await;
+    let output = run_cmd(
+        password,
+        &[
+            "find",
+            base,
+            "-maxdepth",
+            "5",
+            "-type",
+            "f",
+            "-printf",
+            "%p\\t%s\\t%T@\\n",
+        ],
+    )
+    .await;
 
     let output = match output {
         Ok(o) => o,
@@ -277,7 +290,8 @@ fn validate_log_path(path: &str) -> Result<PathBuf, String> {
     // Resolve symlinks and verify the real path is still under /var/log.
     // When running as root, canonicalize directly. When non-root, this may
     // fail on restricted directories — defer to validate_log_path_sudo.
-    let canonical = p.canonicalize()
+    let canonical = p
+        .canonicalize()
         .map_err(|_| "path does not exist or is not accessible".to_string())?;
     if !canonical.starts_with("/var/log") {
         return Err("path resolves outside /var/log".into());
@@ -304,7 +318,8 @@ async fn validate_log_path_sudo(path: &str, password: &str) -> Result<PathBuf, S
         return Err("path resolves outside /var/log".into());
     }
     // Fall back to sudo realpath for restricted directories
-    let output = run_cmd(password, &["realpath", "--", path]).await
+    let output = run_cmd(password, &["realpath", "--", path])
+        .await
         .map_err(|_| "path does not exist or is not accessible".to_string())?;
     let resolved = output.trim();
     if resolved.is_empty() {
@@ -547,9 +562,15 @@ async fn filter_by_date(
                 let line_num = (i + 1) as u64;
                 if let Some(ts) = extract_timestamp(line) {
                     if let Some(from) = from_ts
-                        && ts < from { continue; }
+                        && ts < from
+                    {
+                        continue;
+                    }
                     if let Some(to) = to_ts
-                        && ts > to { continue; }
+                        && ts > to
+                    {
+                        continue;
+                    }
                     filtered.push(serde_json::json!({
                         "num": line_num,
                         "text": line,
@@ -603,18 +624,19 @@ fn parse_grep_output(
         // Parse "123:text" (match) or "123-text" (context)
         let (line_num, is_match, text) = parse_grep_line(line);
 
-        if has_date_filter
-            && let Some(line_ts) = extract_timestamp(text) {
-                if let Some(from) = from_ts
-                    && line_ts < from {
-                        continue;
-                    }
-                if let Some(to) = to_ts
-                    && line_ts > to {
-                        continue;
-                    }
+        if has_date_filter && let Some(line_ts) = extract_timestamp(text) {
+            if let Some(from) = from_ts
+                && line_ts < from
+            {
+                continue;
             }
-            // Lines without parseable dates pass through when date filter active
+            if let Some(to) = to_ts
+                && line_ts > to
+            {
+                continue;
+            }
+        }
+        // Lines without parseable dates pass through when date filter active
 
         current_group.push(serde_json::json!({
             "num": line_num,
@@ -737,10 +759,12 @@ fn extract_timestamp(line: &str) -> Option<i64> {
     }
 
     // 4. Numeric: "2026/03/23 14:30:01"
-    if line.as_bytes().get(4) == Some(&b'/') && line.len() >= 19
-        && let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&line[..19], "%Y/%m/%d %H:%M:%S") {
-            return Some(dt.and_utc().timestamp());
-        }
+    if line.as_bytes().get(4) == Some(&b'/')
+        && line.len() >= 19
+        && let Ok(dt) = chrono::NaiveDateTime::parse_from_str(&line[..19], "%Y/%m/%d %H:%M:%S")
+    {
+        return Some(dt.and_utc().timestamp());
+    }
 
     None
 }

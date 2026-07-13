@@ -103,10 +103,17 @@ fn is_valid_unit_name(name: &str) -> bool {
         && !name.contains('/')
         && !name.contains('\\')
         && !name.contains("..")
-        && name.chars().all(|c| c.is_alphanumeric() || ".@-_:".contains(c))
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || ".@-_:".contains(c))
 }
 
-async fn systemctl_action(action: &str, unit: &str, _user: &str, password: &str) -> serde_json::Value {
+async fn systemctl_action(
+    action: &str,
+    unit: &str,
+    _user: &str,
+    password: &str,
+) -> serde_json::Value {
     use tokio::io::AsyncWriteExt;
 
     // Use sudo for systemctl — sudo itself verifies the password
@@ -141,7 +148,11 @@ async fn systemctl_action(action: &str, unit: &str, _user: &str, password: &str)
                 .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
                 .collect::<Vec<_>>()
                 .join("\n");
-            let msg = if clean.is_empty() { "command failed".to_string() } else { clean };
+            let msg = if clean.is_empty() {
+                "command failed".to_string()
+            } else {
+                clean
+            };
             serde_json::json!({ "ok": false, "error": msg })
         }
         Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
@@ -171,7 +182,13 @@ async fn unit_status(unit: &str) -> serde_json::Value {
 
 async fn list_units() -> serde_json::Value {
     let output = tokio::process::Command::new("systemctl")
-        .args(["list-units", "--type=service", "--all", "--output=json", "--no-pager"])
+        .args([
+            "list-units",
+            "--type=service",
+            "--all",
+            "--output=json",
+            "--no-pager",
+        ])
         .output()
         .await;
 

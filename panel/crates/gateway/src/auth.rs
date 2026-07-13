@@ -1,9 +1,9 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::{Json, extract::State};
 use axum::extract::ConnectInfo;
 use axum::http::{HeaderMap, StatusCode};
+use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 
 use crate::AppState;
@@ -27,7 +27,9 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for ClientAddr {
         state: &S,
     ) -> Result<Self, Self::Rejection> {
         // Try native ConnectInfo (plaintext mode)
-        if let Ok(ConnectInfo(addr)) = ConnectInfo::<SocketAddr>::from_request_parts(parts, state).await {
+        if let Ok(ConnectInfo(addr)) =
+            ConnectInfo::<SocketAddr>::from_request_parts(parts, state).await
+        {
             return Ok(Self(addr));
         }
         // Fallback: Extension (TLS mode)
@@ -147,7 +149,9 @@ pub async fn login(
         return Err((
             StatusCode::UNAUTHORIZED,
             Json(LoginError {
-                error: result.error.unwrap_or_else(|| "authentication failed".into()),
+                error: result
+                    .error
+                    .unwrap_or_else(|| "authentication failed".into()),
             }),
         ));
     }
@@ -163,7 +167,13 @@ pub async fn login(
     };
 
     let session = state.sessions.create(req.user.clone(), role).await;
-    crate::audit::log(&session.user, "login", "", true, &format!("role={}", role.as_str()));
+    crate::audit::log(
+        &session.user,
+        "login",
+        "",
+        true,
+        &format!("role={}", role.as_str()),
+    );
 
     Ok(Json(LoginResponse {
         session_id: session.id.clone(),

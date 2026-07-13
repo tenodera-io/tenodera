@@ -20,7 +20,9 @@ impl AgentIdentity {
         if let Ok(bytes) = std::fs::read(KEY_PATH) {
             if bytes.len() == 32 {
                 let arr: [u8; 32] = bytes.try_into().unwrap();
-                let id = Self { signing_key: SigningKey::from_bytes(&arr) };
+                let id = Self {
+                    signing_key: SigningKey::from_bytes(&arr),
+                };
                 tracing::info!(fingerprint = %id.fingerprint(), "loaded existing agent identity");
                 return Ok(id);
             }

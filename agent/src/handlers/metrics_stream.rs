@@ -154,7 +154,9 @@ async fn read_cpu_cores() -> serde_json::Value {
             let mut cores = Vec::new();
             for line in content.lines() {
                 // Match "cpu0 …", "cpu1 …", etc but not the aggregate "cpu " line
-                if line.starts_with("cpu") && line.as_bytes().get(3).is_some_and(|b| b.is_ascii_digit()) {
+                if line.starts_with("cpu")
+                    && line.as_bytes().get(3).is_some_and(|b| b.is_ascii_digit())
+                {
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 5 {
                         cores.push(serde_json::json!({
@@ -203,13 +205,17 @@ async fn read_disk_io() -> serde_json::Value {
             let mut write_sectors: u64 = 0;
             for line in content.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
-                if parts.len() < 14 { continue; }
+                if parts.len() < 14 {
+                    continue;
+                }
                 let name = parts[2];
                 // Only count whole-disk devices (sdX, nvmeXnY, vdX), skip partitions
                 let is_disk = (name.starts_with("sd") && name.len() == 3)
                     || (name.starts_with("nvme") && name.contains('n') && !name.contains('p'))
                     || (name.starts_with("vd") && name.len() == 3);
-                if !is_disk { continue; }
+                if !is_disk {
+                    continue;
+                }
                 // Field 6 = sectors read, field 10 = sectors written (0-indexed from name)
                 read_sectors += parts[5].parse::<u64>().unwrap_or(0);
                 write_sectors += parts[9].parse::<u64>().unwrap_or(0);
@@ -232,10 +238,15 @@ async fn read_net_io() -> serde_json::Value {
             let mut tx_bytes: u64 = 0;
             for line in content.lines().skip(2) {
                 let line = line.trim();
-                let Some((iface, rest)) = line.split_once(':') else { continue };
+                let Some((iface, rest)) = line.split_once(':') else {
+                    continue;
+                };
                 let iface = iface.trim();
-                if iface == "lo" { continue; }
-                let vals: Vec<u64> = rest.split_whitespace()
+                if iface == "lo" {
+                    continue;
+                }
+                let vals: Vec<u64> = rest
+                    .split_whitespace()
                     .filter_map(|v| v.parse().ok())
                     .collect();
                 if vals.len() >= 10 {

@@ -95,7 +95,9 @@ pub struct AppState {
 async fn main() -> anyhow::Result<()> {
     // Logging
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive("tenodera_gateway=debug".parse()?))
+        .with_env_filter(
+            EnvFilter::from_default_env().add_directive("tenodera_gateway=debug".parse()?),
+        )
         .with_ansi(false)
         .init();
 
@@ -132,7 +134,10 @@ async fn main() -> anyhow::Result<()> {
         let br = bootstrap_registry.clone();
         tokio::spawn(async move {
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(300));
-            loop { tick.tick().await; br.cleanup().await; }
+            loop {
+                tick.tick().await;
+                br.cleanup().await;
+            }
         });
     }
 
@@ -157,12 +162,27 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/ws", get(ws::ws_upgrade))
         .route("/api/agent", get(agent_ws::agent_ws_upgrade))
         .route("/api/hosts", axum::routing::get(hosts_list))
-        .route("/api/hosts/{id}", axum::routing::delete(hosts_remove).patch(hosts_patch))
-        .route("/api/hosts/{id}/user-check", axum::routing::get(host_user_check))
-        .route("/api/agent/tokens", axum::routing::get(token_list).post(token_create))
-        .route("/api/agent/tokens/{id}", axum::routing::delete(token_revoke))
+        .route(
+            "/api/hosts/{id}",
+            axum::routing::delete(hosts_remove).patch(hosts_patch),
+        )
+        .route(
+            "/api/hosts/{id}/user-check",
+            axum::routing::get(host_user_check),
+        )
+        .route(
+            "/api/agent/tokens",
+            axum::routing::get(token_list).post(token_create),
+        )
+        .route(
+            "/api/agent/tokens/{id}",
+            axum::routing::delete(token_revoke),
+        )
         .route("/api/agent/pending", axum::routing::get(pending_list))
-        .route("/api/agent/pending/{fingerprint}/approve", axum::routing::post(pending_approve))
+        .route(
+            "/api/agent/pending/{fingerprint}/approve",
+            axum::routing::post(pending_approve),
+        )
         .route("/api/health", get(health))
         .route("/api/health/ready", get(health_ready))
         // Serve built frontend from ui/dist (production)
@@ -170,15 +190,16 @@ async fn main() -> anyhow::Result<()> {
             tower_http::services::ServeDir::new(
                 std::env::var("TENODERA_UI_DIR").unwrap_or_else(|_| "ui/dist".to_string()),
             )
-            .fallback(tower_http::services::ServeFile::new(
-                format!(
-                    "{}/index.html",
-                    std::env::var("TENODERA_UI_DIR").unwrap_or_else(|_| "ui/dist".to_string())
-                ),
-            )),
+            .fallback(tower_http::services::ServeFile::new(format!(
+                "{}/index.html",
+                std::env::var("TENODERA_UI_DIR").unwrap_or_else(|_| "ui/dist".to_string())
+            ))),
         )
         .layer(axum::extract::DefaultBodyLimit::max(1024 * 16)) // 16 KiB max request body
-        .layer(axum::middleware::from_fn_with_state(state.clone(), security_headers::security_headers))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            security_headers::security_headers,
+        ))
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
@@ -197,9 +218,9 @@ async fn main() -> anyhow::Result<()> {
                 let ctrl_c = tokio::signal::ctrl_c();
                 #[cfg(unix)]
                 {
-                    let mut sigterm = tokio::signal::unix::signal(
-                        tokio::signal::unix::SignalKind::terminate(),
-                    ).expect("failed to register SIGTERM handler");
+                    let mut sigterm =
+                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                            .expect("failed to register SIGTERM handler");
                     tokio::select! {
                         _ = ctrl_c => tracing::info!("received SIGINT, shutting down"),
                         _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down"),
@@ -223,17 +244,19 @@ async fn main() -> anyhow::Result<()> {
         }
         None => {
             if !allow_unencrypted {
-                anyhow::bail!("TLS not configured and TENODERA_ALLOW_UNENCRYPTED is not set. \
-                    Set TENODERA_TLS_CERT and TENODERA_TLS_KEY, or set TENODERA_ALLOW_UNENCRYPTED=1 for dev.");
+                anyhow::bail!(
+                    "TLS not configured and TENODERA_ALLOW_UNENCRYPTED is not set. \
+                    Set TENODERA_TLS_CERT and TENODERA_TLS_KEY, or set TENODERA_ALLOW_UNENCRYPTED=1 for dev."
+                );
             }
             tracing::info!("tenodera-gateway listening on {} (plaintext)", bind_addr);
             let shutdown = async {
                 let ctrl_c = tokio::signal::ctrl_c();
                 #[cfg(unix)]
                 {
-                    let mut sigterm = tokio::signal::unix::signal(
-                        tokio::signal::unix::SignalKind::terminate(),
-                    ).expect("failed to register SIGTERM handler");
+                    let mut sigterm =
+                        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                            .expect("failed to register SIGTERM handler");
                     tokio::select! {
                         _ = ctrl_c => tracing::info!("received SIGINT, shutting down"),
                         _ = sigterm.recv() => tracing::info!("received SIGTERM, shutting down"),
@@ -285,20 +308,33 @@ struct ReadyResponse {
     error: Option<String>,
 }
 
-async fn health_ready(
-    State(state): State<Arc<AppState>>,
-) -> (StatusCode, Json<ReadyResponse>) {
+async fn health_ready(State(state): State<Arc<AppState>>) -> (StatusCode, Json<ReadyResponse>) {
     let bin = state.config.agent_bin.clone();
     let (ready, error) = match tokio::fs::metadata(&bin).await {
-        Ok(m) if {
-            use std::os::unix::fs::PermissionsExt;
-            m.permissions().mode() & 0o111 != 0
-        } => (true, None),
+        Ok(m)
+            if {
+                use std::os::unix::fs::PermissionsExt;
+                m.permissions().mode() & 0o111 != 0
+            } =>
+        {
+            (true, None)
+        }
         Ok(_) => (false, Some(format!("{bin} is not executable"))),
         Err(e) => (false, Some(format!("{bin}: {e}"))),
     };
-    let code = if ready { StatusCode::OK } else { StatusCode::SERVICE_UNAVAILABLE };
-    (code, Json(ReadyResponse { ready, agent_bin: bin, error }))
+    let code = if ready {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    (
+        code,
+        Json(ReadyResponse {
+            ready,
+            agent_bin: bin,
+            error,
+        }),
+    )
 }
 
 // ── Bootstrap token endpoints ────────────────────────────────────────────────
@@ -317,8 +353,12 @@ struct CreateTokenRequest {
     re_enroll: bool,
 }
 
-fn default_ttl() -> u64 { 3600 }
-fn default_true() -> bool { true }
+fn default_ttl() -> u64 {
+    3600
+}
+fn default_true() -> bool {
+    true
+}
 
 async fn token_create(
     State(state): State<Arc<AppState>>,
@@ -326,19 +366,37 @@ async fn token_create(
     Json(body): Json<CreateTokenRequest>,
 ) -> impl axum::response::IntoResponse {
     let Some(bearer) = extract_bearer_token(&headers) else {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        )
+            .into_response();
     };
     let Some(session) = state.sessions.get(&bearer).await else {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        )
+            .into_response();
     };
     if session.role != crate::session::Role::Admin {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "admin required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "admin required"})),
+        )
+            .into_response();
     }
 
     let ttl = std::time::Duration::from_secs(body.ttl_secs.clamp(60, 86_400 * 30));
     let (id, value) = state
         .bootstrap_registry
-        .create(ttl, body.single_use, body.max_uses, body.bound_hostname, body.re_enroll)
+        .create(
+            ttl,
+            body.single_use,
+            body.max_uses,
+            body.bound_hostname,
+            body.re_enroll,
+        )
         .await;
 
     let tls_active = state.config.tls_cert.is_some() && state.config.tls_key.is_some();
@@ -370,7 +428,11 @@ async fn token_list(
     headers: HeaderMap,
 ) -> impl axum::response::IntoResponse {
     if require_admin(&state, &headers).await.is_err() {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        )
+            .into_response();
     }
     Json(serde_json::json!({ "tokens": state.bootstrap_registry.list().await })).into_response()
 }
@@ -397,7 +459,11 @@ async fn pending_list(
     headers: HeaderMap,
 ) -> impl axum::response::IntoResponse {
     if require_admin(&state, &headers).await.is_err() {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        )
+            .into_response();
     }
     Json(serde_json::json!({ "pending": state.pending_registry.list().await })).into_response()
 }
@@ -415,13 +481,25 @@ async fn pending_approve(
     body: Option<Json<ApproveRequest>>,
 ) -> impl axum::response::IntoResponse {
     let Some(bearer) = extract_bearer_token(&headers) else {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        )
+            .into_response();
     };
     let Some(session) = state.sessions.get(&bearer).await else {
-        return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({"error": "unauthorized"}))).into_response();
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "unauthorized"})),
+        )
+            .into_response();
     };
     if session.role != crate::session::Role::Admin {
-        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "admin required"}))).into_response();
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"error": "admin required"})),
+        )
+            .into_response();
     }
 
     let display_name = body.and_then(|b| b.0.display_name);
@@ -431,7 +509,11 @@ async fn pending_approve(
         .entry_for_fingerprint(&fingerprint_hex)
         .await
     else {
-        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "pending agent not found"}))).into_response();
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "pending agent not found"})),
+        )
+            .into_response();
     };
 
     // Detect local agent: loopback address means it runs on the same machine as the gateway.
@@ -444,7 +526,9 @@ async fn pending_approve(
                 Ok(mut updated) => {
                     if display_name.is_some() {
                         updated.display_name = display_name;
-                        if let Err(e) = save_display_name(&updated.id, updated.display_name.clone()).await {
+                        if let Err(e) =
+                            save_display_name(&updated.id, updated.display_name.clone()).await
+                        {
                             tracing::error!(error = %e, "failed to save display_name");
                         }
                     }
@@ -452,27 +536,45 @@ async fn pending_approve(
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "failed to update pubkey during approval");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "registration failed"}))).into_response();
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": "registration failed"})),
+                    )
+                        .into_response();
                 }
             }
         }
         None => {
             // New host — register with its public key
-            match hosts_config::register_host(&hostname, &pubkey_b64, is_local, display_name, os_id).await {
+            match hosts_config::register_host(&hostname, &pubkey_b64, is_local, display_name, os_id)
+                .await
+            {
                 Ok(h) => h,
                 Err(e) => {
                     tracing::error!(error = %e, "failed to register host during approval");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": "registration failed"}))).into_response();
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(serde_json::json!({"error": "registration failed"})),
+                    )
+                        .into_response();
                 }
             }
         }
     };
 
-    if state.pending_registry.approve(&fingerprint_hex, host.clone()).await {
+    if state
+        .pending_registry
+        .approve(&fingerprint_hex, host.clone())
+        .await
+    {
         tracing::info!(hostname, host_id = %host.id, "admin approved pending agent");
         Json(serde_json::json!({ "approved": true, "host_id": host.id })).into_response()
     } else {
-        (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "pending agent not found or already approved"}))).into_response()
+        (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error": "pending agent not found or already approved"})),
+        )
+            .into_response()
     }
 }
 
@@ -488,7 +590,9 @@ async fn save_display_name(host_id: &str, display_name: Option<String>) -> anyho
 async fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), ()> {
     let bearer = extract_bearer_token(headers).ok_or(())?;
     let session = state.sessions.get(&bearer).await.ok_or(())?;
-    if session.role != crate::session::Role::Admin { return Err(()); }
+    if session.role != crate::session::Role::Admin {
+        return Err(());
+    }
     Ok(())
 }
 
@@ -523,23 +627,35 @@ async fn host_user_check(
             "username": username,
             "exists": serde_json::Value::Null,
             "error": "host_offline",
-        })).into_response();
+        }))
+        .into_response();
     }
 
-    match state.agent_registry.execute_rpc(
-        &id,
-        "users.manage",
-        serde_json::json!({ "action": "check_exists", "username": username }),
-    ).await {
+    match state
+        .agent_registry
+        .execute_rpc(
+            &id,
+            "users.manage",
+            serde_json::json!({ "action": "check_exists", "username": username }),
+        )
+        .await
+    {
         Some(data) => {
-            let exists = data.get("exists").and_then(|v| v.as_bool()).unwrap_or(false);
+            let exists = data
+                .get("exists")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             Json(serde_json::json!({ "username": username, "exists": exists })).into_response()
         }
-        None => (StatusCode::GATEWAY_TIMEOUT, Json(serde_json::json!({
-            "username": username,
-            "exists": serde_json::Value::Null,
-            "error": "timeout",
-        }))).into_response(),
+        None => (
+            StatusCode::GATEWAY_TIMEOUT,
+            Json(serde_json::json!({
+                "username": username,
+                "exists": serde_json::Value::Null,
+                "error": "timeout",
+            })),
+        )
+            .into_response(),
     }
 }
 
@@ -561,9 +677,7 @@ struct HostListEntry {
     os_id: Option<String>,
 }
 
-async fn hosts_list(
-    State(state): State<Arc<AppState>>,
-) -> Json<serde_json::Value> {
+async fn hosts_list(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let config = hosts_config::load().await;
     let online = state.agent_registry.online_host_ids().await;
     let mut hosts = Vec::with_capacity(config.hosts.len());

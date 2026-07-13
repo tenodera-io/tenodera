@@ -7,7 +7,12 @@ use tenodera_protocol::channel::{ChannelId, ChannelOpenOptions};
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::handlers::{certs, containers, cron, disk_usage, dns, file_list, file_ops, hardware_info, host_config, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats, networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify, system_info, system_pubkey, systemd_timers, systemd_units, terminal_pty, top_processes, users};
+use crate::handlers::{
+    certs, containers, cron, disk_usage, dns, file_list, file_ops, hardware_info, host_config,
+    hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream, network_stats,
+    networking, networking_snapshot, packages, storage, storage_snapshot, superuser_verify,
+    system_info, system_pubkey, systemd_timers, systemd_units, terminal_pty, top_processes, users,
+};
 
 /// Active streaming channel state.
 struct ActiveChannel {
@@ -39,7 +44,8 @@ impl Router {
     }
 
     pub fn register(&mut self, handler: Arc<dyn ChannelHandler>) {
-        self.handlers.insert(handler.payload_type().to_string(), handler);
+        self.handlers
+            .insert(handler.payload_type().to_string(), handler);
     }
 
     /// Register built-in handlers for MVP payloads.
@@ -100,11 +106,15 @@ impl Router {
                         let (shutdown_tx, shutdown_rx) = watch::channel(false);
                         self.active_channels.insert(
                             channel.clone(),
-                            ActiveChannel { shutdown_tx, handler: handler.clone() },
+                            ActiveChannel {
+                                shutdown_tx,
+                                handler: handler.clone(),
+                            },
                         );
                         // Store options so Data messages on this streaming channel
                         // (e.g. terminal keyboard input) receive _user/_role injection.
-                        self.channel_options.insert(channel.clone(), options.clone());
+                        self.channel_options
+                            .insert(channel.clone(), options.clone());
 
                         let out_tx = self.out_tx.clone();
                         let ch = channel.clone();
@@ -112,15 +122,21 @@ impl Router {
                         tokio::spawn(async move {
                             // Send Ready first
                             let _ = out_tx
-                                .send(Message::Ready { channel: ch.clone() })
+                                .send(Message::Ready {
+                                    channel: ch.clone(),
+                                })
                                 .await;
-                            handler.stream(&ch, &opts, out_tx.clone(), shutdown_rx).await;
+                            handler
+                                .stream(&ch, &opts, out_tx.clone(), shutdown_rx)
+                                .await;
                         });
                         vec![]
                     } else {
                         // Track handler and options for this channel (for future data() calls)
-                        self.channel_handlers.insert(channel.clone(), handler.clone());
-                        self.channel_options.insert(channel.clone(), options.clone());
+                        self.channel_handlers
+                            .insert(channel.clone(), handler.clone());
+                        self.channel_options
+                            .insert(channel.clone(), options.clone());
                         handler.open(&channel, &options).await
                     }
                 } else {
@@ -215,7 +231,10 @@ mod tests {
         let (mut router, _rx) = make_router();
         let channel: ChannelId = "ch1".into();
         let responses = router
-            .handle(Message::Open { channel, options: open_options("no.such.handler") })
+            .handle(Message::Open {
+                channel,
+                options: open_options("no.such.handler"),
+            })
             .await;
         assert_eq!(responses.len(), 1);
         let Message::Close { problem, .. } = &responses[0] else {
@@ -228,7 +247,12 @@ mod tests {
     async fn close_on_unknown_channel_is_noop() {
         let (mut router, _rx) = make_router();
         let channel: ChannelId = "ch99".into();
-        let responses = router.handle(Message::Close { channel, problem: None }).await;
+        let responses = router
+            .handle(Message::Close {
+                channel,
+                problem: None,
+            })
+            .await;
         assert!(responses.is_empty());
     }
 
@@ -237,7 +261,10 @@ mod tests {
         let (mut router, _rx) = make_router();
         let channel: ChannelId = "ch2".into();
         let responses = router
-            .handle(Message::Data { channel, data: serde_json::json!({"x": 1}) })
+            .handle(Message::Data {
+                channel,
+                data: serde_json::json!({"x": 1}),
+            })
             .await;
         assert!(responses.is_empty());
     }

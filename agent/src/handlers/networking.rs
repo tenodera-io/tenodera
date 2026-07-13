@@ -99,12 +99,17 @@ async fn read_proc_net_dev() -> std::collections::HashMap<String, (u64, u64)> {
     };
     for line in content.lines().skip(2) {
         let line = line.trim();
-        let Some((iface, rest)) = line.split_once(':') else { continue };
+        let Some((iface, rest)) = line.split_once(':') else {
+            continue;
+        };
         let iface = iface.trim();
         if iface == "lo" {
             continue;
         }
-        let vals: Vec<u64> = rest.split_whitespace().filter_map(|v| v.parse().ok()).collect();
+        let vals: Vec<u64> = rest
+            .split_whitespace()
+            .filter_map(|v| v.parse().ok())
+            .collect();
         if vals.len() >= 10 {
             map.insert(iface.to_string(), (vals[0], vals[8]));
         }
@@ -135,10 +140,15 @@ impl ChannelHandler for NetworkManageHandler {
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
-        if !matches!(action, "list_interfaces" | "firewall_status" | "firewall_rules") {
-            if let Some(err) = crate::util::require_admin(data) {
-                return vec![Message::Data { channel: channel.into(), data: err }];
-            }
+        if !matches!(
+            action,
+            "list_interfaces" | "firewall_status" | "firewall_rules"
+        ) && let Some(err) = crate::util::require_admin(data)
+        {
+            return vec![Message::Data {
+                channel: channel.into(),
+                data: err,
+            }];
         }
 
         let result = match action {
@@ -160,7 +170,9 @@ impl ChannelHandler for NetworkManageHandler {
             }
             "firewall_add_rule" => {
                 let rule = data.get("rule").cloned().unwrap_or_default();
-                let backend = data.get("backend").and_then(|v| v.as_str())
+                let backend = data
+                    .get("backend")
+                    .and_then(|v| v.as_str())
                     .or_else(|| rule.get("backend").and_then(|v| v.as_str()))
                     .unwrap_or("");
                 let be = parse_backend(backend);
@@ -168,7 +180,9 @@ impl ChannelHandler for NetworkManageHandler {
             }
             "firewall_remove_rule" => {
                 let rule = data.get("rule").cloned().unwrap_or_default();
-                let backend = data.get("backend").and_then(|v| v.as_str())
+                let backend = data
+                    .get("backend")
+                    .and_then(|v| v.as_str())
                     .or_else(|| rule.get("backend").and_then(|v| v.as_str()))
                     .unwrap_or("");
                 let be = parse_backend(backend);
@@ -191,7 +205,11 @@ impl ChannelHandler for NetworkManageHandler {
             }
             "iface_up" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c)) {
+                if name.is_empty()
+                    || !name
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || "-_.".contains(c))
+                {
                     serde_json::json!({ "error": "invalid interface name" })
                 } else {
                     sudo_action(password, &["ip", "link", "set", "dev", name, "up"]).await
@@ -199,7 +217,11 @@ impl ChannelHandler for NetworkManageHandler {
             }
             "iface_down" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_.".contains(c)) {
+                if name.is_empty()
+                    || !name
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || "-_.".contains(c))
+                {
                     serde_json::json!({ "error": "invalid interface name" })
                 } else {
                     sudo_action(password, &["ip", "link", "set", "dev", name, "down"]).await
@@ -210,7 +232,11 @@ impl ChannelHandler for NetworkManageHandler {
             "vpn_list" => vpn_list().await,
             "vpn_connect" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_ ".contains(c)) {
+                if name.is_empty()
+                    || !name
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || "-_ ".contains(c))
+                {
                     serde_json::json!({ "error": "invalid connection name" })
                 } else {
                     sudo_action(password, &["nmcli", "connection", "up", "--", name]).await
@@ -218,7 +244,11 @@ impl ChannelHandler for NetworkManageHandler {
             }
             "vpn_disconnect" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || "-_ ".contains(c)) {
+                if name.is_empty()
+                    || !name
+                        .chars()
+                        .all(|c| c.is_alphanumeric() || "-_ ".contains(c))
+                {
                     serde_json::json!({ "error": "invalid connection name" })
                 } else {
                     sudo_action(password, &["nmcli", "connection", "down", "--", name]).await
@@ -236,10 +266,22 @@ impl ChannelHandler for NetworkManageHandler {
 
         // Audit mutating network actions
         match action {
-            "firewall_enable" | "firewall_disable" | "firewall_add_rule" | "firewall_remove_rule"
-            | "add_bridge" | "add_vlan" | "remove_interface" | "iface_up" | "iface_down"
-            | "vpn_connect" | "vpn_disconnect" => {
-                let target = data.get("name").or(data.get("parent")).and_then(|v| v.as_str()).unwrap_or("");
+            "firewall_enable"
+            | "firewall_disable"
+            | "firewall_add_rule"
+            | "firewall_remove_rule"
+            | "add_bridge"
+            | "add_vlan"
+            | "remove_interface"
+            | "iface_up"
+            | "iface_down"
+            | "vpn_connect"
+            | "vpn_disconnect" => {
+                let target = data
+                    .get("name")
+                    .or(data.get("parent"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
                 let ok = result.get("error").is_none();
                 crate::audit::log(user, &format!("net.{action}"), target, ok, "");
             }
@@ -249,9 +291,11 @@ impl ChannelHandler for NetworkManageHandler {
         // Always echo back the action field so the frontend can match responses
         let mut result = result;
         if let Some(obj) = result.as_object_mut()
-            && !obj.contains_key("action") && !action.is_empty() {
-                obj.insert("action".to_string(), serde_json::json!(action));
-            }
+            && !obj.contains_key("action")
+            && !action.is_empty()
+        {
+            obj.insert("action".to_string(), serde_json::json!(action));
+        }
 
         vec![Message::Data {
             channel: channel.into(),
@@ -289,10 +333,18 @@ async fn detect_firewall() -> FirewallBackend {
 
 async fn detect_all_firewalls() -> Vec<FirewallBackend> {
     let mut backends = Vec::new();
-    if which("ufw").await { backends.push(FirewallBackend::Ufw); }
-    if which("firewall-cmd").await { backends.push(FirewallBackend::Firewalld); }
-    if which("nft").await { backends.push(FirewallBackend::Nftables); }
-    if which("iptables").await { backends.push(FirewallBackend::Iptables); }
+    if which("ufw").await {
+        backends.push(FirewallBackend::Ufw);
+    }
+    if which("firewall-cmd").await {
+        backends.push(FirewallBackend::Firewalld);
+    }
+    if which("nft").await {
+        backends.push(FirewallBackend::Nftables);
+    }
+    if which("iptables").await {
+        backends.push(FirewallBackend::Iptables);
+    }
     backends
 }
 
@@ -321,7 +373,12 @@ async fn firewall_status_single(backend: FirewallBackend, password: &str) -> (bo
         FirewallBackend::Ufw => {
             let out = sudo_run_cmd(password, &["ufw", "status"]).await;
             let active = out.contains("Status: active");
-            let status_line = out.lines().find(|l| l.starts_with("Status:")).unwrap_or("").trim().to_string();
+            let status_line = out
+                .lines()
+                .find(|l| l.starts_with("Status:"))
+                .unwrap_or("")
+                .trim()
+                .to_string();
             (active, status_line)
         }
         FirewallBackend::Firewalld => {
@@ -332,7 +389,14 @@ async fn firewall_status_single(backend: FirewallBackend, password: &str) -> (bo
         FirewallBackend::Nftables => {
             let out = sudo_run_cmd(password, &["nft", "list", "ruleset"]).await;
             let active = !out.is_empty() && !out.starts_with("error:");
-            (active, if !active { "no rules loaded".to_string() } else { "nftables active".to_string() })
+            (
+                active,
+                if !active {
+                    "no rules loaded".to_string()
+                } else {
+                    "nftables active".to_string()
+                },
+            )
         }
         FirewallBackend::Iptables => {
             let out = sudo_run_cmd(password, &["iptables", "-L", "-n", "--line-numbers"]).await;
@@ -382,12 +446,19 @@ async fn firewall_rules_for(backend: FirewallBackend, password: &str) -> Vec<ser
             } else {
                 // Parse nft output line by line for better display
                 out.lines()
-                    .filter(|l| l.contains("counter") || l.contains("accept") || l.contains("drop") || l.contains("reject"))
+                    .filter(|l| {
+                        l.contains("counter")
+                            || l.contains("accept")
+                            || l.contains("drop")
+                            || l.contains("reject")
+                    })
                     .enumerate()
-                    .map(|(i, l)| serde_json::json!({
-                        "number": i + 1,
-                        "rule": l.trim(),
-                    }))
+                    .map(|(i, l)| {
+                        serde_json::json!({
+                            "number": i + 1,
+                            "rule": l.trim(),
+                        })
+                    })
                     .collect()
             }
         }
@@ -415,14 +486,20 @@ async fn firewall_rules_all(password: &str) -> serde_json::Value {
         // When a high-level frontend (ufw/firewalld) is present, low-level
         // backends contain their internal chains → filter them out so only
         // user-meaningful rules from the low-level backend remain.
-        if (*be == FirewallBackend::Nftables || *be == FirewallBackend::Iptables) && (has_ufw || has_firewalld) {
+        if (*be == FirewallBackend::Nftables || *be == FirewallBackend::Iptables)
+            && (has_ufw || has_firewalld)
+        {
             rules.retain(|r| {
                 let text = r.get("rule").and_then(|v| v.as_str()).unwrap_or("");
                 let chain = r.get("chain").and_then(|v| v.as_str()).unwrap_or("");
                 let combined = format!("{chain} {text}").to_lowercase();
                 // Skip ufw / firewalld / docker internal chains
-                !combined.contains("ufw") && !combined.contains("fwd_") && !combined.contains("inp_")
-                    && !combined.contains("docker") && !combined.contains("in_") && !combined.contains("out_")
+                !combined.contains("ufw")
+                    && !combined.contains("fwd_")
+                    && !combined.contains("inp_")
+                    && !combined.contains("docker")
+                    && !combined.contains("in_")
+                    && !combined.contains("out_")
             });
         }
         all_rules.extend(rules);
@@ -542,7 +619,11 @@ fn firewall_disable_cmd_for(be: FirewallBackend) -> Vec<String> {
     }
 }
 
-async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Option<FirewallBackend>) -> serde_json::Value {
+async fn firewall_add_rule(
+    password: &str,
+    rule: &serde_json::Value,
+    target: Option<FirewallBackend>,
+) -> serde_json::Value {
     let backend = match target {
         Some(b) => b,
         None => detect_firewall().await,
@@ -553,9 +634,7 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
         // Port can be a single number or range like "8000:8080"
         p.split(':').all(|part| part.parse::<u16>().is_ok())
     };
-    let validate_proto = |p: &str| -> bool {
-        matches!(p, "tcp" | "udp" | "icmp")
-    };
+    let validate_proto = |p: &str| -> bool { matches!(p, "tcp" | "udp" | "icmp") };
     // Validate IP address or CIDR notation (IPv4 and IPv6)
     let validate_ip_or_cidr = |s: &str| -> bool {
         if s == "any" {
@@ -568,11 +647,15 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
         };
         // Validate prefix length if present
         if let Some(p) = prefix_part {
-            let Ok(prefix) = p.parse::<u32>() else { return false };
+            let Ok(prefix) = p.parse::<u32>() else {
+                return false;
+            };
             // IPv4 max /32, IPv6 max /128 — we allow up to 128 here;
             // an IPv4 with /128 is nonsensical but harmless, the real
             // check is on the address itself.
-            if prefix > 128 { return false; }
+            if prefix > 128 {
+                return false;
+            }
         }
         // Validate address
         addr_part.parse::<std::net::IpAddr>().is_ok()
@@ -581,14 +664,18 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
     let validate_service_name = |s: &str| -> bool {
         !s.is_empty()
             && s.len() <= 128
-            && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+            && s.chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
     };
 
     match backend {
         FirewallBackend::Ufw => {
             let port = rule.get("port").and_then(|v| v.as_str()).unwrap_or("");
             let proto = rule.get("proto").and_then(|v| v.as_str()).unwrap_or("tcp");
-            let action = rule.get("action").and_then(|v| v.as_str()).unwrap_or("allow");
+            let action = rule
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("allow");
             let from = rule.get("from").and_then(|v| v.as_str()).unwrap_or("any");
 
             if port.is_empty() {
@@ -611,7 +698,13 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
             if from == "any" {
                 sudo_action(password, &["ufw", action, &port_proto]).await
             } else {
-                sudo_action(password, &["ufw", action, "from", from, "to", "any", "port", port, "proto", proto]).await
+                sudo_action(
+                    password,
+                    &[
+                        "ufw", action, "from", from, "to", "any", "port", port, "proto", proto,
+                    ],
+                )
+                .await
             }
         }
         FirewallBackend::Firewalld => {
@@ -623,7 +716,11 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
                 if !validate_service_name(svc) {
                     return serde_json::json!({ "error": "invalid service name (alphanumeric, hyphens, underscores, dots only)" });
                 }
-                sudo_action(password, &["firewall-cmd", "--permanent", "--add-service", svc]).await
+                sudo_action(
+                    password,
+                    &["firewall-cmd", "--permanent", "--add-service", svc],
+                )
+                .await
             } else if !port.is_empty() {
                 if !validate_port(port) {
                     return serde_json::json!({ "error": "invalid port number" });
@@ -632,7 +729,11 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
                     return serde_json::json!({ "error": "invalid protocol (tcp, udp, icmp)" });
                 }
                 let port_proto = format!("{port}/{proto}");
-                sudo_action(password, &["firewall-cmd", "--permanent", "--add-port", &port_proto]).await
+                sudo_action(
+                    password,
+                    &["firewall-cmd", "--permanent", "--add-port", &port_proto],
+                )
+                .await
             } else {
                 serde_json::json!({ "error": "port or service required" })
             }
@@ -641,7 +742,10 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
             // nftables / iptables: add rule via direct command
             let port = rule.get("port").and_then(|v| v.as_str()).unwrap_or("");
             let proto = rule.get("proto").and_then(|v| v.as_str()).unwrap_or("tcp");
-            let action = rule.get("action").and_then(|v| v.as_str()).unwrap_or("accept");
+            let action = rule
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("accept");
             if port.is_empty() {
                 return serde_json::json!({ "error": "port required" });
             }
@@ -658,7 +762,21 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
                         "reject" => "REJECT",
                         _ => "ACCEPT",
                     };
-                    sudo_action(password, &["iptables", "-A", "INPUT", "-p", proto, "--dport", port, "-j", action_flag]).await
+                    sudo_action(
+                        password,
+                        &[
+                            "iptables",
+                            "-A",
+                            "INPUT",
+                            "-p",
+                            proto,
+                            "--dport",
+                            port,
+                            "-j",
+                            action_flag,
+                        ],
+                    )
+                    .await
                 }
                 FirewallBackend::Nftables => {
                     let nft_action = match action {
@@ -667,10 +785,14 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
                         _ => "accept",
                     };
                     // Each word must be a separate argument to nft
-                    sudo_action(password, &[
-                        "nft", "add", "rule", "inet", "filter", "input",
-                        proto, "dport", port, nft_action,
-                    ]).await
+                    sudo_action(
+                        password,
+                        &[
+                            "nft", "add", "rule", "inet", "filter", "input", proto, "dport", port,
+                            nft_action,
+                        ],
+                    )
+                    .await
                 }
                 _ => serde_json::json!({ "error": "no firewall backend available" }),
             }
@@ -678,7 +800,11 @@ async fn firewall_add_rule(password: &str, rule: &serde_json::Value, target: Opt
     }
 }
 
-async fn firewall_remove_rule(password: &str, rule: &serde_json::Value, target: Option<FirewallBackend>) -> serde_json::Value {
+async fn firewall_remove_rule(
+    password: &str,
+    rule: &serde_json::Value,
+    target: Option<FirewallBackend>,
+) -> serde_json::Value {
     let backend = match target {
         Some(b) => b,
         None => {
@@ -709,17 +835,26 @@ async fn firewall_remove_rule(password: &str, rule: &serde_json::Value, target: 
             let valid_svc_name = |s: &str| -> bool {
                 !s.is_empty()
                     && s.len() <= 128
-                    && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
+                    && s.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
             };
 
             if let Some(svc) = service {
                 if !valid_svc_name(svc) {
                     return serde_json::json!({ "error": "invalid service name" });
                 }
-                sudo_action(password, &["firewall-cmd", "--permanent", "--remove-service", svc]).await
+                sudo_action(
+                    password,
+                    &["firewall-cmd", "--permanent", "--remove-service", svc],
+                )
+                .await
             } else if !port.is_empty() {
                 let port_proto = format!("{port}/{proto}");
-                sudo_action(password, &["firewall-cmd", "--permanent", "--remove-port", &port_proto]).await
+                sudo_action(
+                    password,
+                    &["firewall-cmd", "--permanent", "--remove-port", &port_proto],
+                )
+                .await
             } else {
                 serde_json::json!({ "error": "port/service or rule number required" })
             }
@@ -741,14 +876,34 @@ async fn firewall_remove_rule(password: &str, rule: &serde_json::Value, target: 
                 }
                 FirewallBackend::Nftables => {
                     // nft delete rule <family> <table> <chain> handle <handle>
-                    let table = rule.get("table").and_then(|v| v.as_str()).unwrap_or("filter");
-                    let chain = rule.get("chain").and_then(|v| v.as_str()).unwrap_or("input");
-                    let family = rule.get("family").and_then(|v| v.as_str()).unwrap_or("inet");
+                    let table = rule
+                        .get("table")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("filter");
+                    let chain = rule
+                        .get("chain")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("input");
+                    let family = rule
+                        .get("family")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("inet");
                     if let Some(handle) = number {
                         let handle_str = handle.to_string();
-                        sudo_action(password, &[
-                            "nft", "delete", "rule", family, table, chain, "handle", &handle_str,
-                        ]).await
+                        sudo_action(
+                            password,
+                            &[
+                                "nft",
+                                "delete",
+                                "rule",
+                                family,
+                                table,
+                                chain,
+                                "handle",
+                                &handle_str,
+                            ],
+                        )
+                        .await
                     } else {
                         serde_json::json!({ "error": "rule handle required for nftables delete" })
                     }
@@ -770,9 +925,7 @@ async fn list_interfaces_detailed() -> serde_json::Value {
         .await;
 
     let parsed: Vec<serde_json::Value> = match out {
-        Ok(o) if o.status.success() => {
-            serde_json::from_slice(&o.stdout).unwrap_or_default()
-        }
+        Ok(o) if o.status.success() => serde_json::from_slice(&o.stdout).unwrap_or_default(),
         _ => return serde_json::json!({ "interfaces": [] }),
     };
 
@@ -797,7 +950,11 @@ async fn list_interfaces_detailed() -> serde_json::Value {
         let flags: Vec<String> = entry
             .get("flags")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|f| f.as_str().map(|s| s.to_string())).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|f| f.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let mut ipv4 = Vec::new();
@@ -883,14 +1040,36 @@ async fn detect_iface_type(name: &str) -> &'static str {
 }
 
 async fn add_bridge(password: &str, name: &str) -> serde_json::Value {
-    if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return serde_json::json!({ "error": "invalid bridge name" });
     }
     // Try nmcli first, fall back to ip
     if which("nmcli").await {
-        sudo_action(password, &["nmcli", "connection", "add", "type", "bridge", "ifname", name, "con-name", name]).await
+        sudo_action(
+            password,
+            &[
+                "nmcli",
+                "connection",
+                "add",
+                "type",
+                "bridge",
+                "ifname",
+                name,
+                "con-name",
+                name,
+            ],
+        )
+        .await
     } else {
-        let r1 = sudo_action(password, &["ip", "link", "add", "name", name, "type", "bridge"]).await;
+        let r1 = sudo_action(
+            password,
+            &["ip", "link", "add", "name", name, "type", "bridge"],
+        )
+        .await;
         if r1.get("ok").and_then(|v| v.as_bool()) == Some(true) {
             sudo_action(password, &["ip", "link", "set", "dev", name, "up"]).await
         } else {
@@ -903,21 +1082,50 @@ async fn add_vlan(password: &str, parent: &str, vlan_id: u32) -> serde_json::Val
     if parent.is_empty() || vlan_id == 0 || vlan_id > 4094 {
         return serde_json::json!({ "error": "invalid parent or VLAN ID (1-4094)" });
     }
-    if !parent.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+    if !parent
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    {
         return serde_json::json!({ "error": "invalid parent interface name" });
     }
     let name = format!("{parent}.{vlan_id}");
     let id_str = vlan_id.to_string();
 
     if which("nmcli").await {
-        sudo_action(password, &["nmcli", "connection", "add", "type", "vlan", "ifname", &name, "dev", parent, "id", &id_str]).await
+        sudo_action(
+            password,
+            &[
+                "nmcli",
+                "connection",
+                "add",
+                "type",
+                "vlan",
+                "ifname",
+                &name,
+                "dev",
+                parent,
+                "id",
+                &id_str,
+            ],
+        )
+        .await
     } else {
-        sudo_action(password, &["ip", "link", "add", "link", parent, "name", &name, "type", "vlan", "id", &id_str]).await
+        sudo_action(
+            password,
+            &[
+                "ip", "link", "add", "link", parent, "name", &name, "type", "vlan", "id", &id_str,
+            ],
+        )
+        .await
     }
 }
 
 async fn remove_interface(password: &str, name: &str) -> serde_json::Value {
-    if name.is_empty() || !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+    {
         return serde_json::json!({ "error": "invalid interface name" });
     }
     // Try nmcli first
@@ -939,14 +1147,25 @@ async fn vpn_list() -> serde_json::Value {
         return serde_json::json!({ "vpns": [], "note": "NetworkManager not available" });
     }
 
-    let out = run_cmd(&["nmcli", "-t", "-f", "NAME,TYPE,DEVICE,STATE", "connection", "show"]).await;
+    let out = run_cmd(&[
+        "nmcli",
+        "-t",
+        "-f",
+        "NAME,TYPE,DEVICE,STATE",
+        "connection",
+        "show",
+    ])
+    .await;
     let mut vpns = Vec::new();
 
     for line in out.lines() {
         let parts: Vec<&str> = line.split(':').collect();
         if parts.len() >= 4 {
             let conn_type = parts[1];
-            if conn_type.contains("vpn") || conn_type.contains("wireguard") || conn_type.contains("tun") {
+            if conn_type.contains("vpn")
+                || conn_type.contains("wireguard")
+                || conn_type.contains("tun")
+            {
                 vpns.push(serde_json::json!({
                     "name": parts[0],
                     "type": parts[1],
@@ -969,13 +1188,42 @@ async fn network_logs(lines: u64) -> serde_json::Value {
 
     // Try NetworkManager logs, fall back to systemd-networkd
     let out = if which("nmcli").await {
-        run_cmd(&["journalctl", "-u", "NetworkManager", "-n", &n, "--no-pager", "--output=short-iso"]).await
+        run_cmd(&[
+            "journalctl",
+            "-u",
+            "NetworkManager",
+            "-n",
+            &n,
+            "--no-pager",
+            "--output=short-iso",
+        ])
+        .await
     } else {
-        run_cmd(&["journalctl", "-u", "systemd-networkd", "-n", &n, "--no-pager", "--output=short-iso"]).await
+        run_cmd(&[
+            "journalctl",
+            "-u",
+            "systemd-networkd",
+            "-n",
+            &n,
+            "--no-pager",
+            "--output=short-iso",
+        ])
+        .await
     };
 
     // Also grab firewall logs
-    let fw_logs = run_cmd(&["journalctl", "-t", "kernel", "--grep", "UFW\\|FIREWALL\\|nft\\|iptables", "-n", "50", "--no-pager", "--output=short-iso"]).await;
+    let fw_logs = run_cmd(&[
+        "journalctl",
+        "-t",
+        "kernel",
+        "--grep",
+        "UFW\\|FIREWALL\\|nft\\|iptables",
+        "-n",
+        "50",
+        "--no-pager",
+        "--output=short-iso",
+    ])
+    .await;
 
     let entries: Vec<&str> = out.lines().collect();
     let fw_entries: Vec<&str> = fw_logs.lines().filter(|l| !l.is_empty()).collect();

@@ -4,9 +4,7 @@ use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::util::{
-    extract_string_array, run_cmd, sudo_action, sudo_stdin_write, which,
-};
+use crate::util::{extract_string_array, run_cmd, sudo_action, sudo_stdin_write, which};
 
 // ──────────────────────────────────────────────────────────────
 //  Package management handler
@@ -32,10 +30,15 @@ impl ChannelHandler for PackagesHandler {
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
         let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
-        if !matches!(action, "detect" | "list_installed" | "search" | "package_info" | "list_updates") {
-            if let Some(err) = crate::util::require_admin(data) {
-                return vec![Message::Data { channel: channel.into(), data: err }];
-            }
+        if !matches!(
+            action,
+            "detect" | "list_installed" | "search" | "package_info" | "list_updates"
+        ) && let Some(err) = crate::util::require_admin(data)
+        {
+            return vec![Message::Data {
+                channel: channel.into(),
+                data: err,
+            }];
         }
 
         let result = match action {
@@ -97,9 +100,11 @@ impl ChannelHandler for PackagesHandler {
         // Always echo back the action field so the frontend can match responses
         let mut result = result;
         if let Some(obj) = result.as_object_mut()
-            && !obj.contains_key("action") && !action.is_empty() {
-                obj.insert("action".to_string(), serde_json::json!(action));
-            }
+            && !obj.contains_key("action")
+            && !action.is_empty()
+        {
+            obj.insert("action".to_string(), serde_json::json!(action));
+        }
 
         vec![Message::Data {
             channel: channel.into(),
@@ -204,7 +209,13 @@ async fn list_installed_pacman() -> Vec<serde_json::Value> {
 
 async fn list_installed_apt() -> Vec<serde_json::Value> {
     // dpkg-query for structured output
-    let out = run_cmd(&["dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Status}\n"]).await;
+    let out = run_cmd(&[
+        "dpkg-query",
+        "-W",
+        "-f",
+        "${Package}\t${Version}\t${Status}\n",
+    ])
+    .await;
     let mut pkgs = Vec::new();
     for line in out.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -220,7 +231,13 @@ async fn list_installed_apt() -> Vec<serde_json::Value> {
 
 async fn list_installed_dnf() -> Vec<serde_json::Value> {
     // rpm -qa --queryformat for structured output
-    let out = run_cmd(&["rpm", "-qa", "--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\n"]).await;
+    let out = run_cmd(&[
+        "rpm",
+        "-qa",
+        "--queryformat",
+        "%{NAME}\t%{VERSION}-%{RELEASE}\n",
+    ])
+    .await;
     let mut pkgs = Vec::new();
     for line in out.lines() {
         let parts: Vec<&str> = line.split('\t').collect();
@@ -278,10 +295,7 @@ async fn search_pacman(query: &str) -> Vec<serde_json::Value> {
                 let name = rest.first().unwrap_or(&"");
                 let version_part = rest.get(1).unwrap_or(&"");
                 let installed = version_part.contains("[installed");
-                let version = version_part
-                    .split_whitespace()
-                    .next()
-                    .unwrap_or("");
+                let version = version_part.split_whitespace().next().unwrap_or("");
 
                 let desc = if i + 1 < lines.len() && lines[i + 1].starts_with(' ') {
                     i += 1;
@@ -615,7 +629,9 @@ async fn check_updates() -> serde_json::Value {
             let mut updates = Vec::new();
             for line in out.lines() {
                 let line = line.trim();
-                if line.is_empty() { continue; }
+                if line.is_empty() {
+                    continue;
+                }
                 // Format: "name old_ver -> new_ver"
                 let parts: Vec<&str> = line.splitn(4, ' ').collect();
                 if parts.len() >= 4 {
@@ -725,7 +741,12 @@ async fn update_system(password: &str) -> serde_json::Value {
             }
             vec!["apt-get".into(), "dist-upgrade".into(), "-y".into()]
         }
-        PkgBackend::Dnf => vec!["dnf".into(), "upgrade".into(), "--refresh".into(), "-y".into()],
+        PkgBackend::Dnf => vec![
+            "dnf".into(),
+            "upgrade".into(),
+            "--refresh".into(),
+            "-y".into(),
+        ],
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
     };
 
@@ -769,39 +790,47 @@ async fn list_repos_pacman() -> serde_json::Value {
         if line.starts_with('[') && line.ends_with(']') {
             // Save previous repo
             if let Some(name) = current_repo.take()
-                && name != "options" {
-                    repos.push(serde_json::json!({
-                        "name": name,
-                        "server": current_server.clone(),
-                        "include": current_include.clone(),
-                        "sig_level": current_sig_level.clone(),
-                        "enabled": true,
-                    }));
-                }
+                && name != "options"
+            {
+                repos.push(serde_json::json!({
+                    "name": name,
+                    "server": current_server.clone(),
+                    "include": current_include.clone(),
+                    "sig_level": current_sig_level.clone(),
+                    "enabled": true,
+                }));
+            }
             current_repo = Some(line.trim_matches(|c| c == '[' || c == ']').to_string());
             current_server.clear();
             current_include.clear();
             current_sig_level.clear();
         } else if let Some(val) = line.strip_prefix("Server") {
-            current_server = val.trim_start_matches(|c: char| c == '=' || c.is_whitespace()).to_string();
+            current_server = val
+                .trim_start_matches(|c: char| c == '=' || c.is_whitespace())
+                .to_string();
         } else if let Some(val) = line.strip_prefix("Include") {
-            current_include = val.trim_start_matches(|c: char| c == '=' || c.is_whitespace()).to_string();
+            current_include = val
+                .trim_start_matches(|c: char| c == '=' || c.is_whitespace())
+                .to_string();
         } else if let Some(val) = line.strip_prefix("SigLevel") {
-            current_sig_level = val.trim_start_matches(|c: char| c == '=' || c.is_whitespace()).to_string();
+            current_sig_level = val
+                .trim_start_matches(|c: char| c == '=' || c.is_whitespace())
+                .to_string();
         }
     }
 
     // Save last repo
     if let Some(name) = current_repo
-        && name != "options" {
-            repos.push(serde_json::json!({
-                "name": name,
-                "server": current_server,
-                "include": current_include,
-                "sig_level": current_sig_level,
-                "enabled": true,
-            }));
-        }
+        && name != "options"
+    {
+        repos.push(serde_json::json!({
+            "name": name,
+            "server": current_server,
+            "include": current_include,
+            "sig_level": current_sig_level,
+            "enabled": true,
+        }));
+    }
 
     serde_json::json!({ "backend": "pacman", "repos": repos })
 }
@@ -863,7 +892,8 @@ async fn list_repos_apt() -> serde_json::Value {
                         let line = line.trim();
                         if line.is_empty() {
                             if !current.is_empty() && current.contains_key("Types") {
-                                let enabled = current.get("Enabled")
+                                let enabled = current
+                                    .get("Enabled")
                                     .and_then(|v| v.as_str())
                                     .map(|v| v != "no")
                                     .unwrap_or(true);
@@ -882,7 +912,8 @@ async fn list_repos_apt() -> serde_json::Value {
 
                     // Save last block
                     if current.contains_key("Types") {
-                        let enabled = current.get("Enabled")
+                        let enabled = current
+                            .get("Enabled")
                             .and_then(|v| v.as_str())
                             .map(|v| v != "no")
                             .unwrap_or(true);
@@ -954,7 +985,10 @@ async fn add_repo(password: &str, repo: &str, name: &str) -> serde_json::Value {
                 return serde_json::json!({ "error": "repository name required for pacman" });
             }
             // Validate name (alphanumeric + hyphens only)
-            if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            if !name
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
                 return serde_json::json!({ "error": "invalid repository name" });
             }
             // Validate repo URL
@@ -974,7 +1008,10 @@ async fn add_repo(password: &str, repo: &str, name: &str) -> serde_json::Value {
                 // Write a .list file
                 let fname = if name.is_empty() { "custom" } else { name };
                 // Validate filename
-                if !fname.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+                if !fname
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+                {
                     return serde_json::json!({ "error": "invalid repository name" });
                 }
                 let path = format!("/etc/apt/sources.list.d/{fname}.list");
@@ -1010,7 +1047,10 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
         PkgBackend::Pacman => {
             // Remove [repo] section from /etc/pacman.conf
             // Validate repo name
-            if !repo.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            if !repo
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
                 return serde_json::json!({ "error": "invalid repository name" });
             }
             // Read, filter, and rewrite pacman.conf safely in Rust
@@ -1044,9 +1084,11 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 // It's a file path — remove the file
                 // Canonicalize to resolve .. and symlinks, then verify it's in sources.list.d
                 let allowed_dir = Path::new("/etc/apt/sources.list.d");
-                let canonical = match allowed_dir.canonicalize().ok().zip(
-                    Path::new(repo).canonicalize().ok(),
-                ) {
+                let canonical = match allowed_dir
+                    .canonicalize()
+                    .ok()
+                    .zip(Path::new(repo).canonicalize().ok())
+                {
                     Some((dir, file)) if file.starts_with(&dir) => file,
                     _ => {
                         return serde_json::json!({ "error": "can only remove files in /etc/apt/sources.list.d/" });
@@ -1059,7 +1101,10 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 let list_path = format!("/etc/apt/sources.list.d/{repo}.list");
                 let sources_path = format!("/etc/apt/sources.list.d/{repo}.sources");
                 // Validate name characters
-                if !repo.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+                if !repo
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+                {
                     return serde_json::json!({ "error": "invalid repository name" });
                 }
                 // Prefer .list, fall back to .sources
@@ -1078,9 +1123,11 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
             let path = if repo.starts_with("/") {
                 // Canonicalize to resolve .. and symlinks, then verify it's in yum.repos.d
                 let allowed_dir = Path::new("/etc/yum.repos.d");
-                match allowed_dir.canonicalize().ok().zip(
-                    Path::new(repo).canonicalize().ok(),
-                ) {
+                match allowed_dir
+                    .canonicalize()
+                    .ok()
+                    .zip(Path::new(repo).canonicalize().ok())
+                {
                     Some((dir, file)) if file.starts_with(&dir) => {
                         file.to_string_lossy().to_string()
                     }
@@ -1090,7 +1137,10 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 }
             } else {
                 // Validate name
-                if !repo.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+                if !repo
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+                {
                     return serde_json::json!({ "error": "invalid repository name" });
                 }
                 format!("/etc/yum.repos.d/{repo}.repo")
@@ -1123,7 +1173,9 @@ fn is_valid_package_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('-')
         && name.len() <= 256
-        && name.chars().all(|c| c.is_alphanumeric() || "-._+:".contains(c))
+        && name
+            .chars()
+            .all(|c| c.is_alphanumeric() || "-._+:".contains(c))
 }
 
 fn is_valid_repo_url(url: &str) -> bool {

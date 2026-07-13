@@ -42,8 +42,8 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
         };
     }
 
-    let helper_bin = std::env::var("TENODERA_PAM_HELPER")
-        .unwrap_or_else(|_| "tenodera-pam-helper".to_string());
+    let helper_bin =
+        std::env::var("TENODERA_PAM_HELPER").unwrap_or_else(|_| "tenodera-pam-helper".to_string());
 
     let mut child = match Command::new(&helper_bin)
         .stdin(std::process::Stdio::piped())
@@ -83,18 +83,13 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
     // for potential kill-on-timeout. kill_on_drop(true) above ensures
     // cleanup if we drop the child without waiting.
     let child_id = child.id();
-    let result = tokio::time::timeout(
-        std::time::Duration::from_secs(30),
-        child.wait_with_output(),
-    )
-    .await;
+    let result =
+        tokio::time::timeout(std::time::Duration::from_secs(30), child.wait_with_output()).await;
 
     match result {
         Ok(Ok(output)) => {
             let code = output.status.code().unwrap_or(255);
-            let stderr = String::from_utf8_lossy(&output.stderr)
-                .trim()
-                .to_string();
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
 
             match code {
                 0 => {
@@ -144,7 +139,9 @@ pub async fn authenticate(user: &str, password: &str) -> PamResult {
             tracing::error!(user = %user, "PAM helper timed out (30s)");
             // kill_on_drop handles cleanup; also try explicit kill via PID
             if let Some(pid) = child_id {
-                unsafe { libc::kill(pid as i32, libc::SIGKILL); }
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGKILL);
+                }
             }
             PamResult {
                 success: false,
@@ -200,13 +197,23 @@ fn verify_sudo_blocking(user: &str) -> Result<(), String> {
     let mut ngroups: libc::c_int = 64;
     let mut groups: Vec<libc::gid_t> = vec![0; ngroups as usize];
     let ret = unsafe {
-        libc::getgrouplist(cname.as_ptr(), primary_gid, groups.as_mut_ptr(), &mut ngroups)
+        libc::getgrouplist(
+            cname.as_ptr(),
+            primary_gid,
+            groups.as_mut_ptr(),
+            &mut ngroups,
+        )
     };
     if ret == -1 {
         // ngroups now holds the required count; resize and retry.
         groups.resize(ngroups as usize, 0);
         unsafe {
-            libc::getgrouplist(cname.as_ptr(), primary_gid, groups.as_mut_ptr(), &mut ngroups);
+            libc::getgrouplist(
+                cname.as_ptr(),
+                primary_gid,
+                groups.as_mut_ptr(),
+                &mut ngroups,
+            );
         }
     }
     groups.truncate(ngroups as usize);

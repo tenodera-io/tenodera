@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
+use axum::http::{HeaderValue, Method, StatusCode};
 use axum::{
-    middleware::Next,
     extract::{Request, State},
+    middleware::Next,
     response::Response,
 };
-use axum::http::{HeaderValue, Method, StatusCode};
 
 use crate::AppState;
 
@@ -24,23 +24,31 @@ pub async fn security_headers(
     // Falls back to Referer header when Origin is absent (some
     // browsers omit Origin on same-origin POST from <form>).
     let method = request.method().clone();
-    if matches!(method, Method::POST | Method::PUT | Method::DELETE | Method::PATCH) {
+    if matches!(
+        method,
+        Method::POST | Method::PUT | Method::DELETE | Method::PATCH
+    ) {
         let host = request
             .headers()
             .get("host")
             .and_then(|h| h.to_str().ok())
             .unwrap_or("");
 
-        let check_value = request.headers().get("origin")
+        let check_value = request
+            .headers()
+            .get("origin")
             .and_then(|v| v.to_str().ok())
             .map(|s| s.to_owned())
             .or_else(|| {
                 // Fallback: extract host portion from Referer URL
-                request.headers().get("referer")
+                request
+                    .headers()
+                    .get("referer")
                     .and_then(|v| v.to_str().ok())
                     .map(|r| {
                         // Referer format: https://host:port/path
-                        let after_scheme = r.strip_prefix("https://")
+                        let after_scheme = r
+                            .strip_prefix("https://")
                             .or_else(|| r.strip_prefix("http://"))
                             .unwrap_or(r);
                         // Take only the host:port part (before first '/')
@@ -86,10 +94,7 @@ pub async fn security_headers(
         "X-Content-Type-Options",
         HeaderValue::from_static("nosniff"),
     );
-    headers.insert(
-        "X-Frame-Options",
-        HeaderValue::from_static("DENY"),
-    );
+    headers.insert("X-Frame-Options", HeaderValue::from_static("DENY"));
     headers.insert(
         "Referrer-Policy",
         HeaderValue::from_static("strict-origin-when-cross-origin"),
@@ -103,13 +108,12 @@ pub async fn security_headers(
          frame-ancestors 'none'; base-uri 'self'; form-action 'self'";
     headers.insert(
         "Content-Security-Policy",
-        HeaderValue::from_str(csp).unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
+        HeaderValue::from_str(csp)
+            .unwrap_or_else(|_| HeaderValue::from_static("default-src 'self'")),
     );
     headers.insert(
         "Permissions-Policy",
-        HeaderValue::from_static(
-            "camera=(), microphone=(), geolocation=(), payment=()"
-        ),
+        HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=()"),
     );
     if tls_active {
         headers.insert(
@@ -118,10 +122,7 @@ pub async fn security_headers(
         );
     }
     if is_api {
-        headers.insert(
-            "Cache-Control",
-            HeaderValue::from_static("no-store"),
-        );
+        headers.insert("Cache-Control", HeaderValue::from_static("no-store"));
     }
 
     Ok(response)
@@ -148,17 +149,26 @@ mod tests {
 
     #[test]
     fn matching_https_origin() {
-        assert!(origin_matches_host("https://example.com:9090", "example.com:9090"));
+        assert!(origin_matches_host(
+            "https://example.com:9090",
+            "example.com:9090"
+        ));
     }
 
     #[test]
     fn matching_http_origin() {
-        assert!(origin_matches_host("http://localhost:3000", "localhost:3000"));
+        assert!(origin_matches_host(
+            "http://localhost:3000",
+            "localhost:3000"
+        ));
     }
 
     #[test]
     fn case_insensitive() {
-        assert!(origin_matches_host("https://EXAMPLE.COM:9090", "example.com:9090"));
+        assert!(origin_matches_host(
+            "https://EXAMPLE.COM:9090",
+            "example.com:9090"
+        ));
     }
 
     #[test]
@@ -168,12 +178,18 @@ mod tests {
 
     #[test]
     fn different_port_rejected() {
-        assert!(!origin_matches_host("https://example.com:8080", "example.com:9090"));
+        assert!(!origin_matches_host(
+            "https://example.com:8080",
+            "example.com:9090"
+        ));
     }
 
     #[test]
     fn origin_with_path_stripped() {
-        assert!(origin_matches_host("http://localhost:3000/some/path", "localhost:3000"));
+        assert!(origin_matches_host(
+            "http://localhost:3000/some/path",
+            "localhost:3000"
+        ));
     }
 
     #[test]
@@ -183,6 +199,9 @@ mod tests {
 
     #[test]
     fn subdomain_rejected() {
-        assert!(!origin_matches_host("https://sub.example.com:9090", "example.com:9090"));
+        assert!(!origin_matches_host(
+            "https://sub.example.com:9090",
+            "example.com:9090"
+        ));
     }
 }

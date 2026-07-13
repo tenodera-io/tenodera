@@ -4,7 +4,11 @@
 ///          || u16_be(len(gateway_id)) || gateway_id`
 ///
 /// Gateway reconstructs this from its own state — the agent sends only the signature.
-pub fn build_challenge_payload(nonce_bytes: &[u8; 32], hostname: &str, gateway_id: &str) -> Vec<u8> {
+pub fn build_challenge_payload(
+    nonce_bytes: &[u8; 32],
+    hostname: &str,
+    gateway_id: &str,
+) -> Vec<u8> {
     let mut payload = Vec::with_capacity(23 + 32 + 2 + hostname.len() + 2 + gateway_id.len());
     payload.extend_from_slice(b"tenodera-agent-auth-v1\0");
     payload.extend_from_slice(nonce_bytes);

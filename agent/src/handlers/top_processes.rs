@@ -15,12 +15,17 @@ impl ChannelHandler for TopProcessesHandler {
         let procs = get_top_processes();
 
         vec![
-            Message::Ready { channel: channel.into() },
+            Message::Ready {
+                channel: channel.into(),
+            },
             Message::Data {
                 channel: channel.into(),
                 data: serde_json::json!({ "processes": procs }),
             },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -28,18 +33,27 @@ impl ChannelHandler for TopProcessesHandler {
 fn get_top_processes() -> Vec<serde_json::Value> {
     // Use ps to get top processes sorted by CPU, then enrich with memory-sorted ones
     let output = std::process::Command::new("ps")
-        .args(["--no-headers", "-eo", "pid,user,%cpu,%mem,rss,comm", "--sort=-%cpu"])
+        .args([
+            "--no-headers",
+            "-eo",
+            "pid,user,%cpu,%mem,rss,comm",
+            "--sort=-%cpu",
+        ])
         .output();
 
     let Ok(output) = output else { return vec![] };
-    if !output.status.success() { return vec![]; }
+    if !output.status.success() {
+        return vec![];
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let mut procs: Vec<serde_json::Value> = Vec::new();
 
     for line in stdout.lines().take(15) {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 6 { continue; }
+        if parts.len() < 6 {
+            continue;
+        }
 
         let pid = parts[0].parse::<u32>().unwrap_or(0);
         let user = parts[1];

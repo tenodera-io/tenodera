@@ -82,7 +82,9 @@ struct CpuJiffies {
 }
 
 async fn read_cpu_jiffies() -> CpuJiffies {
-    let content = tokio::fs::read_to_string("/proc/stat").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/stat")
+        .await
+        .unwrap_or_default();
     if let Some(line) = content.lines().next() {
         let parts: Vec<&str> = line.split_whitespace().collect();
         if parts.len() >= 5 {
@@ -94,7 +96,12 @@ async fn read_cpu_jiffies() -> CpuJiffies {
             };
         }
     }
-    CpuJiffies { user: 0, nice: 0, system: 0, idle: 0 }
+    CpuJiffies {
+        user: 0,
+        nice: 0,
+        system: 0,
+        idle: 0,
+    }
 }
 
 fn compute_cpu_pct(a: &CpuJiffies, b: &CpuJiffies) -> serde_json::Value {
@@ -122,7 +129,9 @@ struct CoreJiffies {
 }
 
 async fn read_core_jiffies() -> Vec<CoreJiffies> {
-    let content = tokio::fs::read_to_string("/proc/stat").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/stat")
+        .await
+        .unwrap_or_default();
     let mut cores = Vec::new();
     for line in content.lines() {
         if line.starts_with("cpu") && line.as_bytes().get(3).is_some_and(|b| b.is_ascii_digit()) {
@@ -148,7 +157,11 @@ fn compute_cores_pct(a: &[CoreJiffies], b: &[CoreJiffies]) -> serde_json::Value 
             let ds = bc.system.saturating_sub(ac.system);
             let di = bc.idle.saturating_sub(ac.idle);
             let t = du + ds + di;
-            let usage = if t > 0 { ((du + ds) as f64 / t as f64 * 100.0).round() as u64 } else { 0 };
+            let usage = if t > 0 {
+                ((du + ds) as f64 / t as f64 * 100.0).round() as u64
+            } else {
+                0
+            };
             results.push(serde_json::json!({
                 "core": bc.core,
                 "usage_pct": usage,
@@ -161,7 +174,9 @@ fn compute_cores_pct(a: &[CoreJiffies], b: &[CoreJiffies]) -> serde_json::Value 
 // ── Memory ─────────────────────────────────────────────────
 
 async fn read_memory_info() -> serde_json::Value {
-    let content = tokio::fs::read_to_string("/proc/meminfo").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/meminfo")
+        .await
+        .unwrap_or_default();
     let mut map = serde_json::Map::new();
     for line in content.lines().take(5) {
         if let Some((key, val)) = line.split_once(':') {
@@ -180,7 +195,9 @@ async fn read_memory_info() -> serde_json::Value {
 // ── Swap ───────────────────────────────────────────────────
 
 async fn read_swap_info() -> serde_json::Value {
-    let content = tokio::fs::read_to_string("/proc/meminfo").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/meminfo")
+        .await
+        .unwrap_or_default();
     let mut total: u64 = 0;
     let mut free: u64 = 0;
     for line in content.lines() {
@@ -200,7 +217,9 @@ async fn read_swap_info() -> serde_json::Value {
 // ── Load Average ───────────────────────────────────────────
 
 async fn read_loadavg() -> serde_json::Value {
-    let content = tokio::fs::read_to_string("/proc/loadavg").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/loadavg")
+        .await
+        .unwrap_or_default();
     let parts: Vec<&str> = content.split_whitespace().collect();
     if parts.len() >= 3 {
         serde_json::json!({
@@ -221,21 +240,30 @@ struct DiskSectors {
 }
 
 async fn read_disk_sectors() -> DiskSectors {
-    let content = tokio::fs::read_to_string("/proc/diskstats").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/diskstats")
+        .await
+        .unwrap_or_default();
     let mut read_sectors: u64 = 0;
     let mut write_sectors: u64 = 0;
     for line in content.lines() {
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 14 { continue; }
+        if parts.len() < 14 {
+            continue;
+        }
         let name = parts[2];
         let is_disk = (name.starts_with("sd") && name.len() == 3)
             || (name.starts_with("nvme") && name.contains('n') && !name.contains('p'))
             || (name.starts_with("vd") && name.len() == 3);
-        if !is_disk { continue; }
+        if !is_disk {
+            continue;
+        }
         read_sectors += parts[5].parse::<u64>().unwrap_or(0);
         write_sectors += parts[9].parse::<u64>().unwrap_or(0);
     }
-    DiskSectors { read: read_sectors, write: write_sectors }
+    DiskSectors {
+        read: read_sectors,
+        write: write_sectors,
+    }
 }
 
 fn compute_disk_rate(a: &DiskSectors, b: &DiskSectors, dt: f64) -> serde_json::Value {
@@ -255,15 +283,22 @@ struct NetBytes {
 }
 
 async fn read_net_bytes() -> NetBytes {
-    let content = tokio::fs::read_to_string("/proc/net/dev").await.unwrap_or_default();
+    let content = tokio::fs::read_to_string("/proc/net/dev")
+        .await
+        .unwrap_or_default();
     let mut rx: u64 = 0;
     let mut tx: u64 = 0;
     for line in content.lines().skip(2) {
         let line = line.trim();
-        let Some((iface, rest)) = line.split_once(':') else { continue };
+        let Some((iface, rest)) = line.split_once(':') else {
+            continue;
+        };
         let iface = iface.trim();
-        if iface == "lo" { continue; }
-        let vals: Vec<u64> = rest.split_whitespace()
+        if iface == "lo" {
+            continue;
+        }
+        let vals: Vec<u64> = rest
+            .split_whitespace()
             .filter_map(|v| v.parse().ok())
             .collect();
         if vals.len() >= 10 {

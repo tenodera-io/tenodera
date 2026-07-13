@@ -5,7 +5,7 @@ use tenodera_protocol::message::Message;
 use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
-use crate::util::{run_cmd, is_valid_username};
+use crate::util::{is_valid_username, run_cmd};
 
 pub struct FileListHandler;
 
@@ -16,9 +16,21 @@ impl ChannelHandler for FileListHandler {
     }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
-        let path = options.extra.get("path").and_then(|v| v.as_str()).unwrap_or("/");
-        let password = options.extra.get("password").and_then(|v| v.as_str()).unwrap_or("");
-        let user = options.extra.get("_user").and_then(|v| v.as_str()).unwrap_or("");
+        let path = options
+            .extra
+            .get("path")
+            .and_then(|v| v.as_str())
+            .unwrap_or("/");
+        let password = options
+            .extra
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let user = options
+            .extra
+            .get("_user")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         let data = if password.is_empty() {
             // No admin password — list as the requesting panel user so Linux
@@ -30,9 +42,17 @@ impl ChannelHandler for FileListHandler {
         };
 
         vec![
-            Message::Ready  { channel: channel.into() },
-            Message::Data   { channel: channel.into(), data },
-            Message::Close  { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -60,9 +80,18 @@ async fn list_as_user(path: &str, user: &str) -> serde_json::Value {
     let resolved = canonical.to_string_lossy();
 
     let out = run_cmd(&[
-        "sudo", "-n", "-u", user, "--",
-        "ls", "-laH", "--time-style=long-iso", "--", &resolved,
-    ]).await;
+        "sudo",
+        "-n",
+        "-u",
+        user,
+        "--",
+        "ls",
+        "-laH",
+        "--time-style=long-iso",
+        "--",
+        &resolved,
+    ])
+    .await;
 
     if out.starts_with("error:") || out.contains("sudo:") || out.contains("Permission denied") {
         return serde_json::json!({ "error": "Permission denied" });
@@ -88,7 +117,11 @@ async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
     let out = if am_root {
         run_cmd(&["ls", "-laH", "--time-style=long-iso", "--", &resolved]).await
     } else {
-        sudo_cmd(password, &["ls", "-laH", "--time-style=long-iso", "--", &resolved]).await
+        sudo_cmd(
+            password,
+            &["ls", "-laH", "--time-style=long-iso", "--", &resolved],
+        )
+        .await
     };
 
     if out.contains("Permission denied") || out.starts_with("error:") {
@@ -109,16 +142,24 @@ fn parse_ls_output(out: &str) -> Vec<serde_json::Value> {
     let mut entries = Vec::new();
     for line in out.lines().skip(1) {
         let name = extract_filename(line);
-        if name.is_empty() || name == "." || name == ".." { continue; }
+        if name.is_empty() || name == "." || name == ".." {
+            continue;
+        }
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 { continue; }
-        let perms    = parts[0];
-        let user     = parts[2];
-        let group    = parts[3];
+        if parts.len() < 5 {
+            continue;
+        }
+        let perms = parts[0];
+        let user = parts[2];
+        let group = parts[3];
         let size_str = parts[4];
-        let ftype = if perms.starts_with('d') { "directory" }
-            else if perms.starts_with('l') { "symlink" }
-            else { "file" };
+        let ftype = if perms.starts_with('d') {
+            "directory"
+        } else if perms.starts_with('l') {
+            "symlink"
+        } else {
+            "file"
+        };
         let size: u64 = size_str.parse().unwrap_or(0);
         entries.push(serde_json::json!({
             "name":  name,

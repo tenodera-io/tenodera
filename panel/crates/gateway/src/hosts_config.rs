@@ -125,11 +125,11 @@ pub async fn register_host(
 /// Write os_id to an existing host entry (only if currently absent).
 pub async fn update_os_id(host_id: &str, os_id: &str) {
     let mut config = load().await;
-    if let Some(h) = config.hosts.iter_mut().find(|h| h.id == host_id) {
-        if h.os_id.is_none() {
-            h.os_id = Some(os_id.to_string());
-            let _ = save(&config).await;
-        }
+    if let Some(h) = config.hosts.iter_mut().find(|h| h.id == host_id)
+        && h.os_id.is_none()
+    {
+        h.os_id = Some(os_id.to_string());
+        let _ = save(&config).await;
     }
 }
 

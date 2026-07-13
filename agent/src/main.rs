@@ -76,10 +76,8 @@ async fn run_session(
     let request = url.clone().into_client_request()?;
 
     tracing::info!(%url, "connecting to gateway");
-    let (ws_stream, _) = tokio_tungstenite::connect_async_tls_with_config(
-        request, None, false, connector,
-    )
-    .await?;
+    let (ws_stream, _) =
+        tokio_tungstenite::connect_async_tls_with_config(request, None, false, connector).await?;
 
     let (mut ws_sink, mut ws_stream) = ws_stream.split();
 
@@ -167,7 +165,9 @@ async fn run_session(
                         let version = wait_for_approval(&mut ws_sink, &mut ws_stream).await?;
                         break version;
                     }
-                    Ok(other) => anyhow::bail!("unexpected message after ChallengeResponse: {other:?}"),
+                    Ok(other) => {
+                        anyhow::bail!("unexpected message after ChallengeResponse: {other:?}")
+                    }
                     Err(e) => anyhow::bail!("parse error: {e}"),
                 }
             }
@@ -247,8 +247,12 @@ async fn run_session(
 async fn wait_for_approval<S, R>(sink: &mut S, stream: &mut R) -> anyhow::Result<u32>
 where
     S: SinkExt<tokio_tungstenite::tungstenite::Message> + Unpin,
-    R: StreamExt<Item = Result<tokio_tungstenite::tungstenite::Message, tokio_tungstenite::tungstenite::Error>>
-        + Unpin,
+    R: StreamExt<
+            Item = Result<
+                tokio_tungstenite::tungstenite::Message,
+                tokio_tungstenite::tungstenite::Error,
+            >,
+        > + Unpin,
 {
     let mut ping_interval = tokio::time::interval(Duration::from_secs(30));
     ping_interval.tick().await; // consume immediate first tick
@@ -299,7 +303,9 @@ fn build_tls_connector(config: &AgentConfig) -> Option<tokio_tungstenite::Connec
             .dangerous()
             .with_custom_certificate_verifier(Arc::new(SkipVerify))
             .with_no_client_auth();
-        Some(tokio_tungstenite::Connector::Rustls(Arc::new(rustls_config)))
+        Some(tokio_tungstenite::Connector::Rustls(Arc::new(
+            rustls_config,
+        )))
     } else {
         None
     }

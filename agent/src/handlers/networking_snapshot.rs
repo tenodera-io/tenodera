@@ -66,12 +66,17 @@ async fn read_proc_net_dev() -> std::collections::HashMap<String, (u64, u64)> {
     };
     for line in content.lines().skip(2) {
         let line = line.trim();
-        let Some((iface, rest)) = line.split_once(':') else { continue };
+        let Some((iface, rest)) = line.split_once(':') else {
+            continue;
+        };
         let iface = iface.trim();
         if iface == "lo" {
             continue;
         }
-        let vals: Vec<u64> = rest.split_whitespace().filter_map(|v| v.parse().ok()).collect();
+        let vals: Vec<u64> = rest
+            .split_whitespace()
+            .filter_map(|v| v.parse().ok())
+            .collect();
         if vals.len() >= 10 {
             map.insert(iface.to_string(), (vals[0], vals[8]));
         }

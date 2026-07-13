@@ -22,7 +22,9 @@ static RATE_LIMITER: LazyLock<Mutex<HashMap<String, (u32, Instant)>>> =
 
 /// Check whether the user is currently locked out.
 fn is_locked_out(user: &str) -> bool {
-    let Ok(mut map) = RATE_LIMITER.lock() else { return false };
+    let Ok(mut map) = RATE_LIMITER.lock() else {
+        return false;
+    };
     if let Some((count, since)) = map.get(user) {
         if since.elapsed().as_secs() > LOCKOUT_WINDOW_SECS {
             map.remove(user); // clean up expired entry
@@ -35,7 +37,9 @@ fn is_locked_out(user: &str) -> bool {
 
 /// Record a failed attempt.  Returns `true` if the user is now locked out.
 fn record_failure(user: &str) -> bool {
-    let Ok(mut map) = RATE_LIMITER.lock() else { return false };
+    let Ok(mut map) = RATE_LIMITER.lock() else {
+        return false;
+    };
     let entry = map.entry(user.to_string()).or_insert((0, Instant::now()));
     // Reset window if it expired
     if entry.1.elapsed().as_secs() > LOCKOUT_WINDOW_SECS {
@@ -96,7 +100,10 @@ impl ChannelHandler for SuperuserVerifyHandler {
             } else {
                 let locked = record_failure(user);
                 if locked {
-                    tracing::warn!(user, "superuser verify lockout triggered after {MAX_ATTEMPTS} failures");
+                    tracing::warn!(
+                        user,
+                        "superuser verify lockout triggered after {MAX_ATTEMPTS} failures"
+                    );
                 }
             }
             crate::audit::log(user, "superuser.verify", "", ok, "");

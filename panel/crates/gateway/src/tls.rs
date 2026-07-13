@@ -20,8 +20,8 @@ pub fn build_acceptor(config: &GatewayConfig) -> anyhow::Result<Option<TlsAccept
     let key_file = std::fs::File::open(&key_path)
         .map_err(|e| anyhow::anyhow!("failed to open TLS key {key_path}: {e}"))?;
 
-    let certs: Vec<_> = rustls_pemfile::certs(&mut BufReader::new(cert_file))
-        .collect::<Result<Vec<_>, _>>()?;
+    let certs: Vec<_> =
+        rustls_pemfile::certs(&mut BufReader::new(cert_file)).collect::<Result<Vec<_>, _>>()?;
 
     let key = rustls_pemfile::private_key(&mut BufReader::new(key_file))?
         .ok_or_else(|| anyhow::anyhow!("no private key found in {key_path}"))?;

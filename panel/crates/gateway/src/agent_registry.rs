@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 use rand_core::RngCore as _;
 use tenodera_protocol::channel::ChannelOpenOptions;
@@ -35,7 +35,9 @@ pub struct AgentRegistry {
 
 impl AgentRegistry {
     pub fn new() -> Self {
-        Self { inner: Arc::new(RwLock::new(HashMap::new())) }
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Register a newly-authenticated agent.
@@ -50,7 +52,12 @@ impl AgentRegistry {
         let token = Arc::new(());
         let subscribers = Arc::new(RwLock::new(HashMap::new()));
         let remote_ip = Some(auth.remote_ip.clone());
-        let conn = Arc::new(AgentConn { to_agent, subscribers: subscribers.clone(), remote_ip, _token: token });
+        let conn = Arc::new(AgentConn {
+            to_agent,
+            subscribers: subscribers.clone(),
+            remote_ip,
+            _token: token,
+        });
         self.inner.write().await.insert(auth.host.id.clone(), conn);
         subscribers
     }
@@ -94,17 +101,23 @@ impl AgentRegistry {
         let deadline = Duration::from_secs(5);
 
         let (sub_tx, mut sub_rx) = mpsc::channel::<Message>(4);
-        conn.subscribers.write().await.insert(prefix.clone(), sub_tx);
+        conn.subscribers
+            .write()
+            .await
+            .insert(prefix.clone(), sub_tx);
 
         // Open channel on the agent
-        let _ = conn.to_agent.send(Message::Open {
-            channel: prefixed.clone().into(),
-            options: ChannelOpenOptions {
-                payload: payload.to_string(),
-                superuser: None,
-                extra: Default::default(),
-            },
-        }).await;
+        let _ = conn
+            .to_agent
+            .send(Message::Open {
+                channel: prefixed.clone().into(),
+                options: ChannelOpenOptions {
+                    payload: payload.to_string(),
+                    superuser: None,
+                    extra: Default::default(),
+                },
+            })
+            .await;
 
         // Wait for Ready
         let ready = tokio::time::timeout(deadline, sub_rx.recv()).await.ok()??;
@@ -114,20 +127,26 @@ impl AgentRegistry {
         }
 
         // Send request data
-        let _ = conn.to_agent.send(Message::Data {
-            channel: prefixed.clone().into(),
-            data: request_data,
-        }).await;
+        let _ = conn
+            .to_agent
+            .send(Message::Data {
+                channel: prefixed.clone().into(),
+                data: request_data,
+            })
+            .await;
 
         // Wait for response
         let response = tokio::time::timeout(deadline, sub_rx.recv()).await.ok()??;
 
         // Cleanup
         conn.subscribers.write().await.remove(&prefix);
-        let _ = conn.to_agent.send(Message::Close {
-            channel: prefixed.into(),
-            problem: None,
-        }).await;
+        let _ = conn
+            .to_agent
+            .send(Message::Close {
+                channel: prefixed.into(),
+                problem: None,
+            })
+            .await;
 
         match response {
             Message::Data { data, .. } => Some(data),
@@ -149,7 +168,11 @@ impl AgentRegistry {
         &self,
         host_id: &str,
         session_id: &str,
-    ) -> Option<(mpsc::Sender<Message>, mpsc::Receiver<Message>, std::sync::Weak<()>)> {
+    ) -> Option<(
+        mpsc::Sender<Message>,
+        mpsc::Receiver<Message>,
+        std::sync::Weak<()>,
+    )> {
         let conn = self.inner.read().await.get(host_id)?.clone();
         let conn_token = Arc::downgrade(&conn._token);
 
@@ -160,7 +183,10 @@ impl AgentRegistry {
         // Channel that agent responses are delivered to
         let (sub_tx, sub_rx) = mpsc::channel::<Message>(256);
 
-        conn.subscribers.write().await.insert(prefix.clone(), sub_tx);
+        conn.subscribers
+            .write()
+            .await
+            .insert(prefix.clone(), sub_tx);
 
         // Proxy task: add prefix to channel IDs before forwarding to agent
         let real_tx = conn.to_agent.clone();
@@ -198,7 +224,11 @@ pub fn prefix_message(msg: Message, prefix: &str) -> Message {
             channel: format!("{prefix}-{channel}").into(),
             data,
         },
-        Message::Control { channel, command, extra } => Message::Control {
+        Message::Control {
+            channel,
+            command,
+            extra,
+        } => Message::Control {
             channel: format!("{prefix}-{channel}").into(),
             command,
             extra,

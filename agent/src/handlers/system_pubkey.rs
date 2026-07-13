@@ -28,9 +28,17 @@ impl ChannelHandler for SystemPubkeyHandler {
         };
 
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
