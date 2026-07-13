@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use ed25519_dalek::{Signature, VerifyingKey};
-use rand_core::RngCore as _;
 use sha2::{Digest, Sha256};
 use tokio::sync::{RwLock, oneshot};
 
@@ -68,7 +67,7 @@ pub fn verify_signature(
 /// Generate a fresh 32-byte nonce and return both raw bytes and base64 encoding.
 pub fn generate_nonce() -> ([u8; 32], String) {
     let mut nonce = [0u8; 32];
-    rand_core::OsRng.fill_bytes(&mut nonce);
+    getrandom::fill(&mut nonce).expect("OS RNG unavailable");
     let b64 = base64::engine::general_purpose::STANDARD.encode(nonce);
     (nonce, b64)
 }
@@ -182,7 +181,7 @@ impl BootstrapRegistry {
     ) -> (String, String) {
         let id = uuid::Uuid::new_v4().to_string();
         let mut value_bytes = [0u8; 32];
-        rand_core::OsRng.fill_bytes(&mut value_bytes);
+        getrandom::fill(&mut value_bytes).expect("OS RNG unavailable");
         let value = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(value_bytes);
 
         let token = BootstrapToken {
@@ -396,11 +395,12 @@ impl PendingRegistry {
 mod tests {
     use super::*;
     use ed25519_dalek::{Signer, SigningKey};
-    use rand_core::OsRng;
     use tenodera_protocol::auth::build_challenge_payload;
 
     fn make_key() -> SigningKey {
-        SigningKey::generate(&mut OsRng)
+        let mut seed = [0u8; 32];
+        getrandom::fill(&mut seed).expect("OS RNG unavailable");
+        SigningKey::from_bytes(&seed)
     }
 
     fn sign_challenge(key: &SigningKey, nonce: &[u8; 32], hostname: &str, gw_id: &str) -> String {

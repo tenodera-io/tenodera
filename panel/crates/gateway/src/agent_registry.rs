@@ -4,7 +4,6 @@ use std::time::Duration;
 
 use tokio::sync::{RwLock, mpsc};
 
-use rand_core::RngCore as _;
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -94,7 +93,7 @@ impl AgentRegistry {
 
         // 8-char lowercase hex prefix — unique per call, fits SESSION_PREFIX_LEN.
         let mut raw = [0u8; 4];
-        rand_core::OsRng.fill_bytes(&mut raw);
+        getrandom::fill(&mut raw).expect("OS RNG unavailable");
         let prefix = format!("{:08x}", u32::from_be_bytes(raw));
 
         let prefixed = format!("{prefix}-rpc");

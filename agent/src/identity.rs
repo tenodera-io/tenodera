@@ -4,7 +4,6 @@ use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
 use anyhow::Context as _;
 use base64::Engine as _;
 use ed25519_dalek::{Signer as _, SigningKey};
-use rand_core::OsRng;
 use sha2::{Digest, Sha256};
 
 const KEY_PATH: &str = "/var/lib/tenodera/agent.key";
@@ -32,8 +31,10 @@ impl AgentIdentity {
             );
         }
 
-        // Generate new keypair
-        let signing_key = SigningKey::generate(&mut OsRng);
+        // Generate a new keypair from 32 bytes of OS randomness.
+        let mut seed = [0u8; 32];
+        getrandom::fill(&mut seed).context("read OS RNG for new agent key")?;
+        let signing_key = SigningKey::from_bytes(&seed);
 
         std::fs::DirBuilder::new()
             .recursive(true)
