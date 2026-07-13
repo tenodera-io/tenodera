@@ -17,7 +17,7 @@ tokio = { version = "1", features = ["full"] }
 # HTTP / WebSocket
 axum = { version = "0.8", features = ["ws"] }
 tower = { version = "0.5", features = ["full"] }
-tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
+tower-http = { version = "0.7", features = ["fs", "cors", "trace"] }
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
 
@@ -45,9 +45,9 @@ zeroize = "1"
 tempfile = "3"
 pam-client = "0.5"
 base64 = "0.22"
-ed25519-dalek = { version = "2", features = ["zeroize", "rand_core"] }
+ed25519-dalek = { version = "3", features = ["zeroize", "rand_core"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
-sha2 = "0.10"
+sha2 = "0.11"
 
 # Internal crates
 tenodera-protocol = { path = "./protocol" }
