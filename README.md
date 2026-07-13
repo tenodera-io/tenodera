@@ -15,6 +15,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 No open inbound ports on managed hosts.
 Each agent connects outbound to the gateway over a persistent WebSocket.
 
+[![CI](https://github.com/tenodera-io/tenodera/actions/workflows/ci.yml/badge.svg)](https://github.com/tenodera-io/tenodera/actions/workflows/ci.yml)
 ![MIT License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Features
