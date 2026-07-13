@@ -14,6 +14,10 @@ use crate::hosts_config::HostEntry;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
+/// Max time an agent has to return a valid ChallengeResponse after Challenge.
+pub const CHALLENGE_DEADLINE: Duration = Duration::from_secs(10);
+/// Max time an agent may wait for admin approval while in the pending state.
+pub const PENDING_TIMEOUT: Duration = Duration::from_secs(86_400);
 pub const MAX_PENDING: usize = 100;
 
 // ── AuthenticatedAgent newtype ────────────────────────────────────────────────

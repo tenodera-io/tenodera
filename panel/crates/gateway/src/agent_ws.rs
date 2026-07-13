@@ -14,8 +14,8 @@ use tenodera_protocol::message::{self, PROTOCOL_VERSION};
 
 use crate::AppState;
 use crate::agent_auth::{
-    AuthenticatedAgent, BootstrapRegistry, PendingRegistry, generate_nonce,
-    pubkey_fingerprint_display, verify_signature,
+    AuthenticatedAgent, BootstrapRegistry, CHALLENGE_DEADLINE, PENDING_TIMEOUT, PendingRegistry,
+    generate_nonce, pubkey_fingerprint_display, verify_signature,
 };
 use crate::agent_registry::{self, AgentRegistry};
 use crate::hosts_config;
@@ -121,7 +121,7 @@ async fn handle_agent_socket(
 
     // ── AwaitResponse (10s deadline) ──────────────────────────────────────────
     let sig_b64 = match tokio::time::timeout(
-        Duration::from_secs(10),
+        CHALLENGE_DEADLINE,
         recv_challenge_response(&mut stream),
     )
     .await
@@ -495,7 +495,7 @@ where
                     _ => {}
                 }
             }
-            _ = tokio::time::sleep(Duration::from_secs(86_400)) => {
+            _ = tokio::time::sleep(PENDING_TIMEOUT) => {
                 return None;
             }
         }
