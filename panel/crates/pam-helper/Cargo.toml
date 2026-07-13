@@ -2,6 +2,7 @@
 name = "tenodera-pam-helper"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "tenodera-pam-helper"

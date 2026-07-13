@@ -162,15 +162,21 @@ mod tests {
             },
         };
         let rt = roundtrip(&msg);
-        let Message::Open { channel, options } = rt else { panic!("wrong variant") };
+        let Message::Open { channel, options } = rt else {
+            panic!("wrong variant")
+        };
         assert_eq!(channel.as_str(), "42");
         assert_eq!(options.payload, "system.info");
     }
 
     #[test]
     fn ready_roundtrip() {
-        let msg = Message::Ready { channel: "1".into() };
-        let Message::Ready { channel } = roundtrip(&msg) else { panic!() };
+        let msg = Message::Ready {
+            channel: "1".into(),
+        };
+        let Message::Ready { channel } = roundtrip(&msg) else {
+            panic!()
+        };
         assert_eq!(channel.as_str(), "1");
     }
 
@@ -180,7 +186,9 @@ mod tests {
             channel: "5".into(),
             data: serde_json::json!({ "key": "value", "n": 42 }),
         };
-        let Message::Data { channel, data } = roundtrip(&msg) else { panic!() };
+        let Message::Data { channel, data } = roundtrip(&msg) else {
+            panic!()
+        };
         assert_eq!(channel.as_str(), "5");
         assert_eq!(data["key"], "value");
         assert_eq!(data["n"], 42);
@@ -195,7 +203,14 @@ mod tests {
             command: "resize".into(),
             extra,
         };
-        let Message::Control { channel, command, extra } = roundtrip(&msg) else { panic!() };
+        let Message::Control {
+            channel,
+            command,
+            extra,
+        } = roundtrip(&msg)
+        else {
+            panic!()
+        };
         assert_eq!(channel.as_str(), "3");
         assert_eq!(command, "resize");
         assert_eq!(extra["rows"], 24);
@@ -203,43 +218,79 @@ mod tests {
 
     #[test]
     fn close_clean_roundtrip() {
-        let msg = Message::Close { channel: "7".into(), problem: None };
+        let msg = Message::Close {
+            channel: "7".into(),
+            problem: None,
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(!json.contains("problem"), "skip_serializing_if failed");
-        let Message::Close { problem, .. } = roundtrip(&msg) else { panic!() };
+        let Message::Close { problem, .. } = roundtrip(&msg) else {
+            panic!()
+        };
         assert!(problem.is_none());
     }
 
     #[test]
     fn close_with_problem_roundtrip() {
-        let msg = Message::Close { channel: "7".into(), problem: Some("oops".into()) };
-        let Message::Close { problem, .. } = roundtrip(&msg) else { panic!() };
+        let msg = Message::Close {
+            channel: "7".into(),
+            problem: Some("oops".into()),
+        };
+        let Message::Close { problem, .. } = roundtrip(&msg) else {
+            panic!()
+        };
         assert_eq!(problem.as_deref(), Some("oops"));
     }
 
     #[test]
     fn auth_token_roundtrip() {
         let msg = Message::Auth {
-            credentials: AuthCredentials::Token { token: "abc123".into() },
+            credentials: AuthCredentials::Token {
+                token: "abc123".into(),
+            },
         };
-        let Message::Auth { credentials: AuthCredentials::Token { token } } = roundtrip(&msg) else { panic!() };
+        let Message::Auth {
+            credentials: AuthCredentials::Token { token },
+        } = roundtrip(&msg)
+        else {
+            panic!()
+        };
         assert_eq!(token, "abc123");
     }
 
     #[test]
     fn auth_basic_roundtrip() {
         let msg = Message::Auth {
-            credentials: AuthCredentials::Basic { user: "alice".into(), password: "s3cr3t".into() },
+            credentials: AuthCredentials::Basic {
+                user: "alice".into(),
+                password: "s3cr3t".into(),
+            },
         };
-        let Message::Auth { credentials: AuthCredentials::Basic { user, password } } = roundtrip(&msg) else { panic!() };
+        let Message::Auth {
+            credentials: AuthCredentials::Basic { user, password },
+        } = roundtrip(&msg)
+        else {
+            panic!()
+        };
         assert_eq!(user, "alice");
         assert_eq!(password, "s3cr3t");
     }
 
     #[test]
     fn authresult_ok_roundtrip() {
-        let msg = Message::AuthResult { success: true, problem: None, user: Some("alice".into()) };
-        let Message::AuthResult { success, problem, user } = roundtrip(&msg) else { panic!() };
+        let msg = Message::AuthResult {
+            success: true,
+            problem: None,
+            user: Some("alice".into()),
+        };
+        let Message::AuthResult {
+            success,
+            problem,
+            user,
+        } = roundtrip(&msg)
+        else {
+            panic!()
+        };
         assert!(success);
         assert!(problem.is_none());
         assert_eq!(user.as_deref(), Some("alice"));
@@ -247,8 +298,17 @@ mod tests {
 
     #[test]
     fn authresult_fail_roundtrip() {
-        let msg = Message::AuthResult { success: false, problem: Some("bad password".into()), user: None };
-        let Message::AuthResult { success, problem, .. } = roundtrip(&msg) else { panic!() };
+        let msg = Message::AuthResult {
+            success: false,
+            problem: Some("bad password".into()),
+            user: None,
+        };
+        let Message::AuthResult {
+            success, problem, ..
+        } = roundtrip(&msg)
+        else {
+            panic!()
+        };
         assert!(!success);
         assert_eq!(problem.as_deref(), Some("bad password"));
     }
@@ -274,15 +334,30 @@ mod tests {
             is_local: false,
             public_key: Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into()),
             bootstrap_token: Some("tok123".into()),
+            os_id: Some("debian".into()),
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"hello\""), "tag missing: {json}");
         let rt: Message = serde_json::from_str(&json).unwrap();
-        let Message::Hello { version, hostname, public_key, bootstrap_token, .. } = rt else { panic!() };
+        let Message::Hello {
+            version,
+            hostname,
+            public_key,
+            bootstrap_token,
+            os_id,
+            ..
+        } = rt
+        else {
+            panic!()
+        };
         assert_eq!(version, 2);
         assert_eq!(hostname, "srv01");
-        assert_eq!(public_key.as_deref(), Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="));
+        assert_eq!(
+            public_key.as_deref(),
+            Some("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+        );
         assert_eq!(bootstrap_token.as_deref(), Some("tok123"));
+        assert_eq!(os_id.as_deref(), Some("debian"));
     }
 
     #[test]
@@ -291,7 +366,15 @@ mod tests {
         // Gateway will reject them on version check.
         let json = r#"{"type":"hello","version":1,"hostname":"srv01"}"#;
         let rt: Message = serde_json::from_str(json).unwrap();
-        let Message::Hello { version, hostname, public_key, .. } = rt else { panic!() };
+        let Message::Hello {
+            version,
+            hostname,
+            public_key,
+            ..
+        } = rt
+        else {
+            panic!()
+        };
         assert_eq!(version, 1);
         assert_eq!(hostname, "srv01");
         assert!(public_key.is_none());
@@ -303,40 +386,61 @@ mod tests {
             nonce: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=".into(),
             gateway_id: "550e8400-e29b-41d4-a716-446655440000".into(),
         };
-        let Message::Challenge { nonce, gateway_id } = roundtrip(&msg) else { panic!() };
+        let Message::Challenge { nonce, gateway_id } = roundtrip(&msg) else {
+            panic!()
+        };
         assert_eq!(nonce, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=");
         assert_eq!(gateway_id, "550e8400-e29b-41d4-a716-446655440000");
     }
 
     #[test]
     fn challengeresponse_roundtrip() {
-        let msg = Message::Challengeresponse { signature: "sig64bytes==".into() };
+        let msg = Message::Challengeresponse {
+            signature: "sig64bytes==".into(),
+        };
         let json = serde_json::to_string(&msg).unwrap();
         assert!(json.contains("\"challengeresponse\""));
-        let Message::Challengeresponse { signature } = roundtrip(&msg) else { panic!() };
+        let Message::Challengeresponse { signature } = roundtrip(&msg) else {
+            panic!()
+        };
         assert_eq!(signature, "sig64bytes==");
     }
 
     #[test]
     fn pending_roundtrip() {
-        let msg = Message::Pending { reason: "enrollment_required".into() };
-        let Message::Pending { reason } = roundtrip(&msg) else { panic!() };
+        let msg = Message::Pending {
+            reason: "enrollment_required".into(),
+        };
+        let Message::Pending { reason } = roundtrip(&msg) else {
+            panic!()
+        };
         assert_eq!(reason, "enrollment_required");
     }
 
     #[test]
     fn helloack_roundtrip() {
-        let msg = Message::HelloAck { version: 2, warning: Some("version mismatch".into()) };
-        let Message::HelloAck { version, warning } = roundtrip(&msg) else { panic!() };
+        let msg = Message::HelloAck {
+            version: 2,
+            warning: Some("version mismatch".into()),
+        };
+        let Message::HelloAck { version, warning } = roundtrip(&msg) else {
+            panic!()
+        };
         assert_eq!(version, 2);
         assert_eq!(warning.as_deref(), Some("version mismatch"));
     }
 
     #[test]
     fn helloack_no_warning_omits_field() {
-        let msg = Message::HelloAck { version: 2, warning: None };
+        let msg = Message::HelloAck {
+            version: 2,
+            warning: None,
+        };
         let json = serde_json::to_string(&msg).unwrap();
-        assert!(!json.contains("warning"), "warning should be absent: {json}");
+        assert!(
+            !json.contains("warning"),
+            "warning should be absent: {json}"
+        );
     }
 
     #[test]
@@ -344,7 +448,8 @@ mod tests {
         use crate::channel::ChannelId;
         assert!(ChannelId::new("valid-id_123").is_ok());
         assert!(ChannelId::new("").is_err());
-        assert!(ChannelId::new("a".repeat(65)).is_err());
+        assert!(ChannelId::new("a".repeat(128)).is_ok());
+        assert!(ChannelId::new("a".repeat(129)).is_err());
         assert!(ChannelId::new("has space").is_err());
         assert!(ChannelId::new("has/slash").is_err());
     }

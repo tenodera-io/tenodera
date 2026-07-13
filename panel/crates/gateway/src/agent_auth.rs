@@ -14,8 +14,6 @@ use crate::hosts_config::HostEntry;
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-pub const CHALLENGE_DEADLINE: Duration = Duration::from_secs(10);
-pub const PENDING_TIMEOUT: Duration = Duration::from_secs(86_400);
 pub const MAX_PENDING: usize = 100;
 
 // ── AuthenticatedAgent newtype ────────────────────────────────────────────────
@@ -136,10 +134,10 @@ impl BootstrapToken {
         if self.single_use && self.use_count > 0 {
             return true;
         }
-        if let Some(max) = self.max_uses {
-            if self.use_count >= max {
-                return true;
-            }
+        if let Some(max) = self.max_uses
+            && self.use_count >= max
+        {
+            return true;
         }
         false
     }
@@ -148,10 +146,10 @@ impl BootstrapToken {
         if self.is_expired() || self.is_exhausted() {
             return false;
         }
-        if let Some(ref bound) = self.bound_hostname {
-            if bound != hostname {
-                return false;
-            }
+        if let Some(ref bound) = self.bound_hostname
+            && bound != hostname
+        {
+            return false;
         }
         true
     }
@@ -164,7 +162,9 @@ pub struct BootstrapRegistry {
 
 impl BootstrapRegistry {
     pub fn new() -> Self {
-        Self { inner: Arc::new(RwLock::new(HashMap::new())) }
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Generate and store a new bootstrap token; return its ID and value.
@@ -198,15 +198,11 @@ impl BootstrapRegistry {
 
     /// Check if a token value is valid for the given hostname; consume it if single-use.
     /// Returns the token's `re_enroll` flag if valid.
-    pub async fn validate_and_consume(
-        &self,
-        token_value: &str,
-        hostname: &str,
-    ) -> Option<bool> {
+    pub async fn validate_and_consume(&self, token_value: &str, hostname: &str) -> Option<bool> {
         let mut guard = self.inner.write().await;
-        let entry = guard.values_mut().find(|t| {
-            constant_time_eq(t.value.as_bytes(), token_value.as_bytes())
-        })?;
+        let entry = guard
+            .values_mut()
+            .find(|t| constant_time_eq(t.value.as_bytes(), token_value.as_bytes()))?;
 
         if !entry.is_valid_for(hostname) {
             return None;
@@ -278,7 +274,9 @@ pub struct PendingRegistry {
 
 impl PendingRegistry {
     pub fn new() -> Self {
-        Self { inner: Arc::new(RwLock::new(HashMap::new())) }
+        Self {
+            inner: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 
     /// Insert a pending agent. Returns false if the pending list is full (DoS prevention).
@@ -325,12 +323,11 @@ impl PendingRegistry {
             .find(|e| e.fingerprint_hex == fingerprint_hex)
             .map(|e| e.pubkey_b64.clone());
 
-        if let Some(key) = pubkey {
-            if let Some(entry) = guard.remove(&key) {
-                if let Some(tx) = entry.approve_tx {
-                    return tx.send(host).is_ok();
-                }
-            }
+        if let Some(key) = pubkey
+            && let Some(entry) = guard.remove(&key)
+            && let Some(tx) = entry.approve_tx
+        {
+            return tx.send(host).is_ok();
         }
         false
     }
@@ -378,7 +375,14 @@ impl PendingRegistry {
         guard
             .values()
             .find(|e| e.fingerprint_hex == fingerprint_hex)
-            .map(|e| (e.pubkey_b64.clone(), e.hostname.clone(), e.remote_ip.clone(), e.os_id.clone()))
+            .map(|e| {
+                (
+                    e.pubkey_b64.clone(),
+                    e.hostname.clone(),
+                    e.remote_ip.clone(),
+                    e.os_id.clone(),
+                )
+            })
     }
 }
 
@@ -387,7 +391,7 @@ impl PendingRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ed25519_dalek::{SigningKey, Signer};
+    use ed25519_dalek::{Signer, SigningKey};
     use rand_core::OsRng;
     use tenodera_protocol::auth::build_challenge_payload;
 
@@ -412,7 +416,13 @@ mod tests {
         let key = make_key();
         let (nonce, _) = generate_nonce();
         let sig_b64 = sign_challenge(&key, &nonce, "host1", "gw-uuid");
-        assert!(verify_signature(&pubkey_b64(&key), &sig_b64, &nonce, "host1", "gw-uuid"));
+        assert!(verify_signature(
+            &pubkey_b64(&key),
+            &sig_b64,
+            &nonce,
+            "host1",
+            "gw-uuid"
+        ));
     }
 
     // ── Test 2: nonce replay — same sig with different nonce is rejected ──────
@@ -424,7 +434,13 @@ mod tests {
         let (nonce_b, _) = generate_nonce();
         // Sign with nonce_a, verify with nonce_b → must fail
         let sig = sign_challenge(&key, &nonce_a, "host1", "gw-uuid");
-        assert!(!verify_signature(&pubkey_b64(&key), &sig, &nonce_b, "host1", "gw-uuid"));
+        assert!(!verify_signature(
+            &pubkey_b64(&key),
+            &sig,
+            &nonce_b,
+            "host1",
+            "gw-uuid"
+        ));
     }
 
     // ── Test 3: known hostname + wrong pubkey is rejected ────────────────────
@@ -479,8 +495,16 @@ mod tests {
             .await;
 
         // Correct hostname → accepted
-        assert!(reg.validate_and_consume(&value, "allowed-host").await.is_some());
+        assert!(
+            reg.validate_and_consume(&value, "allowed-host")
+                .await
+                .is_some()
+        );
         // Wrong hostname → rejected
-        assert!(reg.validate_and_consume(&value, "other-host").await.is_none());
+        assert!(
+            reg.validate_and_consume(&value, "other-host")
+                .await
+                .is_none()
+        );
     }
 }

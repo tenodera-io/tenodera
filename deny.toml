@@ -5,8 +5,13 @@
 version = 2
 # Fail on any crate pulled from a version yanked from crates.io.
 yanked = "deny"
-# RUSTSEC IDs to consciously ignore, with a reason. Keep this empty by default.
-ignore = []
+# RUSTSEC IDs to consciously ignore, with a reason. Keep this list short and justified.
+ignore = [
+    # rustls-pemfile is unmaintained (archived upstream), not vulnerable. Its PEM
+    # parsing moved into rustls-pki-types; migrating off it is tracked separately.
+    # No fixed release exists, so ignore rather than block CI on an unmaintained flag.
+    "RUSTSEC-2025-0134",
+]
 
 [licenses]
 version = 2
@@ -26,6 +31,8 @@ allow = [
     "CC0-1.0",
     "BSL-1.0",
     "OpenSSL",
+    # Mozilla CA root store data shipped by webpki-roots.
+    "CDLA-Permissive-2.0",
 ]
 
 [bans]

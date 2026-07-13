@@ -1,4 +1,3 @@
-
 pub struct AgentConfig {
     pub gateway_url: String,
     /// Skip TLS certificate verification. Use only for dev/self-signed certs.
@@ -12,16 +11,25 @@ impl AgentConfig {
     pub fn from_env() -> anyhow::Result<Self> {
         load_env_file();
 
-        let gateway_url = std::env::var("TENODERA_GATEWAY_URL")
-            .map_err(|_| anyhow::anyhow!("TENODERA_GATEWAY_URL not set in environment or /etc/tenodera/agent.cnf"))?;
+        let gateway_url = std::env::var("TENODERA_GATEWAY_URL").map_err(|_| {
+            anyhow::anyhow!(
+                "TENODERA_GATEWAY_URL not set in environment or /etc/tenodera/agent.cnf"
+            )
+        })?;
 
         let accept_insecure = std::env::var("TENODERA_AGENT_ACCEPT_INSECURE")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
 
-        let bootstrap_token = std::env::var("TENODERA_BOOTSTRAP_TOKEN").ok().filter(|s| !s.is_empty());
+        let bootstrap_token = std::env::var("TENODERA_BOOTSTRAP_TOKEN")
+            .ok()
+            .filter(|s| !s.is_empty());
 
-        Ok(Self { gateway_url, accept_insecure, bootstrap_token })
+        Ok(Self {
+            gateway_url,
+            accept_insecure,
+            bootstrap_token,
+        })
     }
 
     /// WebSocket URL for the agent endpoint on the gateway.
@@ -40,12 +48,37 @@ impl AgentConfig {
     }
 }
 
+fn load_env_file() {
+    let path = "/etc/tenodera/agent.cnf";
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return;
+    };
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, val)) = line.split_once('=') {
+            let key = key.trim();
+            let val = val.trim().trim_matches('"').trim_matches('\'');
+            if std::env::var(key).is_err() {
+                // Safety: single-threaded at startup, before tokio runtime starts
+                unsafe { std::env::set_var(key, val) };
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn cfg(url: &str) -> AgentConfig {
-        AgentConfig { gateway_url: url.to_string(), accept_insecure: false, agent_token: None }
+        AgentConfig {
+            gateway_url: url.to_string(),
+            accept_insecure: false,
+            bootstrap_token: None,
+        }
     }
 
     #[test]
@@ -90,24 +123,5 @@ mod tests {
     #[test]
     fn is_local_remote_false() {
         assert!(!cfg("https://192.168.56.10:9090").is_local());
-    }
-}
-
-fn load_env_file() {
-    let path = "/etc/tenodera/agent.cnf";
-    let Ok(content) = std::fs::read_to_string(path) else { return };
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        if let Some((key, val)) = line.split_once('=') {
-            let key = key.trim();
-            let val = val.trim().trim_matches('"').trim_matches('\'');
-            if std::env::var(key).is_err() {
-                // Safety: single-threaded at startup, before tokio runtime starts
-                unsafe { std::env::set_var(key, val) };
-            }
-        }
     }
 }

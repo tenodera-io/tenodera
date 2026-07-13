@@ -1,6 +1,6 @@
 use crate::handler::ChannelHandler;
 use crate::util::{require_admin, run_cmd, sudo_action, sudo_stdin_write, which};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -10,14 +10,24 @@ pub struct DnsInfoHandler;
 
 #[async_trait::async_trait]
 impl ChannelHandler for DnsInfoHandler {
-    fn payload_type(&self) -> &str { "dns.info" }
+    fn payload_type(&self) -> &str {
+        "dns.info"
+    }
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         let data = get_dns_info().await;
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -28,7 +38,9 @@ pub struct DnsManageHandler;
 
 #[async_trait::async_trait]
 impl ChannelHandler for DnsManageHandler {
-    fn payload_type(&self) -> &str { "dns.manage" }
+    fn payload_type(&self) -> &str {
+        "dns.manage"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
         let data = Value::Object(options.extra.clone());
@@ -53,9 +65,17 @@ impl ChannelHandler for DnsManageHandler {
         };
 
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data: result },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data: result,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -66,12 +86,22 @@ pub struct DnsLookupHandler;
 
 #[async_trait::async_trait]
 impl ChannelHandler for DnsLookupHandler {
-    fn payload_type(&self) -> &str { "dns.lookup" }
+    fn payload_type(&self) -> &str {
+        "dns.lookup"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
         let data = Value::Object(options.extra.clone());
-        let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("").trim();
-        let qtype = data.get("qtype").and_then(|v| v.as_str()).unwrap_or("A").trim();
+        let name = data
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim();
+        let qtype = data
+            .get("qtype")
+            .and_then(|v| v.as_str())
+            .unwrap_or("A")
+            .trim();
 
         let result = if name.is_empty() {
             json!({ "ok": false, "output": "No hostname specified" })
@@ -82,9 +112,17 @@ impl ChannelHandler for DnsLookupHandler {
         };
 
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data: result },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data: result,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -102,7 +140,8 @@ async fn get_dns_info() -> Value {
 
     let (servers, search) = parse_resolv_conf(&resolv_conf);
 
-    let resolved_active = run_cmd(&["systemctl", "is-active", "systemd-resolved"]).await
+    let resolved_active = run_cmd(&["systemctl", "is-active", "systemd-resolved"])
+        .await
         .trim()
         .eq("active");
 
@@ -170,7 +209,9 @@ async fn do_lookup(name: &str, qtype: &str) -> Value {
     .await
     {
         Ok(v) => v,
-        Err(_) => json!({ "ok": false, "output": "Lookup timed out (8s). The host may not have external DNS access." }),
+        Err(_) => {
+            json!({ "ok": false, "output": "Lookup timed out (8s). The host may not have external DNS access." })
+        }
     }
 }
 
@@ -209,14 +250,24 @@ pub struct DnsResolvedInfoHandler;
 
 #[async_trait::async_trait]
 impl ChannelHandler for DnsResolvedInfoHandler {
-    fn payload_type(&self) -> &str { "dns.resolved.info" }
+    fn payload_type(&self) -> &str {
+        "dns.resolved.info"
+    }
 
     async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
         let data = get_resolved_info().await;
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -227,7 +278,9 @@ pub struct DnsResolvedManageHandler;
 
 #[async_trait::async_trait]
 impl ChannelHandler for DnsResolvedManageHandler {
-    fn payload_type(&self) -> &str { "dns.resolved.manage" }
+    fn payload_type(&self) -> &str {
+        "dns.resolved.manage"
+    }
 
     async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
         let data = Value::Object(options.extra.clone());
@@ -238,21 +291,34 @@ impl ChannelHandler for DnsResolvedManageHandler {
             let password = data.get("password").and_then(|v| v.as_str()).unwrap_or("");
             match action {
                 "set_config" => set_resolved_config(&data, password).await,
-                "restart"    => sudo_action(password, &["systemctl", "restart", "systemd-resolved"]).await,
-                "start"      => sudo_action(password, &["systemctl", "start",   "systemd-resolved"]).await,
-                "stop"       => sudo_action(password, &["systemctl", "stop",    "systemd-resolved"]).await,
+                "restart" => {
+                    sudo_action(password, &["systemctl", "restart", "systemd-resolved"]).await
+                }
+                "start" => sudo_action(password, &["systemctl", "start", "systemd-resolved"]).await,
+                "stop" => sudo_action(password, &["systemctl", "stop", "systemd-resolved"]).await,
                 "flush_caches" => {
                     let r = sudo_action(password, &["resolvectl", "flush-caches"]).await;
-                    if r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) { r }
-                    else { json!({ "ok": false, "error": "flush-caches failed (is systemd-resolved active?)" }) }
+                    if r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        r
+                    } else {
+                        json!({ "ok": false, "error": "flush-caches failed (is systemd-resolved active?)" })
+                    }
                 }
                 _ => json!({ "ok": false, "error": format!("unknown action: {action}") }),
             }
         };
         vec![
-            Message::Ready { channel: channel.into() },
-            Message::Data { channel: channel.into(), data: result },
-            Message::Close { channel: channel.into(), problem: None },
+            Message::Ready {
+                channel: channel.into(),
+            },
+            Message::Data {
+                channel: channel.into(),
+                data: result,
+            },
+            Message::Close {
+                channel: channel.into(),
+                problem: None,
+            },
         ]
     }
 }
@@ -260,7 +326,10 @@ impl ChannelHandler for DnsResolvedManageHandler {
 // ── systemd-resolved helpers ───────────────────────────────────────────────────
 
 async fn get_resolved_info() -> Value {
-    let active = run_cmd(&["systemctl", "is-active", "systemd-resolved"]).await.trim() == "active";
+    let active = run_cmd(&["systemctl", "is-active", "systemd-resolved"])
+        .await
+        .trim()
+        == "active";
     let has_resolvectl = which("resolvectl").await;
 
     let status_out = if active && has_resolvectl {
@@ -276,8 +345,18 @@ async fn get_resolved_info() -> Value {
         String::new()
     };
 
-    let (mode, current_dns, dns_servers, fallback_dns, dns_domain,
-         dnssec, dns_over_tls, llmnr, mdns, links) = parse_resolvectl_status(&status_out);
+    let (
+        mode,
+        current_dns,
+        dns_servers,
+        fallback_dns,
+        dns_domain,
+        dnssec,
+        dns_over_tls,
+        llmnr,
+        mdns,
+        links,
+    ) = parse_resolvectl_status(&status_out);
 
     let (stat_transactions, stat_hits, stat_misses) = parse_resolvectl_stats(&stats_out);
 
@@ -303,9 +382,23 @@ async fn get_resolved_info() -> Value {
     })
 }
 
-fn parse_resolvectl_status(output: &str)
-    -> (String, String, Vec<String>, Vec<String>, String, String, String, String, String, Vec<Value>)
-{
+// Parses one `resolvectl status` block into its many independent fields; a
+// dedicated struct would not add clarity for a single internal call site.
+#[allow(clippy::type_complexity)]
+fn parse_resolvectl_status(
+    output: &str,
+) -> (
+    String,
+    String,
+    Vec<String>,
+    Vec<String>,
+    String,
+    String,
+    String,
+    String,
+    String,
+    Vec<Value>,
+) {
     let mut mode = String::new();
     let mut current_dns = String::new();
     let mut dns_servers: Vec<String> = Vec::new();
@@ -318,23 +411,27 @@ fn parse_resolvectl_status(output: &str)
     let mut links: Vec<Value> = Vec::new();
 
     #[derive(PartialEq)]
-    enum Section { Global, Link }
+    enum Section {
+        Global,
+        Link,
+    }
     let mut section = Section::Global;
     let mut link_name = String::new();
     let mut link_dns = String::new();
     let mut link_servers: Vec<String> = Vec::new();
     let mut link_domain = String::new();
 
-    let flush_link = |name: &str, dns: &str, servers: &[String], domain: &str, links: &mut Vec<Value>| {
-        if !name.is_empty() {
-            links.push(json!({
-                "name": name,
-                "current_dns": dns,
-                "dns_servers": servers,
-                "dns_domain": domain,
-            }));
-        }
-    };
+    let flush_link =
+        |name: &str, dns: &str, servers: &[String], domain: &str, links: &mut Vec<Value>| {
+            if !name.is_empty() {
+                links.push(json!({
+                    "name": name,
+                    "current_dns": dns,
+                    "dns_servers": servers,
+                    "dns_domain": domain,
+                }));
+            }
+        };
 
     let mut proto_buf = String::new(); // accumulate multi-line Protocols value
     let mut in_proto = false;
@@ -352,8 +449,17 @@ fn parse_resolvectl_status(output: &str)
 
         if line == "Global" {
             if section == Section::Link {
-                flush_link(&link_name, &link_dns, &link_servers, &link_domain, &mut links);
-                link_name.clear(); link_dns.clear(); link_servers.clear(); link_domain.clear();
+                flush_link(
+                    &link_name,
+                    &link_dns,
+                    &link_servers,
+                    &link_domain,
+                    &mut links,
+                );
+                link_name.clear();
+                link_dns.clear();
+                link_servers.clear();
+                link_domain.clear();
             }
             section = Section::Global;
             continue;
@@ -362,12 +468,21 @@ fn parse_resolvectl_status(output: &str)
         if line.starts_with("Link ") {
             // Finalise previous link
             if section == Section::Link {
-                flush_link(&link_name, &link_dns, &link_servers, &link_domain, &mut links);
-                link_name.clear(); link_dns.clear(); link_servers.clear(); link_domain.clear();
+                flush_link(
+                    &link_name,
+                    &link_dns,
+                    &link_servers,
+                    &link_domain,
+                    &mut links,
+                );
+                link_name.clear();
+                link_dns.clear();
+                link_servers.clear();
+                link_domain.clear();
             }
             // Parse "Link 2 (eth0)"
             if let (Some(s), Some(e)) = (line.find('('), line.find(')')) {
-                link_name = line[s+1..e].to_string();
+                link_name = line[s + 1..e].to_string();
             }
             section = Section::Link;
             continue;
@@ -376,28 +491,36 @@ fn parse_resolvectl_status(output: &str)
         // key: value lines
         if let Some(colon) = line.find(':') {
             let key = line[..colon].trim();
-            let val = line[colon+1..].trim().to_string();
+            let val = line[colon + 1..].trim().to_string();
 
             match section {
                 Section::Global => match key {
                     "resolv.conf mode" => mode = val,
                     "Current DNS Server" => current_dns = val,
-                    "DNS Servers"  => dns_servers = val.split_whitespace().map(|s| s.to_string()).collect(),
-                    "Fallback DNS Servers" | "Fallback DNS Server" =>
-                        fallback_dns = val.split_whitespace().map(|s| s.to_string()).collect(),
+                    "DNS Servers" => {
+                        dns_servers = val.split_whitespace().map(|s| s.to_string()).collect()
+                    }
+                    "Fallback DNS Servers" | "Fallback DNS Server" => {
+                        fallback_dns = val.split_whitespace().map(|s| s.to_string()).collect()
+                    }
                     "DNS Domain" => dns_domain = val,
                     "Protocols" => {
                         proto_buf = val;
                         in_proto = true;
                         let (d, dot, l, m) = parse_protocols(&proto_buf);
-                        dnssec = d; dns_over_tls = dot; llmnr = l; mdns = m;
+                        dnssec = d;
+                        dns_over_tls = dot;
+                        llmnr = l;
+                        mdns = m;
                     }
                     _ => {}
                 },
                 Section::Link => match key {
                     "Current DNS Server" => link_dns = val,
-                    "DNS Servers"  => link_servers = val.split_whitespace().map(|s| s.to_string()).collect(),
-                    "DNS Domain"   => link_domain = val,
+                    "DNS Servers" => {
+                        link_servers = val.split_whitespace().map(|s| s.to_string()).collect()
+                    }
+                    "DNS Domain" => link_domain = val,
                     _ => {}
                 },
             }
@@ -407,18 +530,42 @@ fn parse_resolvectl_status(output: &str)
     // Flush final Protocols parse (if continuation lines came after the loop)
     if in_proto {
         let (d, dot, l, m) = parse_protocols(&proto_buf);
-        if dnssec.is_empty() { dnssec = d; }
-        if dns_over_tls.is_empty() { dns_over_tls = dot; }
-        if llmnr.is_empty() { llmnr = l; }
-        if mdns.is_empty() { mdns = m; }
+        if dnssec.is_empty() {
+            dnssec = d;
+        }
+        if dns_over_tls.is_empty() {
+            dns_over_tls = dot;
+        }
+        if llmnr.is_empty() {
+            llmnr = l;
+        }
+        if mdns.is_empty() {
+            mdns = m;
+        }
     }
 
     if section == Section::Link {
-        flush_link(&link_name, &link_dns, &link_servers, &link_domain, &mut links);
+        flush_link(
+            &link_name,
+            &link_dns,
+            &link_servers,
+            &link_domain,
+            &mut links,
+        );
     }
 
-    (mode, current_dns, dns_servers, fallback_dns, dns_domain,
-     dnssec, dns_over_tls, llmnr, mdns, links)
+    (
+        mode,
+        current_dns,
+        dns_servers,
+        fallback_dns,
+        dns_domain,
+        dnssec,
+        dns_over_tls,
+        llmnr,
+        mdns,
+        links,
+    )
 }
 
 fn parse_protocols(s: &str) -> (String, String, String, String) {
@@ -440,8 +587,8 @@ fn parse_protocols(s: &str) -> (String, String, String, String) {
             match token {
                 "+LLMNR" => llmnr = "yes".into(),
                 "-LLMNR" => llmnr = "no".into(),
-                "+mDNS"  => mdns  = "yes".into(),
-                "-mDNS"  => mdns  = "no".into(),
+                "+mDNS" => mdns = "yes".into(),
+                "-mDNS" => mdns = "no".into(),
                 "+DNSOverTLS" => dot = "yes".into(),
                 "-DNSOverTLS" => dot = "no".into(),
                 _ => {}
@@ -478,12 +625,18 @@ async fn read_resolved_conf() -> Value {
         .unwrap_or_default();
 
     let default_content = if content.is_empty() {
-        tokio::fs::read_to_string("/usr/lib/systemd/resolved.conf").await.unwrap_or_default()
+        tokio::fs::read_to_string("/usr/lib/systemd/resolved.conf")
+            .await
+            .unwrap_or_default()
     } else {
         String::new()
     };
 
-    let effective = if content.is_empty() { &default_content } else { &content };
+    let effective = if content.is_empty() {
+        &default_content
+    } else {
+        &content
+    };
 
     // Parse key=value pairs, skipping comments
     let mut dns = String::new();
@@ -497,23 +650,27 @@ async fn read_resolved_conf() -> Value {
 
     for line in effective.lines() {
         let line = line.trim();
-        if line.starts_with('#') || line.starts_with('[') || line.is_empty() { continue; }
+        if line.starts_with('#') || line.starts_with('[') || line.is_empty() {
+            continue;
+        }
         if let Some((k, v)) = line.split_once('=') {
             match k.trim() {
-                "DNS"           => dns        = v.trim().to_string(),
-                "FallbackDNS"   => fallback_dns = v.trim().to_string(),
-                "Domains"       => domains    = v.trim().to_string(),
-                "DNSSEC"        => dnssec     = v.trim().to_string(),
-                "DNSOverTLS"    => dns_over_tls = v.trim().to_string(),
-                "Cache"         => cache      = v.trim().to_string(),
-                "LLMNR"         => llmnr      = v.trim().to_string(),
-                "MulticastDNS"  => mdns       = v.trim().to_string(),
+                "DNS" => dns = v.trim().to_string(),
+                "FallbackDNS" => fallback_dns = v.trim().to_string(),
+                "Domains" => domains = v.trim().to_string(),
+                "DNSSEC" => dnssec = v.trim().to_string(),
+                "DNSOverTLS" => dns_over_tls = v.trim().to_string(),
+                "Cache" => cache = v.trim().to_string(),
+                "LLMNR" => llmnr = v.trim().to_string(),
+                "MulticastDNS" => mdns = v.trim().to_string(),
                 _ => {}
             }
         }
     }
 
-    let has_user_conf = tokio::fs::metadata("/etc/systemd/resolved.conf").await.is_ok();
+    let has_user_conf = tokio::fs::metadata("/etc/systemd/resolved.conf")
+        .await
+        .is_ok();
 
     json!({
         "has_user_conf": has_user_conf,
@@ -529,21 +686,32 @@ async fn read_resolved_conf() -> Value {
 }
 
 async fn set_resolved_config(data: &Value, password: &str) -> Value {
-    let get = |k: &str| data.get(k).and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let get = |k: &str| {
+        data.get(k)
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
 
-    let dns         = get("dns");
-    let fallback    = get("fallback_dns");
-    let domains     = get("domains");
-    let dnssec      = get("dnssec");
-    let dot         = get("dns_over_tls");
-    let cache       = get("cache");
-    let llmnr       = get("llmnr");
-    let mdns        = get("mdns");
+    let dns = get("dns");
+    let fallback = get("fallback_dns");
+    let domains = get("domains");
+    let dnssec = get("dnssec");
+    let dot = get("dns_over_tls");
+    let cache = get("cache");
+    let llmnr = get("llmnr");
+    let mdns = get("mdns");
 
-    let mut lines = vec!["# Generated by Tenodera Admin Panel".to_string(), "[Resolve]".to_string()];
+    let mut lines = vec![
+        "# Generated by Tenodera Admin Panel".to_string(),
+        "[Resolve]".to_string(),
+    ];
 
     let mut add = |key: &str, val: &str| {
-        if !val.is_empty() { lines.push(format!("{key}={val}")); }
+        if !val.is_empty() {
+            lines.push(format!("{key}={val}"));
+        }
     };
     add("DNS", &dns);
     add("FallbackDNS", &fallback);
@@ -556,13 +724,22 @@ async fn set_resolved_config(data: &Value, password: &str) -> Value {
 
     let content = lines.join("\n") + "\n";
 
-    let write_result = sudo_stdin_write(password, &["tee", "/etc/systemd/resolved.conf"], &content).await;
-    if !write_result.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+    let write_result =
+        sudo_stdin_write(password, &["tee", "/etc/systemd/resolved.conf"], &content).await;
+    if !write_result
+        .get("ok")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         return write_result;
     }
 
     // Reload config (HUP = reload without full restart)
-    let reload = sudo_action(password, &["systemctl", "kill", "-s", "HUP", "systemd-resolved"]).await;
+    let reload = sudo_action(
+        password,
+        &["systemctl", "kill", "-s", "HUP", "systemd-resolved"],
+    )
+    .await;
     if reload.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
         json!({ "ok": true })
     } else {
@@ -574,12 +751,16 @@ async fn set_resolved_config(data: &Value, password: &str) -> Value {
 fn is_safe_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 253
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' || c == ':')
 }
 
 fn sanitise_qtype(t: &str) -> String {
     match t.to_ascii_uppercase().as_str() {
-        "A" | "AAAA" | "MX" | "NS" | "TXT" | "CNAME" | "SOA" | "PTR" | "SRV" => t.to_ascii_uppercase(),
+        "A" | "AAAA" | "MX" | "NS" | "TXT" | "CNAME" | "SOA" | "PTR" | "SRV" => {
+            t.to_ascii_uppercase()
+        }
         _ => "A".to_string(),
     }
 }

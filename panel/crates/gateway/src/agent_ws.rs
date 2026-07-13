@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::{
-    extract::{ConnectInfo, State, WebSocketUpgrade, ws::WebSocket},
     extract::ws::Message as WsMessage,
+    extract::{ConnectInfo, State, WebSocketUpgrade, ws::WebSocket},
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
@@ -14,8 +14,8 @@ use tenodera_protocol::message::{self, PROTOCOL_VERSION};
 
 use crate::AppState;
 use crate::agent_auth::{
-    AuthenticatedAgent, BootstrapRegistry, PendingRegistry,
-    generate_nonce, pubkey_fingerprint_display, verify_signature,
+    AuthenticatedAgent, BootstrapRegistry, PendingRegistry, generate_nonce,
+    pubkey_fingerprint_display, verify_signature,
 };
 use crate::agent_registry::{self, AgentRegistry};
 use crate::hosts_config;
@@ -166,13 +166,23 @@ async fn handle_agent_socket(
             // Send Pending, then wait for admin approval
             let pending_msg = serde_json::to_string(&message::Message::Pending { reason })
                 .expect("serialize Pending");
-            if sink.send(WsMessage::Text(pending_msg.into())).await.is_err() {
+            if sink
+                .send(WsMessage::Text(pending_msg.into()))
+                .await
+                .is_err()
+            {
                 return;
             }
 
             let (approve_tx, approve_rx) = oneshot::channel::<hosts_config::HostEntry>();
             let inserted = pending_registry
-                .insert(pubkey_b64.clone(), hostname.clone(), remote_ip.clone(), os_id.clone(), approve_tx)
+                .insert(
+                    pubkey_b64.clone(),
+                    hostname.clone(),
+                    remote_ip.clone(),
+                    os_id.clone(),
+                    approve_tx,
+                )
                 .await;
 
             if !inserted {
@@ -190,17 +200,20 @@ async fn handle_agent_socket(
                 }
             };
 
-            AuthenticatedAgent { host, remote_ip: remote_ip.clone() }
+            AuthenticatedAgent {
+                host,
+                remote_ip: remote_ip.clone(),
+            }
         }
 
         AuthPath::Reject => return,
     };
 
     // ── Fill os_id if missing (write-once: only for hosts that predate this field) ──
-    if auth.host.os_id.is_none() {
-        if let Some(ref id) = os_id {
-            hosts_config::update_os_id(&auth.host.id, id).await;
-        }
+    if auth.host.os_id.is_none()
+        && let Some(ref id) = os_id
+    {
+        hosts_config::update_os_id(&auth.host.id, id).await;
     }
 
     // ── HelloAck ──────────────────────────────────────────────────────────────
@@ -287,6 +300,9 @@ enum AuthPath {
     Reject,
 }
 
+// Enrollment decision draws on several independent inputs (identity, network,
+// and both registries); grouping them into a struct would not simplify callers.
+#[allow(clippy::too_many_arguments)]
 async fn resolve_auth_path(
     hostname: &str,
     pubkey_b64: &str,
@@ -316,30 +332,32 @@ async fn resolve_auth_path(
     // Path 2: known hostname but different pubkey
     if let Some(existing) = hosts_config::find_by_hostname(hostname).await {
         // Check for re_enroll token bound to this hostname
-        if let Some(token_val) = bootstrap_token {
-            if let Some(true) = bootstrap_registry.validate_and_consume(token_val, hostname).await {
-                // re_enroll path: replace public key
-                match hosts_config::replace_pubkey(&existing.id, pubkey_b64).await {
-                    Ok(updated) => {
-                        // Kick old agent session
-                        agent_registry.unregister(&existing.id).await;
-                        tracing::warn!(
-                            hostname,
-                            old_fingerprint = %pubkey_fingerprint_display(
-                                existing.public_key.as_deref().unwrap_or("")
-                            ),
-                            new_fingerprint = %fingerprint,
-                            "key replaced via re_enroll token"
-                        );
-                        return AuthPath::Authenticated(AuthenticatedAgent {
-                            host: updated,
-                            remote_ip: remote_ip.to_string(),
-                        });
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "failed to replace pubkey");
-                        return AuthPath::Reject;
-                    }
+        if let Some(token_val) = bootstrap_token
+            && let Some(true) = bootstrap_registry
+                .validate_and_consume(token_val, hostname)
+                .await
+        {
+            // re_enroll path: replace public key
+            match hosts_config::replace_pubkey(&existing.id, pubkey_b64).await {
+                Ok(updated) => {
+                    // Kick old agent session
+                    agent_registry.unregister(&existing.id).await;
+                    tracing::warn!(
+                        hostname,
+                        old_fingerprint = %pubkey_fingerprint_display(
+                            existing.public_key.as_deref().unwrap_or("")
+                        ),
+                        new_fingerprint = %fingerprint,
+                        "key replaced via re_enroll token"
+                    );
+                    return AuthPath::Authenticated(AuthenticatedAgent {
+                        host: updated,
+                        remote_ip: remote_ip.to_string(),
+                    });
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, "failed to replace pubkey");
+                    return AuthPath::Reject;
                 }
             }
         }
@@ -359,10 +377,21 @@ async fn resolve_auth_path(
 
     // Path 3 & Path 4: new host
     if let Some(token_val) = bootstrap_token {
-        match bootstrap_registry.validate_and_consume(token_val, hostname).await {
+        match bootstrap_registry
+            .validate_and_consume(token_val, hostname)
+            .await
+        {
             Some(_) => {
                 // Path 3: valid token → auto-enroll
-                match hosts_config::register_host(hostname, pubkey_b64, is_local, None, os_id.map(str::to_string)).await {
+                match hosts_config::register_host(
+                    hostname,
+                    pubkey_b64,
+                    is_local,
+                    None,
+                    os_id.map(str::to_string),
+                )
+                .await
+                {
                     Ok(host) => {
                         tracing::info!(hostname, %fingerprint, "new host enrolled via bootstrap token");
                         return AuthPath::Authenticated(AuthenticatedAgent {
@@ -389,7 +418,15 @@ async fn resolve_auth_path(
     // as the gateway, which means the operator already has root on this machine
     // and explicitly ran the panel installer. No further approval is needed.
     if matches!(remote_ip, "127.0.0.1" | "::1") {
-        match hosts_config::register_host(hostname, pubkey_b64, true, None, os_id.map(str::to_string)).await {
+        match hosts_config::register_host(
+            hostname,
+            pubkey_b64,
+            true,
+            None,
+            os_id.map(str::to_string),
+        )
+        .await
+        {
             Ok(host) => {
                 tracing::info!(hostname, %fingerprint, "loopback agent auto-enrolled as local host");
                 return AuthPath::Authenticated(AuthenticatedAgent {
@@ -417,13 +454,11 @@ where
 {
     loop {
         match stream.next().await? {
-            Ok(WsMessage::Text(text)) => {
-                match serde_json::from_str::<message::Message>(&text) {
-                    Ok(message::Message::Challengeresponse { signature }) => return Some(signature),
-                    Ok(_) => continue,
-                    Err(_) => return None,
-                }
-            }
+            Ok(WsMessage::Text(text)) => match serde_json::from_str::<message::Message>(&text) {
+                Ok(message::Message::Challengeresponse { signature }) => return Some(signature),
+                Ok(_) => continue,
+                Err(_) => return None,
+            },
             Ok(WsMessage::Close(_)) => return None,
             Ok(_) => continue,
             Err(_) => return None,
