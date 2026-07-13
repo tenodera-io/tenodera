@@ -30,8 +30,9 @@ jobs:
 
       - name: Install Rust (stable + rustfmt + clippy)
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt clippy
+          rustup toolchain install stable --profile minimal
           rustup default stable
+          rustup component add rustfmt clippy
           rustc --version
 
       - uses: Swatinem/rust-cache@v2
