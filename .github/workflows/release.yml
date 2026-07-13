@@ -33,7 +33,7 @@ jobs:
             curl ca-certificates git python3 xz-utils
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         run: |
@@ -102,7 +102,7 @@ jobs:
             curl ca-certificates git python3 xz findutils
 
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install Rust
         run: |

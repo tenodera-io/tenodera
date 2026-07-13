@@ -20,7 +20,7 @@ jobs:
     name: Rust · fmt · clippy · test
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install system dependencies
         run: |
@@ -68,7 +68,7 @@ jobs:
     name: UI · typecheck · build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -89,7 +89,7 @@ jobs:
       matrix:
         manifest: [protocol/Cargo.toml, panel/Cargo.toml, agent/Cargo.toml]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: ${{ matrix.manifest }}
