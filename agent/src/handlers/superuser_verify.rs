@@ -4,7 +4,6 @@ use std::time::Instant;
 
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
-use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
 
@@ -126,55 +125,24 @@ impl ChannelHandler for SuperuserVerifyHandler {
     }
 }
 
-async fn verify_password(_user: &str, password: &str) -> serde_json::Value {
-    // Verify that the user can run commands via sudo.
+async fn verify_password(user: &str, password: &str) -> serde_json::Value {
+    // Validate the password AND that the user actually has sudo on THIS host, by
+    // running `sudo -v` **as the user** (util::sudo_as_user drops to the user first).
     //
-    // Previous approach used unix_chkpwd which only checks /etc/shadow.
-    // That fails for FreeIPA/LDAP users whose passwords live in the
-    // directory server, not in the local shadow database.
-    //
-    // Using `sudo -S -k true` goes through the full PAM/NSS stack
-    // (including pam_sss for SSSD/FreeIPA), so it works for both
-    // local and LDAP users.  As a bonus it also confirms the user
-    // actually has sudo privileges — which is exactly what
-    // "Administrative Access" requires.
-    //
-    // -S  read password from stdin
-    // -k  invalidate cached credentials (force re-auth)
-
-    let child = tokio::process::Command::new("sudo")
-        .args(["-S", "-k", "true"])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return serde_json::json!({ "ok": false, "error": e.to_string() }),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        drop(stdin);
+    // This goes through the full PAM/NSS stack (pam_sss for SSSD/FreeIPA), so it works
+    // for local and directory users. Running the check as root (the agent's identity)
+    // would be a no-op — root is sudo-exempt, so any password would "pass".
+    let res = crate::util::sudo_as_user(user, password, &["-v"]).await;
+    if res.get("ok").is_some() {
+        return serde_json::json!({ "ok": true });
     }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => {
-            serde_json::json!({ "ok": true })
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            // Distinguish wrong password from no-sudo-access
-            if stderr.contains("incorrect password")
-                || stderr.contains("Sorry, try again")
-                || stderr.contains("Authentication failure")
-            {
-                serde_json::json!({ "ok": false, "error": "incorrect password" })
-            } else {
-                serde_json::json!({ "ok": false, "error": "sudo access denied" })
-            }
-        }
-        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+    let err = res.get("error").and_then(|v| v.as_str()).unwrap_or("");
+    if err.contains("incorrect password")
+        || err.contains("Sorry, try again")
+        || err.contains("Authentication failure")
+    {
+        serde_json::json!({ "ok": false, "error": "incorrect password" })
+    } else {
+        serde_json::json!({ "ok": false, "error": "sudo access denied" })
     }
 }
