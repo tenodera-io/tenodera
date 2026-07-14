@@ -3,7 +3,7 @@ use serde_json::{Value, json};
 use tokio::fs;
 
 use crate::handler::ChannelHandler;
-use crate::util::{require_admin, sudo_action, sudo_stdin_write};
+use crate::util::{require_admin, sudo_as_user, sudo_stdin_write_as_user};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -125,10 +125,16 @@ impl ChannelHandler for HostActionHandler {
             .get("password")
             .and_then(|v| v.as_str())
             .unwrap_or("");
+        // Gateway-injected identity — privileged ops run as this user via sudo.
+        let user = options
+            .extra
+            .get("_user")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
 
         let result = match action {
-            "set_role" => set_role(&extra, password).await,
-            "restart" => restart_host(password).await,
+            "set_role" => set_role(&extra, user, password).await,
+            "restart" => restart_host(user, password).await,
             other => json!({ "error": format!("unknown action: {other}") }),
         };
 
@@ -148,7 +154,7 @@ impl ChannelHandler for HostActionHandler {
     }
 }
 
-async fn set_role(data: &Value, password: &str) -> Value {
+async fn set_role(data: &Value, user: &str, password: &str) -> Value {
     let role = data
         .get("role")
         .and_then(|v| v.as_str())
@@ -170,14 +176,15 @@ async fn set_role(data: &Value, password: &str) -> Value {
     }
 
     let new_content = lines.join("\n") + "\n";
-    sudo_stdin_write(password, &["tee", env_path], &new_content).await
+    sudo_stdin_write_as_user(user, password, &["tee", env_path], &new_content).await
 }
 
-async fn restart_host(password: &str) -> Value {
+async fn restart_host(user: &str, password: &str) -> Value {
     let pw = password.to_string();
+    let user = user.to_string();
     tokio::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
-        sudo_action(&pw, &["reboot"]).await;
+        sudo_as_user(&user, &pw, &["reboot"]).await;
     });
     json!({ "ok": true, "msg": "Reboot initiated" })
 }

@@ -33,7 +33,9 @@ pub async fn run_cmd(args: &[&str]) -> String {
 pub async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> Value {
     let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
 
-    // When running as root, skip sudo entirely — avoid stdin password interference
+    // When running as root, skip sudo entirely — avoid stdin password interference.
+    // NOTE: this legacy path does NOT enforce host authorization; handlers are being
+    // migrated to `sudo_as_user` (which drops to the user and lets the host decide).
     let am_root = unsafe { libc::geteuid() } == 0;
 
     if !am_root && password.is_empty() {
@@ -75,20 +77,116 @@ pub async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> Value {
             let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
             serde_json::json!({ "ok": true, "output": stdout })
         }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            let clean = stderr
-                .lines()
-                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let msg = if clean.is_empty() {
-                "command failed".to_string()
-            } else {
-                clean
-            };
-            serde_json::json!({ "error": msg })
+        Ok(out) => serde_json::json!({ "error": clean_sudo_stderr(&out.stderr) }),
+        Err(e) => serde_json::json!({ "error": e.to_string() }),
+    }
+}
+
+/// Look up a user via NSS (getpwnam_r) → (uid, gid, home, shell). Resolves local
+/// **and** LDAP/SSSD/FreeIPA users, unlike reading /etc/passwd directly.
+pub fn lookup_user(username: &str) -> Option<(u32, u32, String, String)> {
+    let cname = std::ffi::CString::new(username).ok()?;
+    let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
+    let mut buf = vec![0u8; 4096];
+    let mut result: *mut libc::passwd = std::ptr::null_mut();
+    let ret = unsafe {
+        libc::getpwnam_r(
+            cname.as_ptr(),
+            &mut pwd,
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            &mut result,
+        )
+    };
+    if ret != 0 || result.is_null() {
+        return None;
+    }
+    unsafe {
+        Some((
+            (*result).pw_uid,
+            (*result).pw_gid,
+            std::ffi::CStr::from_ptr((*result).pw_dir)
+                .to_string_lossy()
+                .into_owned(),
+            std::ffi::CStr::from_ptr((*result).pw_shell)
+                .to_string_lossy()
+                .into_owned(),
+        ))
+    }
+}
+
+/// Strip sudo's password prompt / `[sudo]` noise from stderr, returning a clean
+/// error message (or "command failed" if nothing meaningful remains).
+pub fn clean_sudo_stderr(stderr: &[u8]) -> String {
+    let s = String::from_utf8_lossy(stderr);
+    let clean = s
+        .lines()
+        .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string();
+    if clean.is_empty() {
+        "command failed".to_string()
+    } else {
+        clean
+    }
+}
+
+/// Run `args` via `sudo` **as `user`** so the host's sudoers / FreeIPA rules decide
+/// what is permitted. The agent (root) drops to the user in `pre_exec`
+/// (initgroups → setgid → setuid), then execs `sudo -S -k`, feeding `password` on
+/// stdin. A user unknown to this host is rejected — the per-host authorization gate.
+pub async fn sudo_as_user(user: &str, password: &str, args: &[&str]) -> Value {
+    let Some((uid, gid, _home, _shell)) = lookup_user(user) else {
+        return serde_json::json!({
+            "error": format!("user '{user}' is not present on this host")
+        });
+    };
+    let ucstr = match std::ffi::CString::new(user) {
+        Ok(c) => c,
+        Err(_) => return serde_json::json!({ "error": "invalid username" }),
+    };
+
+    let mut sudo_args: Vec<&str> = vec!["-S", "-k"];
+    sudo_args.extend_from_slice(args);
+
+    let mut cmd = tokio::process::Command::new("sudo");
+    cmd.args(&sudo_args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // pre_exec runs in the forked child before exec: drop to the target user so
+    // `sudo` sees the real user and applies their rules. gid before uid; initgroups
+    // pulls supplementary groups so group-based sudoers/HBAC apply.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::initgroups(ucstr.as_ptr(), gid) != 0
+                || libc::setgid(gid) != 0
+                || libc::setuid(uid) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return serde_json::json!({ "error": e.to_string() }),
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
+        drop(stdin);
+    }
+
+    match child.wait_with_output().await {
+        Ok(out) if out.status.success() => {
+            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            serde_json::json!({ "ok": true, "output": stdout })
         }
+        Ok(out) => serde_json::json!({ "error": clean_sudo_stderr(&out.stderr) }),
         Err(e) => serde_json::json!({ "error": e.to_string() }),
     }
 }
@@ -197,6 +295,31 @@ pub async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> V
     }
 }
 
+/// Write `content` into a command run as `user` via sudo (e.g. `tee <path>`).
+///
+/// `sudo -S` consumes stdin for the password, so the content can't also be piped in
+/// directly; it is base64-embedded and decoded inside a `sh -c`. That means the
+/// user's sudo rules must permit `sh` — acceptable for admin config writes, which is
+/// the only caller.
+pub async fn sudo_stdin_write_as_user(
+    user: &str,
+    password: &str,
+    args: &[&str],
+    content: &str,
+) -> Value {
+    use base64::Engine;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
+    let escaped_args: Vec<String> = args.iter().map(|a| shell_escape(a)).collect();
+    let inner = format!("printf '{}' | base64 -d | {}", b64, escaped_args.join(" "));
+
+    let res = sudo_as_user(user, password, &["sh", "-c", &inner]).await;
+    if res.get("ok").is_some() {
+        serde_json::json!({ "ok": true })
+    } else {
+        res
+    }
+}
+
 /// Validate that a string is a safe Unix username (no shell metacharacters).
 /// Values are passed as Command arguments (no shell involved), but validated
 /// as a defence-in-depth measure.
@@ -234,4 +357,40 @@ pub fn extract_string_array(data: &Value, key: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_user_root_resolves() {
+        // root always exists (uid/gid 0) — covers the NSS lookup path.
+        let (uid, gid, _home, _shell) = lookup_user("root").expect("root must resolve");
+        assert_eq!(uid, 0);
+        assert_eq!(gid, 0);
+    }
+
+    #[test]
+    fn lookup_user_missing_is_none() {
+        assert!(lookup_user("no-such-user-9f3a2b1c").is_none());
+    }
+
+    #[tokio::test]
+    async fn sudo_as_user_rejects_unknown_user() {
+        // A user not present on this host is denied before sudo is ever spawned —
+        // this is the per-host authorization gate. Runs without root.
+        let res = sudo_as_user("no-such-user-9f3a2b1c", "", &["true"]).await;
+        let err = res.get("error").and_then(|v| v.as_str()).unwrap_or("");
+        assert!(err.contains("not present on this host"), "got: {res}");
+        assert!(res.get("ok").is_none());
+    }
+
+    #[test]
+    fn clean_sudo_stderr_strips_prompt_noise() {
+        let raw = b"[sudo] password for bob: \nSorry, try again.\n";
+        let out = clean_sudo_stderr(raw);
+        assert!(out.contains("try again"));
+        assert!(!out.contains("[sudo]"));
+    }
 }

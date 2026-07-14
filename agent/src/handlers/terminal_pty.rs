@@ -62,7 +62,7 @@ impl ChannelHandler for TerminalPtyHandler {
                     .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
             })
             .map(|s| s.to_string());
-        let user_info = target_user.as_deref().and_then(lookup_user);
+        let user_info = target_user.as_deref().and_then(crate::util::lookup_user);
 
         let default_shell = user_info
             .as_ref()
@@ -297,38 +297,6 @@ fn get_user_shell() -> Option<String> {
     if shell.is_empty() { None } else { Some(shell) }
 }
 
-/// Look up a user via NSS (getpwnam_r). Returns (uid, gid, home, shell).
-/// Works for local users and LDAP/SSSD users — unlike reading /etc/passwd directly.
-fn lookup_user(username: &str) -> Option<(u32, u32, String, String)> {
-    let cname = std::ffi::CString::new(username).ok()?;
-    let mut pwd = unsafe { std::mem::zeroed::<libc::passwd>() };
-    let mut buf = vec![0u8; 4096];
-    let mut result: *mut libc::passwd = std::ptr::null_mut();
-    let ret = unsafe {
-        libc::getpwnam_r(
-            cname.as_ptr(),
-            &mut pwd,
-            buf.as_mut_ptr().cast::<libc::c_char>(),
-            buf.len(),
-            &mut result,
-        )
-    };
-    if ret != 0 || result.is_null() {
-        return None;
-    }
-    unsafe {
-        let uid = (*result).pw_uid;
-        let gid = (*result).pw_gid;
-        let home = std::ffi::CStr::from_ptr((*result).pw_dir)
-            .to_string_lossy()
-            .into_owned();
-        let shell = std::ffi::CStr::from_ptr((*result).pw_shell)
-            .to_string_lossy()
-            .into_owned();
-        Some((uid, gid, home, shell))
-    }
-}
-
 /// Open a PTY and spawn the shell using `std::process::Command` with `pre_exec`.
 ///
 /// This avoids raw `fork()` inside the async tokio runtime, which is unsafe
@@ -379,8 +347,9 @@ fn open_pty(
     };
 
     // Resolve user info for pre_exec (uid, gid, home, username)
-    let user_info = run_as_user
-        .and_then(|u| lookup_user(u).map(|(uid, gid, home, _)| (uid, gid, home, u.to_string())));
+    let user_info = run_as_user.and_then(|u| {
+        crate::util::lookup_user(u).map(|(uid, gid, home, _)| (uid, gid, home, u.to_string()))
+    });
     let shell_for_env = shell.to_string();
 
     let mut cmd = Command::new(shell);
