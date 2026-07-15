@@ -1,5 +1,5 @@
 use crate::handler::ChannelHandler;
-use crate::util::{require_admin, sudo_stdin_write};
+use crate::util::{require_admin, sudo_stdin_write_as_user};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tenodera_protocol::channel::ChannelOpenOptions;
@@ -65,7 +65,7 @@ impl ChannelHandler for CronManageHandler {
                         json!({ "ok": false, "error": "invalid username" })
                     } else {
                         let r =
-                            sudo_stdin_write(password, &["crontab", "-u", target, "-"], content)
+                            sudo_stdin_write_as_user(user, password, &["crontab", "-u", target, "-"], content)
                                 .await;
                         let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                         crate::audit::log(user, "cron.set", target, ok, "");
@@ -78,7 +78,7 @@ impl ChannelHandler for CronManageHandler {
                     if !is_safe_cron_path(path) {
                         json!({ "ok": false, "error": "invalid path" })
                     } else {
-                        let r = sudo_stdin_write(password, &["tee", path], content).await;
+                        let r = sudo_stdin_write_as_user(user, password, &["tee", path], content).await;
                         let ok = r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false);
                         crate::audit::log(user, "cron.write", path, ok, "");
                         r
