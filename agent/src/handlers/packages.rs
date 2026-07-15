@@ -4,7 +4,7 @@ use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::util::{extract_string_array, run_cmd, sudo_action, sudo_stdin_write, which};
+use crate::util::{extract_string_array, run_cmd, sudo_as_user, sudo_stdin_write_as_user, which};
 
 // ──────────────────────────────────────────────────────────────
 //  Package management handler
@@ -59,14 +59,14 @@ impl ChannelHandler for PackagesHandler {
             // ── Install / Remove ──
             "install" => {
                 let names = extract_string_array(data, "names");
-                let r = install_packages(password, &names).await;
+                let r = install_packages(user, password, &names).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "pkg.install", &names.join(","), ok, "");
                 r
             }
             "remove" => {
                 let names = extract_string_array(data, "names");
-                let r = remove_packages(password, &names).await;
+                let r = remove_packages(user, password, &names).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "pkg.remove", &names.join(","), ok, "");
                 r
@@ -75,7 +75,7 @@ impl ChannelHandler for PackagesHandler {
             // ── Updates ──
             "check_updates" => check_updates().await,
             "update_system" => {
-                let r = update_system(password).await;
+                let r = update_system(user, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "pkg.update_system", "", ok, "");
                 r
@@ -86,13 +86,13 @@ impl ChannelHandler for PackagesHandler {
             "add_repo" => {
                 let repo = data.get("repo").and_then(|v| v.as_str()).unwrap_or("");
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                add_repo(password, repo, name).await
+                add_repo(user, password, repo, name).await
             }
             "remove_repo" => {
                 let repo = data.get("repo").and_then(|v| v.as_str()).unwrap_or("");
-                remove_repo(password, repo).await
+                remove_repo(user, password, repo).await
             }
-            "refresh_repos" => refresh_repos(password).await,
+            "refresh_repos" => refresh_repos(user, password).await,
 
             _ => serde_json::json!({ "error": format!("unknown action: {action}") }),
         };
@@ -527,7 +527,19 @@ async fn package_info(name: &str) -> serde_json::Value {
 //  Install / Remove
 // ──────────────────────────────────────────────────────────────
 
-async fn install_packages(password: &str, names: &[String]) -> serde_json::Value {
+/// Run a package-manager command AS THE USER via sudo, so the host's rules (local
+/// sudoers or FreeIPA sudo via SSSD) decide what is permitted.
+///
+/// The command is passed to sudo verbatim — deliberately not wrapped in
+/// `env VAR=… cmd`, because sudoers matches on the command sudo actually runs, and a
+/// wrapper would make granular rules (e.g. `ALL=(ALL) /usr/bin/apt-get`) stop
+/// matching. apt is driven non-interactively via `-y` instead.
+async fn pkg_sudo(user: &str, password: &str, args: &[impl AsRef<str>]) -> serde_json::Value {
+    let refs: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
+    sudo_as_user(user, password, &refs).await
+}
+
+async fn install_packages(user: &str, password: &str, names: &[String]) -> serde_json::Value {
     if names.is_empty() {
         return serde_json::json!({ "error": "no packages specified" });
     }
@@ -565,10 +577,10 @@ async fn install_packages(password: &str, names: &[String]) -> serde_json::Value
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
     }
 
-    sudo_action(password, &args).await
+    pkg_sudo(user, password, &args).await
 }
 
-async fn remove_packages(password: &str, names: &[String]) -> serde_json::Value {
+async fn remove_packages(user: &str, password: &str, names: &[String]) -> serde_json::Value {
     if names.is_empty() {
         return serde_json::json!({ "error": "no packages specified" });
     }
@@ -606,7 +618,7 @@ async fn remove_packages(password: &str, names: &[String]) -> serde_json::Value 
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
     }
 
-    sudo_action(password, &args).await
+    pkg_sudo(user, password, &args).await
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -728,14 +740,14 @@ async fn check_updates() -> serde_json::Value {
     }
 }
 
-async fn update_system(password: &str) -> serde_json::Value {
+async fn update_system(user: &str, password: &str) -> serde_json::Value {
     let backend = detect_backend().await;
     let args: Vec<String> = match backend {
         PkgBackend::Pacman => vec!["pacman".into(), "-Syu".into(), "--noconfirm".into()],
         PkgBackend::Apt => {
             // For modern Debian/Ubuntu: apt-get dist-upgrade handles all upgrades
             // First refresh, then upgrade
-            let refresh = sudo_action(password, &["apt-get", "update"]).await;
+            let refresh = pkg_sudo(user, password, &["apt-get", "update"]).await;
             if refresh.get("error").is_some() {
                 return refresh;
             }
@@ -750,7 +762,7 @@ async fn update_system(password: &str) -> serde_json::Value {
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
     };
 
-    sudo_action(password, &args).await
+    pkg_sudo(user, password, &args).await
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -971,7 +983,7 @@ async fn list_repos_dnf() -> serde_json::Value {
 
 // ── Add repo ──
 
-async fn add_repo(password: &str, repo: &str, name: &str) -> serde_json::Value {
+async fn add_repo(user: &str, password: &str, repo: &str, name: &str) -> serde_json::Value {
     if repo.is_empty() {
         return serde_json::json!({ "error": "repository URL/name required" });
     }
@@ -997,13 +1009,14 @@ async fn add_repo(password: &str, repo: &str, name: &str) -> serde_json::Value {
             }
             let block = format!("\n[{name}]\nServer = {repo}\n");
             // Use tee with stdin to avoid shell injection
-            sudo_stdin_write(password, &["tee", "-a", "/etc/pacman.conf"], &block).await
+            sudo_stdin_write_as_user(user, password, &["tee", "-a", "/etc/pacman.conf"], &block)
+                .await
         }
         PkgBackend::Apt => {
             // For modern apt: add-apt-repository or write .list file
             // If it's a PPA or http URL
             if repo.starts_with("ppa:") {
-                sudo_action(password, &["add-apt-repository", "-y", repo]).await
+                pkg_sudo(user, password, &["add-apt-repository", "-y", repo]).await
             } else {
                 // Write a .list file
                 let fname = if name.is_empty() { "custom" } else { name };
@@ -1019,13 +1032,19 @@ async fn add_repo(password: &str, repo: &str, name: &str) -> serde_json::Value {
                 if repo.contains('\n') || repo.contains('\r') {
                     return serde_json::json!({ "error": "invalid repository line" });
                 }
-                sudo_stdin_write(password, &["tee", &path], &format!("{repo}\n")).await
+                sudo_stdin_write_as_user(user, password, &["tee", &path], &format!("{repo}\n"))
+                    .await
             }
         }
         PkgBackend::Dnf => {
             // dnf config-manager --add-repo <url>
             if which("dnf-3").await || which("dnf").await {
-                sudo_action(password, &["dnf", "config-manager", "--add-repo", repo]).await
+                pkg_sudo(
+                    user,
+                    password,
+                    &["dnf", "config-manager", "--add-repo", repo],
+                )
+                .await
             } else {
                 serde_json::json!({ "error": "dnf config-manager not available" })
             }
@@ -1036,7 +1055,7 @@ async fn add_repo(password: &str, repo: &str, name: &str) -> serde_json::Value {
 
 // ── Remove repo ──
 
-async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
+async fn remove_repo(user: &str, password: &str, repo: &str) -> serde_json::Value {
     if repo.is_empty() {
         return serde_json::json!({ "error": "repository identifier required" });
     }
@@ -1075,11 +1094,17 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 }
             }
             let new_content = new_lines.join("\n") + "\n";
-            sudo_stdin_write(password, &["tee", "/etc/pacman.conf"], &new_content).await
+            sudo_stdin_write_as_user(user, password, &["tee", "/etc/pacman.conf"], &new_content)
+                .await
         }
         PkgBackend::Apt => {
             if repo.starts_with("ppa:") {
-                sudo_action(password, &["add-apt-repository", "--remove", "-y", repo]).await
+                pkg_sudo(
+                    user,
+                    password,
+                    &["add-apt-repository", "--remove", "-y", repo],
+                )
+                .await
             } else if repo.starts_with("/") {
                 // It's a file path — remove the file
                 // Canonicalize to resolve .. and symlinks, then verify it's in sources.list.d
@@ -1095,7 +1120,7 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                     }
                 };
                 let canon_str = canonical.to_string_lossy();
-                sudo_action(password, &["rm", "-f", "--", &canon_str]).await
+                pkg_sudo(user, password, &["rm", "-f", "--", &canon_str]).await
             } else {
                 // Try to find and remove matching file (.list or .sources)
                 let list_path = format!("/etc/apt/sources.list.d/{repo}.list");
@@ -1109,12 +1134,12 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 }
                 // Prefer .list, fall back to .sources
                 if tokio::fs::metadata(&list_path).await.is_ok() {
-                    sudo_action(password, &["rm", "-f", "--", &list_path]).await
+                    pkg_sudo(user, password, &["rm", "-f", "--", &list_path]).await
                 } else if tokio::fs::metadata(&sources_path).await.is_ok() {
-                    sudo_action(password, &["rm", "-f", "--", &sources_path]).await
+                    pkg_sudo(user, password, &["rm", "-f", "--", &sources_path]).await
                 } else {
                     // Try removing .list anyway (original behavior)
-                    sudo_action(password, &["rm", "-f", "--", &list_path]).await
+                    pkg_sudo(user, password, &["rm", "-f", "--", &list_path]).await
                 }
             }
         }
@@ -1145,7 +1170,7 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
                 }
                 format!("/etc/yum.repos.d/{repo}.repo")
             };
-            sudo_action(password, &["rm", "-f", "--", &path]).await
+            pkg_sudo(user, password, &["rm", "-f", "--", &path]).await
         }
         PkgBackend::None => serde_json::json!({ "error": "no package manager" }),
     }
@@ -1153,12 +1178,12 @@ async fn remove_repo(password: &str, repo: &str) -> serde_json::Value {
 
 // ── Refresh repos ──
 
-async fn refresh_repos(password: &str) -> serde_json::Value {
+async fn refresh_repos(user: &str, password: &str) -> serde_json::Value {
     let backend = detect_backend().await;
     match backend {
-        PkgBackend::Pacman => sudo_action(password, &["pacman", "-Sy", "--noconfirm"]).await,
-        PkgBackend::Apt => sudo_action(password, &["apt-get", "update"]).await,
-        PkgBackend::Dnf => sudo_action(password, &["dnf", "makecache", "--quiet"]).await,
+        PkgBackend::Pacman => pkg_sudo(user, password, &["pacman", "-Sy", "--noconfirm"]).await,
+        PkgBackend::Apt => pkg_sudo(user, password, &["apt-get", "update"]).await,
+        PkgBackend::Dnf => pkg_sudo(user, password, &["dnf", "makecache", "--quiet"]).await,
         PkgBackend::None => serde_json::json!({ "error": "no package manager" }),
     }
 }

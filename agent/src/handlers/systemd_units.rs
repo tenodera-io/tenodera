@@ -111,51 +111,21 @@ fn is_valid_unit_name(name: &str) -> bool {
 async fn systemctl_action(
     action: &str,
     unit: &str,
-    _user: &str,
+    user: &str,
     password: &str,
 ) -> serde_json::Value {
-    use tokio::io::AsyncWriteExt;
-
-    // Use sudo for systemctl — sudo itself verifies the password
-    // through the full PAM/NSS stack (works for both local and
-    // LDAP/FreeIPA users via pam_sss).
-    let child = tokio::process::Command::new("sudo")
-        .args(["-S", "systemctl", action, "--", unit])
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return serde_json::json!({ "ok": false, "error": e.to_string() }),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => {
-            serde_json::json!({ "ok": true })
-        }
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-            // Filter out sudo password prompt noise
-            let clean = stderr
-                .lines()
-                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let msg = if clean.is_empty() {
-                "command failed".to_string()
-            } else {
-                clean
-            };
-            serde_json::json!({ "ok": false, "error": msg })
-        }
-        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+    // Run systemctl AS THE USER via sudo, so the host's own rules (local sudoers or
+    // FreeIPA sudo via SSSD) decide whether this user may manage services — see
+    // util::sudo_as_user. Works for local and directory (FreeIPA/LDAP) users.
+    let res = crate::util::sudo_as_user(user, password, &["systemctl", action, "--", unit]).await;
+    if res.get("ok").is_some() {
+        serde_json::json!({ "ok": true })
+    } else {
+        let err = res
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("command failed");
+        serde_json::json!({ "ok": false, "error": err })
     }
 }
 
