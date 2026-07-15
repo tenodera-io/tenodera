@@ -7,7 +7,7 @@ URL:            https://github.com/tenodera-io/tenodera
 
 BuildRequires:  rust cargo nodejs npm clang-devel pam-devel openssl-devel
 Requires(pre):  shadow-utils
-Requires:       tenodera-agent = %{version}
+Requires:       tenodera-agent >= %{version}
 
 %description
 Tenodera gateway serves the web administration panel and routes
