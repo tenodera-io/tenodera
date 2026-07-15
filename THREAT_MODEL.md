@@ -109,15 +109,30 @@ Each item below is present in the current `main` tree.
   as root because systemd starts it. For terminal sessions it drops to the
   authenticated user's UID/GID via `setuid()`/`setgid()` before spawning a shell
   — no root shell is ever exposed, and shells are restricted to an allowlist.
-- Privileged operations invoked on behalf of an operator use `sudo -S` with the
-  operator's own password, so they run under that operator's sudo rights, not
-  unconditionally as root.
+- State-changing operations invoked on behalf of an operator do **not** run as
+  the agent's root. The agent forks, drops to the operator's UID/GID
+  (`initgroups` → `setgid` → `setuid`, so group-based rules apply), and only then
+  execs `sudo -S -k` with the operator's own password. The managed host therefore
+  decides what is permitted, per command and per host.
 
 ### Authorization
 
-- **RBAC**: sessions carry an `admin` or `readonly` role; the gateway injects
-  the role into channel options and write operations are gated on it. A user
-  without sudo is downgraded to read-only rather than rejected.
+The **managed host is the authority**. There is no Tenodera-side permission store.
+
+- **The host decides.** Because privileged writes execute as the operator under
+  `sudo`, the host's own rules are enforced: local `/etc/sudoers`, or centrally
+  managed FreeIPA/LDAP sudo rules resolved through SSSD. `NOPASSWD`, per-command
+  restrictions and host-based rules all apply exactly as the host defines them.
+- **The operator must exist on each managed host** with the rights they intend to
+  use. A user unknown to a host (`getpwnam_r` miss) is denied there, even if they
+  hold an admin session on the panel. This is the per-host gate.
+- **RBAC is a UX filter, not the security boundary.** Sessions carry an `admin`
+  or `readonly` role, derived from group membership on the panel host, and the
+  gateway injects it so the UI can hide destructive actions. A user without sudo
+  is downgraded to read-only rather than rejected. Bypassing this filter gains an
+  attacker nothing: the host still refuses the command.
+- **Reads are deliberately not brokered** and run at the agent's privilege — see
+  the residual risk in §6.
 
 ### Transport
 
@@ -198,14 +213,15 @@ These are real and not yet closed. Listing them is the point of this document.
   contact. An active MITM present at that exact first connection could pin
   itself. Mitigate by performing first enrollment over a trusted network and/or
   using bootstrap tokens delivered out-of-band.
-- **Not every gateway→agent operation is per-user-sudo gated.** Terminal, and
-  operations like package/service/user/firewall management, run under the
-  operator's own sudo. But some read-oriented system-introspection handlers
-  (e.g. storage, kdump, systemd timers, network stats, system info) run at the
-  agent's privilege (root) without per-operator brokering. A compromised gateway
-  can reach those as root — primarily an information-disclosure and
-  stateful-read concern. Tightening this (per-host session scoping / broader
-  sudo brokering) is planned.
+- **Reads are not per-user brokered.** Every state-changing operation now runs as
+  the operator, so the host authorizes it. Read-oriented system-introspection
+  handlers (e.g. storage, kdump, systemd timers, network stats, system info, log
+  and journal access) deliberately still run at the agent's privilege (root)
+  without per-operator brokering. Consequences: any authenticated panel user can
+  read privileged system state on any host they can reach, regardless of their
+  rights on that host; and a compromised gateway can reach those reads as root.
+  This is an information-disclosure concern, not a path to state change.
+  Extending per-user brokering to reads is planned.
 - **Bootstrap tokens are bearer secrets.** Anyone holding a valid, unexpired,
   non-exhausted token can enroll an agent. Scope them tightly (short TTL,
   `max_uses`, hostname binding) and revoke after use.
@@ -225,8 +241,10 @@ These are real and not yet closed. Listing them is the point of this document.
 | Gateway privilege drop to `tenodera-gw` | **Implemented** |
 | PAM helper isolated subprocess, setuid `4750` | **Implemented** |
 | Agent installed without setuid bit (`0755`) | **Implemented** |
+| Host-enforced authorization for privileged writes (local sudoers, or FreeIPA/LDAP sudo rules via SSSD) | **Implemented** |
 | Per-user sudo brokering for privileged operations | **Implemented** |
-| RBAC (admin / read-only) | **Implemented** |
+| RBAC (admin / read-only) — UX filter only, host is authoritative | **Implemented** |
+| Per-user brokering for privileged **reads** (reads run as root) | **Planned** |
 | TLS secure-by-default (refuses to start unencrypted) | **Implemented** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |

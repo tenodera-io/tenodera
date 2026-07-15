@@ -28,60 +28,6 @@ pub async fn run_cmd(args: &[&str]) -> String {
     }
 }
 
-/// Run a command via `sudo -S` (or directly when running as root).
-/// Returns `{"ok": true, "output": ...}` on success or `{"error": ...}` on failure.
-pub async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> Value {
-    let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
-
-    // When running as root, skip sudo entirely — avoid stdin password interference.
-    // NOTE: this legacy path does NOT enforce host authorization; handlers are being
-    // migrated to `sudo_as_user` (which drops to the user and lets the host decide).
-    let am_root = unsafe { libc::geteuid() } == 0;
-
-    if !am_root && password.is_empty() {
-        return serde_json::json!({ "error": "password required" });
-    }
-
-    let (cmd, cmd_args) = if am_root {
-        let first = str_args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = str_args.iter().skip(1).copied().collect();
-        (first.to_string(), rest)
-    } else {
-        let mut sa = vec!["-S"];
-        sa.extend_from_slice(&str_args);
-        ("sudo".to_string(), sa)
-    };
-
-    let child = tokio::process::Command::new(&cmd)
-        .args(&cmd_args)
-        .env("DEBIAN_FRONTEND", "noninteractive")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return serde_json::json!({ "error": e.to_string() }),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        if !am_root {
-            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        }
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => {
-            let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            serde_json::json!({ "ok": true, "output": stdout })
-        }
-        Ok(out) => serde_json::json!({ "error": clean_sudo_stderr(&out.stderr) }),
-        Err(e) => serde_json::json!({ "error": e.to_string() }),
-    }
-}
-
 /// Look up a user via NSS (getpwnam_r) → (uid, gid, home, shell). Resolves local
 /// **and** LDAP/SSSD/FreeIPA users, unlike reading /etc/passwd directly.
 pub fn lookup_user(username: &str) -> Option<(u32, u32, String, String)> {
@@ -239,77 +185,6 @@ pub fn stderr_to_error(stderr: &[u8]) -> Value {
         clean
     };
     serde_json::json!({ "error": msg })
-}
-
-/// Write `content` to a command's stdin via sudo, avoiding shell execution
-/// when running as root. Uses base64-encoding when non-root to avoid
-/// mixing the sudo password with command data on stdin.
-pub async fn sudo_stdin_write(password: &str, args: &[&str], content: &str) -> Value {
-    let am_root = unsafe { libc::geteuid() } == 0;
-
-    if !am_root && password.is_empty() {
-        return serde_json::json!({ "error": "password required" });
-    }
-
-    if am_root {
-        let first = args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = args.iter().skip(1).copied().collect();
-
-        let child = tokio::process::Command::new(first)
-            .args(&rest)
-            .env("DEBIAN_FRONTEND", "noninteractive")
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
-
-        let mut child = match child {
-            Ok(c) => c,
-            Err(e) => return serde_json::json!({ "error": e.to_string() }),
-        };
-
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(content.as_bytes()).await;
-            drop(stdin);
-        }
-
-        return match child.wait_with_output().await {
-            Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
-            Ok(out) => stderr_to_error(&out.stderr),
-            Err(e) => serde_json::json!({ "error": e.to_string() }),
-        };
-    }
-
-    // Non-root path — base64-encode content, embed in sh -c.
-    use base64::Engine;
-    let b64 = base64::engine::general_purpose::STANDARD.encode(content.as_bytes());
-
-    let escaped_args: Vec<String> = args.iter().map(|a| shell_escape(a)).collect();
-    let inner = format!("printf '{}' | base64 -d | {}", b64, escaped_args.join(" "));
-
-    let child = tokio::process::Command::new("sudo")
-        .args(["-S", "sh", "-c", &inner])
-        .env("DEBIAN_FRONTEND", "noninteractive")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return serde_json::json!({ "error": e.to_string() }),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => serde_json::json!({ "ok": true }),
-        Ok(out) => stderr_to_error(&out.stderr),
-        Err(e) => serde_json::json!({ "error": e.to_string() }),
-    }
 }
 
 /// Write `content` into a command run as `user` via sudo (e.g. `tee <path>`).

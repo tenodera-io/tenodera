@@ -436,6 +436,18 @@ Tenodera uses **PAM authentication** — the same credentials as the system. No 
 
 Role is determined at login by running `sudo -l -U <user>` on the panel host. LDAP/SSSD/FreeIPA users work transparently if PAM is configured for them.
 
+**The managed host decides — not the panel**
+
+The role above only controls what the UI offers you. The real authorization happens on each managed host: every write operation (service restart, package install, user management, firewall change, container action, …) runs **as you**, via `sudo`, with the password you enter for Administrative access. Your host's own rules decide whether it is allowed.
+
+That means:
+
+- **Your `/etc/sudoers` — or your FreeIPA/LDAP sudo rules via SSSD — are enforced**, per command and per host. If a rule lets you run only `/usr/bin/systemctl` on one host, restarting a service works there and installing a package does not.
+- **`NOPASSWD` works as you'd expect** — where the host grants it, the operation runs without a password prompt.
+- **Rights can differ per host.** The same panel login may be an admin on one machine and have no sudo at all on another. Tenodera does not override this and keeps no permission database of its own.
+- **A denial comes back as `sudo access denied`** — that is the host refusing, not a Tenodera bug. `incorrect password` means the host rejected the password itself.
+- **Reads are the exception**: dashboards, logs and system information are collected by the agent as root, so they remain visible regardless of your rights on that host.
+
 **Account presence on managed hosts**
 
 Tenodera authenticates you against the **panel host** — managed hosts are separate machines and may not have your account. The panel checks whether your login name exists on each connected host (via `getent passwd`, which queries NSS and works with local users, SSSD, FreeIPA, and LDAP equally). If your account is absent on a host:
