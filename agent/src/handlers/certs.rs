@@ -5,7 +5,7 @@ use std::path::Path;
 use tokio::fs;
 
 use crate::handler::ChannelHandler;
-use crate::util::{require_admin, run_cmd, sudo_action, sudo_stdin_write, which};
+use crate::util::{require_admin, run_cmd, sudo_as_user, sudo_stdin_write_as_user, which};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -81,15 +81,16 @@ impl ChannelHandler for CertsManageHandler {
             ];
         }
         let action = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        let user = data.get("_user").and_then(|v| v.as_str()).unwrap_or("");
         let password = data.get("password").and_then(|v| v.as_str()).unwrap_or("");
 
         let result = match action {
             "parse" => parse_pem_input(data).await,
-            "trust_add" => trust_add(data, password).await,
-            "trust_remove" => trust_remove(data, password).await,
+            "trust_add" => trust_add(data, user, password).await,
+            "trust_remove" => trust_remove(data, user, password).await,
             "verify_host" => verify_host(data).await,
             "cert_check" => cert_check(data).await,
-            "cert_save" => cert_save(data, password).await,
+            "cert_save" => cert_save(data, user, password).await,
             _ => json!({ "error": format!("unknown action: {action}") }),
         };
 
@@ -190,12 +191,13 @@ impl ChannelHandler for CertsLetsEncryptHandler {
             ];
         }
         let action = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+        let user = data.get("_user").and_then(|v| v.as_str()).unwrap_or("");
         let password = data.get("password").and_then(|v| v.as_str()).unwrap_or("");
 
         let result = match action {
-            "renew_all" => letsencrypt_renew_all(password).await,
-            "renew" => letsencrypt_renew(data, password).await,
-            "delete" => letsencrypt_delete(data, password).await,
+            "renew_all" => letsencrypt_renew_all(user, password).await,
+            "renew" => letsencrypt_renew(data, user, password).await,
+            "delete" => letsencrypt_delete(data, user, password).await,
             _ => json!({ "error": format!("unknown action: {action}") }),
         };
 
@@ -494,7 +496,7 @@ async fn detect_distro() -> Distro {
     }
 }
 
-async fn trust_add(data: &Value, password: &str) -> Value {
+async fn trust_add(data: &Value, user: &str, password: &str) -> Value {
     let pem = match data.get("pem").and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p,
         _ => return json!({ "error": "missing pem" }),
@@ -518,29 +520,29 @@ async fn trust_add(data: &Value, password: &str) -> Value {
     match detect_distro().await {
         Distro::Debian => {
             let dest = format!("/usr/local/share/ca-certificates/{safe_name}.crt");
-            let write = sudo_stdin_write(password, &["tee", &dest], pem).await;
+            let write = sudo_stdin_write_as_user(user, password, &["tee", &dest], pem).await;
             if write.get("error").is_some() {
                 return write;
             }
-            sudo_action(password, &["update-ca-certificates"]).await
+            sudo_as_user(user, password, &["update-ca-certificates"]).await
         }
         Distro::Fedora => {
             let dest = format!("/etc/pki/ca-trust/source/anchors/{safe_name}.crt");
-            let write = sudo_stdin_write(password, &["tee", &dest], pem).await;
+            let write = sudo_stdin_write_as_user(user, password, &["tee", &dest], pem).await;
             if write.get("error").is_some() {
                 return write;
             }
-            sudo_action(password, &["update-ca-trust", "extract"]).await
+            sudo_as_user(user, password, &["update-ca-trust", "extract"]).await
         }
         Distro::Arch => {
             // Write to temp, then trust anchor --store (handles saving + update atomically)
             let tmp = tmp_path("trust", "crt");
-            let write = sudo_stdin_write(password, &["tee", &tmp], pem).await;
+            let write = sudo_stdin_write_as_user(user, password, &["tee", &tmp], pem).await;
             if write.get("error").is_some() {
                 return write;
             }
-            let result = sudo_action(password, &["trust", "anchor", "--store", &tmp]).await;
-            let _ = sudo_action(password, &["rm", "-f", &tmp]).await;
+            let result = sudo_as_user(user, password, &["trust", "anchor", "--store", &tmp]).await;
+            let _ = sudo_as_user(user, password, &["rm", "-f", &tmp]).await;
             result
         }
         Distro::Unknown => {
@@ -549,7 +551,7 @@ async fn trust_add(data: &Value, password: &str) -> Value {
     }
 }
 
-async fn trust_remove(data: &Value, password: &str) -> Value {
+async fn trust_remove(data: &Value, user: &str, password: &str) -> Value {
     let path = match data.get("path").and_then(|v| v.as_str()) {
         Some(p) if !p.is_empty() => p.to_string(),
         _ => return json!({ "error": "missing path" }),
@@ -578,15 +580,17 @@ async fn trust_remove(data: &Value, password: &str) -> Value {
     // Remove the canonical path — not the user-supplied string — to prevent
     // a TOCTOU race where the path is swapped to a symlink after canonicalization.
     let canonical_path = canonical.to_string_lossy().into_owned();
-    let rm = sudo_action(password, &["rm", "-f", &canonical_path]).await;
+    let rm = sudo_as_user(user, password, &["rm", "-f", &canonical_path]).await;
     if rm.get("error").is_some() {
         return rm;
     }
 
     match detect_distro().await {
-        Distro::Debian => sudo_action(password, &["update-ca-certificates", "--fresh"]).await,
-        Distro::Fedora => sudo_action(password, &["update-ca-trust"]).await,
-        Distro::Arch => sudo_action(password, &["trust", "extract-compat"]).await, // best-effort after rm
+        Distro::Debian => {
+            sudo_as_user(user, password, &["update-ca-certificates", "--fresh"]).await
+        }
+        Distro::Fedora => sudo_as_user(user, password, &["update-ca-trust"]).await,
+        Distro::Arch => sudo_as_user(user, password, &["trust", "extract-compat"]).await, // best-effort after rm
         Distro::Unknown => json!({ "ok": true, "output": "removed file (update trust manually)" }),
     }
 }
@@ -1060,7 +1064,7 @@ async fn cert_check(data: &Value) -> Value {
     }
 }
 
-async fn cert_save(data: &Value, password: &str) -> Value {
+async fn cert_save(data: &Value, user: &str, password: &str) -> Value {
     let name = match data.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.trim().is_empty() => n.trim(),
         _ => return json!({ "error": "missing name" }),
@@ -1092,7 +1096,7 @@ async fn cert_save(data: &Value, password: &str) -> Value {
 
     let (cert_path, key_path) = if subdir {
         let dir = format!("/etc/ssl/{safe_name}");
-        let mk = sudo_action(password, &["mkdir", "-p", &dir]).await;
+        let mk = sudo_as_user(user, password, &["mkdir", "-p", &dir]).await;
         if mk.get("error").is_some() {
             return mk;
         }
@@ -1107,18 +1111,19 @@ async fn cert_save(data: &Value, password: &str) -> Value {
         )
     };
 
-    let write_cert = sudo_stdin_write(password, &["tee", &cert_path], &cert_pem).await;
+    let write_cert =
+        sudo_stdin_write_as_user(user, password, &["tee", &cert_path], &cert_pem).await;
     if write_cert.get("error").is_some() {
         return write_cert;
     }
 
-    let write_key = sudo_stdin_write(password, &["tee", &key_path], &key_pem).await;
+    let write_key = sudo_stdin_write_as_user(user, password, &["tee", &key_path], &key_pem).await;
     if write_key.get("error").is_some() {
-        let _ = sudo_action(password, &["rm", "-f", &cert_path]).await;
+        let _ = sudo_as_user(user, password, &["rm", "-f", &cert_path]).await;
         return write_key;
     }
 
-    let chmod = sudo_action(password, &["chmod", "600", &key_path]).await;
+    let chmod = sudo_as_user(user, password, &["chmod", "600", &key_path]).await;
     if chmod.get("error").is_some() {
         return chmod;
     }
@@ -1130,11 +1135,11 @@ async fn cert_save(data: &Value, password: &str) -> Value {
     })
 }
 
-async fn letsencrypt_renew_all(password: &str) -> Value {
-    sudo_action(password, &["certbot", "renew", "--non-interactive"]).await
+async fn letsencrypt_renew_all(user: &str, password: &str) -> Value {
+    sudo_as_user(user, password, &["certbot", "renew", "--non-interactive"]).await
 }
 
-async fn letsencrypt_renew(data: &Value, password: &str) -> Value {
+async fn letsencrypt_renew(data: &Value, user: &str, password: &str) -> Value {
     let name = match data.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n,
         _ => return json!({ "error": "missing cert name" }),
@@ -1142,14 +1147,15 @@ async fn letsencrypt_renew(data: &Value, password: &str) -> Value {
     if name.contains('/') || name.contains("..") {
         return json!({ "error": "invalid cert name" });
     }
-    sudo_action(
+    sudo_as_user(
+        user,
         password,
         &["certbot", "renew", "--cert-name", name, "--non-interactive"],
     )
     .await
 }
 
-async fn letsencrypt_delete(data: &Value, password: &str) -> Value {
+async fn letsencrypt_delete(data: &Value, user: &str, password: &str) -> Value {
     let name = match data.get("name").and_then(|v| v.as_str()) {
         Some(n) if !n.is_empty() => n,
         _ => return json!({ "error": "missing cert name" }),
@@ -1157,7 +1163,8 @@ async fn letsencrypt_delete(data: &Value, password: &str) -> Value {
     if name.contains('/') || name.contains("..") {
         return json!({ "error": "invalid cert name" });
     }
-    sudo_action(
+    sudo_as_user(
+        user,
         password,
         &[
             "certbot",
