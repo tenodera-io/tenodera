@@ -191,6 +191,23 @@ pub async fn sudo_as_user(user: &str, password: &str, args: &[&str]) -> Value {
     }
 }
 
+/// Run a read-only command AS THE USER via sudo and return its stdout, so the host
+/// decides who may read privileged content. A refusal (wrong password, or the host's
+/// rules denying the command) comes back as `error: <message>`, which callers already
+/// treat as a failure.
+pub async fn sudo_output_as_user(user: &str, password: &str, args: &[&str]) -> String {
+    let res = sudo_as_user(user, password, args).await;
+    match res.get("output").and_then(|v| v.as_str()) {
+        Some(out) => out.to_string(),
+        None => format!(
+            "error: {}",
+            res.get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("command failed")
+        ),
+    }
+}
+
 /// Check if a command exists on `$PATH`.
 pub async fn which(cmd: &str) -> bool {
     tokio::process::Command::new("which")

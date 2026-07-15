@@ -2,10 +2,9 @@ use std::path::Path;
 
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
-use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
-use crate::util::{is_valid_username, run_cmd};
+use crate::util::{is_valid_username, run_cmd, sudo_output_as_user};
 
 pub struct FileListHandler;
 
@@ -37,8 +36,9 @@ impl ChannelHandler for FileListHandler {
             // filesystem permissions apply naturally.
             list_as_user(path, user).await
         } else {
-            // Admin password provided — full root access via sudo.
-            sudo_list_directory(path, password).await
+            // Admin password provided — elevate via sudo AS THE USER, so the host
+            // decides whether they may list this directory.
+            sudo_list_directory(path, user, password).await
         };
 
         vec![
@@ -103,26 +103,22 @@ async fn list_as_user(path: &str, user: &str) -> serde_json::Value {
     })
 }
 
-/// List directory as root using the user's admin password.
-/// Always uses `ls -laH` (same as list_as_user) for consistent field output.
-async fn sudo_list_directory(path: &str, password: &str) -> serde_json::Value {
-    let am_root = unsafe { libc::geteuid() } == 0;
-
+/// List a directory with elevated rights, running as the requesting user via sudo so
+/// the host's rules decide. Always uses `ls -laH` (same as list_as_user) for
+/// consistent field output.
+async fn sudo_list_directory(path: &str, user: &str, password: &str) -> serde_json::Value {
     let canonical = match Path::new(path).canonicalize() {
         Ok(p) => p,
         Err(e) => return serde_json::json!({ "error": format!("cannot resolve path: {e}") }),
     };
     let resolved = canonical.to_string_lossy().to_string();
 
-    let out = if am_root {
-        run_cmd(&["ls", "-laH", "--time-style=long-iso", "--", &resolved]).await
-    } else {
-        sudo_cmd(
-            password,
-            &["ls", "-laH", "--time-style=long-iso", "--", &resolved],
-        )
-        .await
-    };
+    let out = sudo_output_as_user(
+        user,
+        password,
+        &["ls", "-laH", "--time-style=long-iso", "--", &resolved],
+    )
+    .await;
 
     if out.contains("Permission denied") || out.starts_with("error:") {
         return serde_json::json!({ "error": "Permission denied" });
@@ -198,43 +194,4 @@ fn extract_filename(line: &str) -> String {
         }
     }
     String::new()
-}
-
-async fn sudo_cmd(password: &str, args: &[&str]) -> String {
-    let mut cmd_args = vec!["-S"];
-    cmd_args.extend_from_slice(args);
-
-    let child = tokio::process::Command::new("sudo")
-        .args(&cmd_args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return format!("error: {e}"),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            if stdout.is_empty() {
-                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                stderr
-                    .lines()
-                    .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            } else {
-                stdout
-            }
-        }
-        Err(e) => format!("error: {e}"),
-    }
 }
