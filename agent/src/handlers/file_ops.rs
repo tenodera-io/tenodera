@@ -2,13 +2,14 @@ use std::path::Path;
 
 use async_trait::async_trait;
 use serde_json::json;
-use tokio::io::AsyncWriteExt;
 
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::util::{is_valid_username, run_cmd, sudo_as_user, sudo_stdin_write_as_user};
+use crate::util::{
+    is_valid_username, run_cmd, sudo_as_user, sudo_output_as_user, sudo_stdin_write_as_user,
+};
 
 const PAGE_LINES: usize = 200;
 
@@ -130,8 +131,6 @@ impl ChannelHandler for FileDeleteHandler {
 // ── read implementation ────────────────────────────────────────────────────
 
 async fn read_file(path: &str, user: &str, password: &str, offset: usize) -> serde_json::Value {
-    let am_root = unsafe { libc::geteuid() } == 0;
-
     // Resolve canonical path — agent runs as root so this always succeeds
     let canonical = match Path::new(path).canonicalize() {
         Ok(p) => p,
@@ -162,14 +161,14 @@ async fn read_file(path: &str, user: &str, password: &str, offset: usize) -> ser
     // Count total lines
     let wc_raw = if as_user {
         run_cmd(&["sudo", "-n", "-u", user, "--", "wc", "-l", "--", &resolved]).await
-    } else if am_root {
-        run_cmd(&["wc", "-l", "--", &resolved]).await
     } else {
-        sudo_read(password, &["wc", "-l", "--", &resolved]).await
+        // Elevated read: run as the user via sudo so the host decides who may read
+        // privileged files (previously this ran as root and ignored the password).
+        sudo_output_as_user(user, password, &["wc", "-l", "--", &resolved]).await
     };
 
-    if wc_raw.contains("Permission denied") {
-        return json!({ "error": "Permission denied" });
+    if wc_raw.starts_with("error:") || wc_raw.contains("Permission denied") {
+        return json!({ "error": wc_raw.trim_start_matches("error:").trim() });
     }
 
     let total_lines: usize = wc_raw
@@ -188,14 +187,12 @@ async fn read_file(path: &str, user: &str, password: &str, offset: usize) -> ser
             "sudo", "-n", "-u", user, "--", "sed", "-n", &range, "--", &resolved,
         ])
         .await
-    } else if am_root {
-        run_cmd(&["sed", "-n", &range, "--", &resolved]).await
     } else {
-        sudo_read(password, &["sed", "-n", &range, "--", &resolved]).await
+        sudo_output_as_user(user, password, &["sed", "-n", &range, "--", &resolved]).await
     };
 
     if content.starts_with("error:") || content.contains("Permission denied") {
-        return json!({ "error": "Permission denied" });
+        return json!({ "error": content.trim_start_matches("error:").trim() });
     }
 
     json!({
@@ -342,34 +339,6 @@ async fn delete_as_user(path: &str, user: &str) -> serde_json::Value {
             json!({ "error": if msg.is_empty() { "Permission denied".to_string() } else { msg } })
         }
         Err(e) => json!({ "error": e.to_string() }),
-    }
-}
-
-/// Run a command via `sudo -S`, returning raw stdout.
-/// Used for the non-root agent path when an admin password is needed.
-async fn sudo_read(password: &str, args: &[&str]) -> String {
-    let mut cmd_args = vec!["-S"];
-    cmd_args.extend_from_slice(args);
-
-    let child = tokio::process::Command::new("sudo")
-        .args(&cmd_args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return format!("error: {e}"),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
-        Err(e) => format!("error: {e}"),
     }
 }
 
