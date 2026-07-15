@@ -8,7 +8,7 @@ use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::util::{is_valid_username, run_cmd, sudo_action, sudo_stdin_write};
+use crate::util::{is_valid_username, run_cmd, sudo_as_user, sudo_stdin_write_as_user};
 
 const PAGE_LINES: usize = 200;
 
@@ -60,7 +60,7 @@ impl ChannelHandler for FileWriteHandler {
         let data = if password.is_empty() {
             write_as_user(path, content, user).await
         } else {
-            sudo_stdin_write(password, &["tee", "--", path], content).await
+            sudo_stdin_write_as_user(user, password, &["tee", "--", path], content).await
         };
         ok_msgs(channel, data)
     }
@@ -88,7 +88,7 @@ impl ChannelHandler for FileMkdirHandler {
         let data = if password.is_empty() {
             mkdir_as_user(path, user).await
         } else {
-            sudo_action(password, &["mkdir", "--", path]).await
+            sudo_as_user(user, password, &["mkdir", "--", path]).await
         };
         ok_msgs(channel, data)
     }
@@ -121,7 +121,7 @@ impl ChannelHandler for FileDeleteHandler {
             } else {
                 &["rm", "--", path]
             };
-            sudo_action(password, args).await
+            sudo_as_user(user, password, args).await
         };
         ok_msgs(channel, data)
     }
