@@ -4,7 +4,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, watch};
 
 use crate::handler::ChannelHandler;
-use crate::util::{run_cmd, sudo_action, which};
+use crate::util::{run_cmd, sudo_as_user, which};
 
 // ──────────────────────────────────────────────────────────────
 //  Streaming handler  –  network traffic (TX / RX rates)
@@ -161,12 +161,12 @@ impl ChannelHandler for NetworkManageHandler {
             "firewall_enable" => {
                 let backend = data.get("backend").and_then(|v| v.as_str()).unwrap_or("");
                 let be = parse_backend(backend).unwrap_or(detect_firewall().await);
-                sudo_action(password, &firewall_enable_cmd_for(be)).await
+                net_sudo(user, password, &firewall_enable_cmd_for(be)).await
             }
             "firewall_disable" => {
                 let backend = data.get("backend").and_then(|v| v.as_str()).unwrap_or("");
                 let be = parse_backend(backend).unwrap_or(detect_firewall().await);
-                sudo_action(password, &firewall_disable_cmd_for(be)).await
+                net_sudo(user, password, &firewall_disable_cmd_for(be)).await
             }
             "firewall_add_rule" => {
                 let rule = data.get("rule").cloned().unwrap_or_default();
@@ -176,7 +176,7 @@ impl ChannelHandler for NetworkManageHandler {
                     .or_else(|| rule.get("backend").and_then(|v| v.as_str()))
                     .unwrap_or("");
                 let be = parse_backend(backend);
-                firewall_add_rule(password, &rule, be).await
+                firewall_add_rule(user, password, &rule, be).await
             }
             "firewall_remove_rule" => {
                 let rule = data.get("rule").cloned().unwrap_or_default();
@@ -186,22 +186,22 @@ impl ChannelHandler for NetworkManageHandler {
                     .or_else(|| rule.get("backend").and_then(|v| v.as_str()))
                     .unwrap_or("");
                 let be = parse_backend(backend);
-                firewall_remove_rule(password, &rule, be).await
+                firewall_remove_rule(user, password, &rule, be).await
             }
 
             // ── Interface management ──
             "add_bridge" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                add_bridge(password, name).await
+                add_bridge(user, password, name).await
             }
             "add_vlan" => {
                 let parent = data.get("parent").and_then(|v| v.as_str()).unwrap_or("");
                 let vlan_id = data.get("vlan_id").and_then(|v| v.as_u64()).unwrap_or(0);
-                add_vlan(password, parent, vlan_id as u32).await
+                add_vlan(user, password, parent, vlan_id as u32).await
             }
             "remove_interface" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                remove_interface(password, name).await
+                remove_interface(user, password, name).await
             }
             "iface_up" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
@@ -212,7 +212,7 @@ impl ChannelHandler for NetworkManageHandler {
                 {
                     serde_json::json!({ "error": "invalid interface name" })
                 } else {
-                    sudo_action(password, &["ip", "link", "set", "dev", name, "up"]).await
+                    net_sudo(user, password, &["ip", "link", "set", "dev", name, "up"]).await
                 }
             }
             "iface_down" => {
@@ -224,7 +224,7 @@ impl ChannelHandler for NetworkManageHandler {
                 {
                     serde_json::json!({ "error": "invalid interface name" })
                 } else {
-                    sudo_action(password, &["ip", "link", "set", "dev", name, "down"]).await
+                    net_sudo(user, password, &["ip", "link", "set", "dev", name, "down"]).await
                 }
             }
 
@@ -239,7 +239,7 @@ impl ChannelHandler for NetworkManageHandler {
                 {
                     serde_json::json!({ "error": "invalid connection name" })
                 } else {
-                    sudo_action(password, &["nmcli", "connection", "up", "--", name]).await
+                    net_sudo(user, password, &["nmcli", "connection", "up", "--", name]).await
                 }
             }
             "vpn_disconnect" => {
@@ -251,7 +251,7 @@ impl ChannelHandler for NetworkManageHandler {
                 {
                     serde_json::json!({ "error": "invalid connection name" })
                 } else {
-                    sudo_action(password, &["nmcli", "connection", "down", "--", name]).await
+                    net_sudo(user, password, &["nmcli", "connection", "down", "--", name]).await
                 }
             }
 
@@ -620,6 +620,7 @@ fn firewall_disable_cmd_for(be: FirewallBackend) -> Vec<String> {
 }
 
 async fn firewall_add_rule(
+    user: &str,
     password: &str,
     rule: &serde_json::Value,
     target: Option<FirewallBackend>,
@@ -696,9 +697,10 @@ async fn firewall_add_rule(
 
             let port_proto = format!("{port}/{proto}");
             if from == "any" {
-                sudo_action(password, &["ufw", action, &port_proto]).await
+                net_sudo(user, password, &["ufw", action, &port_proto]).await
             } else {
-                sudo_action(
+                net_sudo(
+                    user,
                     password,
                     &[
                         "ufw", action, "from", from, "to", "any", "port", port, "proto", proto,
@@ -716,7 +718,8 @@ async fn firewall_add_rule(
                 if !validate_service_name(svc) {
                     return serde_json::json!({ "error": "invalid service name (alphanumeric, hyphens, underscores, dots only)" });
                 }
-                sudo_action(
+                net_sudo(
+                    user,
                     password,
                     &["firewall-cmd", "--permanent", "--add-service", svc],
                 )
@@ -729,7 +732,8 @@ async fn firewall_add_rule(
                     return serde_json::json!({ "error": "invalid protocol (tcp, udp, icmp)" });
                 }
                 let port_proto = format!("{port}/{proto}");
-                sudo_action(
+                net_sudo(
+                    user,
                     password,
                     &["firewall-cmd", "--permanent", "--add-port", &port_proto],
                 )
@@ -762,7 +766,8 @@ async fn firewall_add_rule(
                         "reject" => "REJECT",
                         _ => "ACCEPT",
                     };
-                    sudo_action(
+                    net_sudo(
+                        user,
                         password,
                         &[
                             "iptables",
@@ -785,7 +790,8 @@ async fn firewall_add_rule(
                         _ => "accept",
                     };
                     // Each word must be a separate argument to nft
-                    sudo_action(
+                    net_sudo(
+                        user,
                         password,
                         &[
                             "nft", "add", "rule", "inet", "filter", "input", proto, "dport", port,
@@ -801,6 +807,7 @@ async fn firewall_add_rule(
 }
 
 async fn firewall_remove_rule(
+    user: &str,
     password: &str,
     rule: &serde_json::Value,
     target: Option<FirewallBackend>,
@@ -821,7 +828,7 @@ async fn firewall_remove_rule(
             let number = rule.get("number").and_then(|v| v.as_u64());
             if let Some(n) = number {
                 let n_str = n.to_string();
-                sudo_action(password, &["ufw", "--force", "delete", &n_str]).await
+                net_sudo(user, password, &["ufw", "--force", "delete", &n_str]).await
             } else {
                 serde_json::json!({ "error": "rule number required for ufw delete" })
             }
@@ -843,14 +850,16 @@ async fn firewall_remove_rule(
                 if !valid_svc_name(svc) {
                     return serde_json::json!({ "error": "invalid service name" });
                 }
-                sudo_action(
+                net_sudo(
+                    user,
                     password,
                     &["firewall-cmd", "--permanent", "--remove-service", svc],
                 )
                 .await
             } else if !port.is_empty() {
                 let port_proto = format!("{port}/{proto}");
-                sudo_action(
+                net_sudo(
+                    user,
                     password,
                     &["firewall-cmd", "--permanent", "--remove-port", &port_proto],
                 )
@@ -869,7 +878,7 @@ async fn firewall_remove_rule(
                     let chain_name = chain.split_whitespace().nth(1).unwrap_or("INPUT");
                     if let Some(n) = number {
                         let n_str = n.to_string();
-                        sudo_action(password, &["iptables", "-D", chain_name, &n_str]).await
+                        net_sudo(user, password, &["iptables", "-D", chain_name, &n_str]).await
                     } else {
                         serde_json::json!({ "error": "rule number required for iptables delete" })
                     }
@@ -890,7 +899,8 @@ async fn firewall_remove_rule(
                         .unwrap_or("inet");
                     if let Some(handle) = number {
                         let handle_str = handle.to_string();
-                        sudo_action(
+                        net_sudo(
+                            user,
                             password,
                             &[
                                 "nft",
@@ -1039,7 +1049,7 @@ async fn detect_iface_type(name: &str) -> &'static str {
     "ethernet"
 }
 
-async fn add_bridge(password: &str, name: &str) -> serde_json::Value {
+async fn add_bridge(user: &str, password: &str, name: &str) -> serde_json::Value {
     if name.is_empty()
         || !name
             .chars()
@@ -1049,7 +1059,8 @@ async fn add_bridge(password: &str, name: &str) -> serde_json::Value {
     }
     // Try nmcli first, fall back to ip
     if which("nmcli").await {
-        sudo_action(
+        net_sudo(
+            user,
             password,
             &[
                 "nmcli",
@@ -1065,20 +1076,21 @@ async fn add_bridge(password: &str, name: &str) -> serde_json::Value {
         )
         .await
     } else {
-        let r1 = sudo_action(
+        let r1 = net_sudo(
+            user,
             password,
             &["ip", "link", "add", "name", name, "type", "bridge"],
         )
         .await;
         if r1.get("ok").and_then(|v| v.as_bool()) == Some(true) {
-            sudo_action(password, &["ip", "link", "set", "dev", name, "up"]).await
+            net_sudo(user, password, &["ip", "link", "set", "dev", name, "up"]).await
         } else {
             r1
         }
     }
 }
 
-async fn add_vlan(password: &str, parent: &str, vlan_id: u32) -> serde_json::Value {
+async fn add_vlan(user: &str, password: &str, parent: &str, vlan_id: u32) -> serde_json::Value {
     if parent.is_empty() || vlan_id == 0 || vlan_id > 4094 {
         return serde_json::json!({ "error": "invalid parent or VLAN ID (1-4094)" });
     }
@@ -1092,7 +1104,8 @@ async fn add_vlan(password: &str, parent: &str, vlan_id: u32) -> serde_json::Val
     let id_str = vlan_id.to_string();
 
     if which("nmcli").await {
-        sudo_action(
+        net_sudo(
+            user,
             password,
             &[
                 "nmcli",
@@ -1110,7 +1123,8 @@ async fn add_vlan(password: &str, parent: &str, vlan_id: u32) -> serde_json::Val
         )
         .await
     } else {
-        sudo_action(
+        net_sudo(
+            user,
             password,
             &[
                 "ip", "link", "add", "link", parent, "name", &name, "type", "vlan", "id", &id_str,
@@ -1120,7 +1134,7 @@ async fn add_vlan(password: &str, parent: &str, vlan_id: u32) -> serde_json::Val
     }
 }
 
-async fn remove_interface(password: &str, name: &str) -> serde_json::Value {
+async fn remove_interface(user: &str, password: &str, name: &str) -> serde_json::Value {
     if name.is_empty()
         || !name
             .chars()
@@ -1130,12 +1144,17 @@ async fn remove_interface(password: &str, name: &str) -> serde_json::Value {
     }
     // Try nmcli first
     if which("nmcli").await {
-        let r = sudo_action(password, &["nmcli", "connection", "delete", "--", name]).await;
+        let r = net_sudo(
+            user,
+            password,
+            &["nmcli", "connection", "delete", "--", name],
+        )
+        .await;
         if r.get("ok").and_then(|v| v.as_bool()) == Some(true) {
             return r;
         }
     }
-    sudo_action(password, &["ip", "link", "delete", "dev", name]).await
+    net_sudo(user, password, &["ip", "link", "delete", "dev", name]).await
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -1240,6 +1259,13 @@ async fn network_logs(lines: u64) -> serde_json::Value {
 
 /// Like `run_cmd` but uses `sudo -S` when password is non-empty.
 /// Falls back to unprivileged `run_cmd` when no password is supplied.
+/// Run a networking command AS THE USER via sudo, so the host's rules (local sudoers
+/// or FreeIPA sudo via SSSD) decide what is permitted.
+async fn net_sudo(user: &str, password: &str, args: &[impl AsRef<str>]) -> serde_json::Value {
+    let refs: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
+    sudo_as_user(user, password, &refs).await
+}
+
 async fn sudo_run_cmd(password: &str, args: &[&str]) -> String {
     if password.is_empty() {
         return run_cmd(args).await;
