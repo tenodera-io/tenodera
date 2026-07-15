@@ -9,11 +9,46 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Security
+- **Privileged operations are now authorized by the managed host.** Every
+  state-changing operation runs *as the logged-in user*: the agent drops to their
+  UID/GID (`initgroups` → `setgid` → `setuid`) and execs `sudo -S -k` with their
+  own password. The host's own rules decide what is permitted — local
+  `/etc/sudoers`, or FreeIPA/LDAP sudo rules resolved via SSSD — per command and
+  per host.
+- **Fixed: Administrative access accepted any password.** The agent runs as root,
+  and root is exempt from `sudo`, so the previous `superuser.verify` check
+  (`sudo -S -k true` executed as root) always succeeded. The password prompt was
+  effectively a no-op. It now authenticates the real user against PAM/SSS and
+  confirms they actually hold sudo on that host.
+- **Fixed: privileged operations ignored host rules.** The `am_root` branch in the
+  agent's sudo helpers skipped `sudo` entirely and ran commands directly as root,
+  so local sudoers and FreeIPA rules were never consulted. The bypass is removed.
+- **Fixed: unverified-password escalation on privileged reads** — `file_ops`
+  read/list let any authenticated user read root-only files with an arbitrary
+  password.
+- Migrated handlers: users, files, services, packages, cron, host config,
+  networking, certificates, DNS, and containers.
+
+### Changed
+- **Breaking:** operators must now exist, with the rights they intend to use, on
+  **every managed host** — via local accounts/groups or FreeIPA/LDAP through
+  SSSD. A user unknown to a host is denied there, and a user without the relevant
+  sudo rule now gets `sudo access denied` where the operation previously
+  succeeded as root. The panel's admin/read-only role is only a UI filter; the
+  host is authoritative.
+- Read operations (dashboards, logs, system introspection) deliberately still run
+  as root and are not per-user brokered — see `THREAT_MODEL.md` §6.
+
 ### Added
 - Continuous integration: `fmt` / `clippy` / `test` for every crate, UI build,
   and `cargo-deny` (advisories + license policy) on every push and PR.
 - Dependabot for Cargo, npm, and GitHub Actions.
 - `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, issue/PR templates, and this changelog.
+
+### Removed
+- Dead `util::sudo_action` / `util::sudo_stdin_write` (the root-bypass helpers),
+  now that every caller runs as the logged-in user.
 
 ## [0.1.7]
 

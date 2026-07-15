@@ -111,6 +111,9 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 - Admin-only operations (firewall changes, user management, package install, host restart, etc.) are gated by `require_admin()` on the agent side, which checks the gateway-injected `_role`
 - Missing `_role` in a handler payload is treated as unauthorized — any message that bypasses gateway injection is denied by default
 - Read-only users can observe but cannot execute any write operation
+- **The managed host is the authority.** `require_admin()`/`_role` is a first-line filter, not the security boundary. Every state-changing operation is executed *as the logged-in user*: the agent drops to their UID/GID (`initgroups` → `setgid` → `setuid`) and then runs `sudo -S -k <command>` with their own password. The host's own rules decide what is permitted — local `/etc/sudoers`, or FreeIPA/LDAP sudo rules resolved via SSSD — per command and per host. Tenodera keeps no permission store of its own
+- **The user must exist, with the rights they intend to use, on every managed host.** A user unknown to a host is denied there (`getpwnam_r` miss), even with an admin session on the panel
+- **Reads are an exception** and still run at the agent's privilege (root); any authenticated user can read privileged system state regardless of their rights on that host — see `THREAT_MODEL.md` §6
 - **Exception:** `GET /api/hosts/{id}/user-check` is a gateway-only REST endpoint; it sends a `users.manage` channel request internally (`execute_rpc`) using the session username directly — no `_user`/`_role` injection applies since the agent's `check_exists` action requires no privileges
 
 ### Terminal Security
@@ -160,7 +163,7 @@ These are not handled by the software itself and remain the operator's responsib
 - **Restrict network access** — expose port 9090 only to trusted networks or via VPN; the agent connects outbound and needs no inbound port
 - **Use strong system passwords** — authentication relies on PAM/system accounts; password strength is determined by the OS PAM configuration
 - **Rotate TLS certificates** — the installer can generate a self-signed cert for testing, but use a CA-signed certificate in production
-- **Review sudo configuration** — the `admin` role is granted to any user with unrestricted sudo; ensure your `/etc/sudoers` reflects intended access
+- **Review sudo configuration** — this is your primary access control, not a formality. Privileged operations run as the logged-in user under `sudo`, so `/etc/sudoers` (or your FreeIPA/LDAP sudo rules) is what actually decides who may do what on each host. The `admin` role in the UI is only granted to users with unrestricted sudo, but it merely unhides actions — the host still adjudicates every one of them. Grant per-command rules where you want fine-grained control
 - **Audit agent enrollment** — review the pending host queue regularly; revoke bootstrap tokens after use or set single-use mode
 
 ---
