@@ -9,6 +9,13 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Fixed
+- Packaging: the panel pinned the agent to an exact version
+  (`tenodera-agent (= <version>)` / `Requires: tenodera-agent = %{version}`), so
+  upgrading the agent on its own left the dependency unsatisfiable and the
+  package manager offered to remove the panel to resolve it. The panel now
+  requires `>= <version>`, so a newer agent satisfies an older panel.
+
 ## [0.1.8] - 2026-07-15
 
 ### Security

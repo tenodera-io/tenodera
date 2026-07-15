@@ -252,7 +252,7 @@ package-deb: build
 	@# The .deb targets Debian/Ubuntu, which use common-auth/common-account —
 	@# not system-auth (that variant, in pam.d/tenodera, ships in the .rpm).
 	@install -m 644 ../packaging/deb/tenodera.pam $(PKGDIR)/etc/pam.d/tenodera
-	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6, libpam0g, tenodera-agent (= $(VERSION))\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
+	@printf 'Package: tenodera\nVersion: $(VERSION)\nArchitecture: $(DEB_ARCH)\nDepends: libc6, libpam0g, tenodera-agent (>= $(VERSION))\nMaintainer: Tenodera <noreply@tenodera>\nDescription: Tenodera web administration panel\n Serves the Tenodera web UI and routes channel messages to\n agents on managed hosts via reverse WebSocket connections.\n' > $(PKGDIR)/DEBIAN/control
 	@install -m 755 ../packaging/deb/tenodera.preinst $(PKGDIR)/DEBIAN/preinst
 	@install -m 755 ../packaging/deb/tenodera.postinst $(PKGDIR)/DEBIAN/postinst
 	@install -m 755 ../packaging/deb/tenodera.prerm $(PKGDIR)/DEBIAN/prerm
