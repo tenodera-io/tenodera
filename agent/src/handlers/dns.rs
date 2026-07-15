@@ -1,5 +1,5 @@
 use crate::handler::ChannelHandler;
-use crate::util::{require_admin, run_cmd, sudo_action, sudo_stdin_write, which};
+use crate::util::{require_admin, run_cmd, sudo_as_user, sudo_stdin_write_as_user, which};
 use serde_json::{Value, json};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
@@ -48,18 +48,20 @@ impl ChannelHandler for DnsManageHandler {
             err
         } else {
             let action = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            let user = data.get("_user").and_then(|v| v.as_str()).unwrap_or("");
             let password = data.get("password").and_then(|v| v.as_str()).unwrap_or("");
 
             match action {
                 "set_resolv_conf" => {
                     let content = data.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                    sudo_stdin_write(password, &["tee", "/etc/resolv.conf"], content).await
+                    sudo_stdin_write_as_user(user, password, &["tee", "/etc/resolv.conf"], content)
+                        .await
                 }
                 "set_hosts" => {
                     let content = data.get("content").and_then(|v| v.as_str()).unwrap_or("");
-                    sudo_stdin_write(password, &["tee", "/etc/hosts"], content).await
+                    sudo_stdin_write_as_user(user, password, &["tee", "/etc/hosts"], content).await
                 }
-                "flush_cache" => flush_dns_cache(password).await,
+                "flush_cache" => flush_dns_cache(user, password).await,
                 _ => json!({ "ok": false, "error": format!("unknown action: {action}") }),
             }
         };
@@ -183,16 +185,16 @@ fn parse_resolv_conf(content: &str) -> (Vec<String>, Vec<String>) {
     (servers, search)
 }
 
-async fn flush_dns_cache(password: &str) -> Value {
+async fn flush_dns_cache(user: &str, password: &str) -> Value {
     if which("resolvectl").await {
-        let r = sudo_action(password, &["resolvectl", "flush-caches"]).await;
+        let r = sudo_as_user(user, password, &["resolvectl", "flush-caches"]).await;
         if r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
             return json!({ "ok": true });
         }
     }
     // Fallback: restart nscd
     if which("nscd").await {
-        let r = sudo_action(password, &["systemctl", "try-restart", "nscd"]).await;
+        let r = sudo_as_user(user, password, &["systemctl", "try-restart", "nscd"]).await;
         if r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
             return json!({ "ok": true });
         }
@@ -288,16 +290,26 @@ impl ChannelHandler for DnsResolvedManageHandler {
             err
         } else {
             let action = data.get("action").and_then(|v| v.as_str()).unwrap_or("");
+            let user = data.get("_user").and_then(|v| v.as_str()).unwrap_or("");
             let password = data.get("password").and_then(|v| v.as_str()).unwrap_or("");
             match action {
-                "set_config" => set_resolved_config(&data, password).await,
+                "set_config" => set_resolved_config(&data, user, password).await,
                 "restart" => {
-                    sudo_action(password, &["systemctl", "restart", "systemd-resolved"]).await
+                    sudo_as_user(
+                        user,
+                        password,
+                        &["systemctl", "restart", "systemd-resolved"],
+                    )
+                    .await
                 }
-                "start" => sudo_action(password, &["systemctl", "start", "systemd-resolved"]).await,
-                "stop" => sudo_action(password, &["systemctl", "stop", "systemd-resolved"]).await,
+                "start" => {
+                    sudo_as_user(user, password, &["systemctl", "start", "systemd-resolved"]).await
+                }
+                "stop" => {
+                    sudo_as_user(user, password, &["systemctl", "stop", "systemd-resolved"]).await
+                }
                 "flush_caches" => {
-                    let r = sudo_action(password, &["resolvectl", "flush-caches"]).await;
+                    let r = sudo_as_user(user, password, &["resolvectl", "flush-caches"]).await;
                     if r.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                         r
                     } else {
@@ -685,7 +697,7 @@ async fn read_resolved_conf() -> Value {
     })
 }
 
-async fn set_resolved_config(data: &Value, password: &str) -> Value {
+async fn set_resolved_config(data: &Value, user: &str, password: &str) -> Value {
     let get = |k: &str| {
         data.get(k)
             .and_then(|v| v.as_str())
@@ -724,8 +736,13 @@ async fn set_resolved_config(data: &Value, password: &str) -> Value {
 
     let content = lines.join("\n") + "\n";
 
-    let write_result =
-        sudo_stdin_write(password, &["tee", "/etc/systemd/resolved.conf"], &content).await;
+    let write_result = sudo_stdin_write_as_user(
+        user,
+        password,
+        &["tee", "/etc/systemd/resolved.conf"],
+        &content,
+    )
+    .await;
     if !write_result
         .get("ok")
         .and_then(|v| v.as_bool())
@@ -735,7 +752,8 @@ async fn set_resolved_config(data: &Value, password: &str) -> Value {
     }
 
     // Reload config (HUP = reload without full restart)
-    let reload = sudo_action(
+    let reload = sudo_as_user(
+        user,
         password,
         &["systemctl", "kill", "-s", "HUP", "systemd-resolved"],
     )
@@ -744,7 +762,12 @@ async fn set_resolved_config(data: &Value, password: &str) -> Value {
         json!({ "ok": true })
     } else {
         // Fallback: full restart
-        sudo_action(password, &["systemctl", "restart", "systemd-resolved"]).await
+        sudo_as_user(
+            user,
+            password,
+            &["systemctl", "restart", "systemd-resolved"],
+        )
+        .await
     }
 }
 
