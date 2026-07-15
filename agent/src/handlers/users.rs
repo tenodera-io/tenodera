@@ -1,11 +1,10 @@
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
-use tokio::io::AsyncWriteExt;
 
 use serde_json::{Value, json};
 
 use crate::handler::ChannelHandler;
-use crate::util::{extract_string_array, run_cmd, sudo_stdin_write};
+use crate::util::{extract_string_array, run_cmd, sudo_as_user, sudo_stdin_write_as_user};
 
 // ──────────────────────────────────────────────────────────────
 //  User & group management handler
@@ -54,14 +53,14 @@ impl ChannelHandler for UsersManageHandler {
 
             // ── User CRUD (requires sudo) ──
             "create" => {
-                let r = create_user(data, password).await;
+                let r = create_user(data, user, password).await;
                 let target = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.create", target, ok, "");
                 r
             }
             "modify" => {
-                let r = modify_user(data, password).await;
+                let r = modify_user(data, user, password).await;
                 let target = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.modify", target, ok, "");
@@ -73,21 +72,21 @@ impl ChannelHandler for UsersManageHandler {
                     .get("remove_home")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let r = delete_user(target, remove_home, password).await;
+                let r = delete_user(target, remove_home, user, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.delete", target, ok, "");
                 r
             }
             "lock" => {
                 let target = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
-                let r = lock_user(target, password).await;
+                let r = lock_user(target, user, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.lock", target, ok, "");
                 r
             }
             "unlock" => {
                 let target = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
-                let r = unlock_user(target, password).await;
+                let r = unlock_user(target, user, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.unlock", target, ok, "");
                 r
@@ -102,7 +101,7 @@ impl ChannelHandler for UsersManageHandler {
                     .get("force_change")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
-                let r = set_password(target, new_pw, force_change, password).await;
+                let r = set_password(target, new_pw, force_change, user, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "user.set_password", target, ok, "");
                 r
@@ -112,14 +111,14 @@ impl ChannelHandler for UsersManageHandler {
             "create_group" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let gid = data.get("gid").and_then(|v| v.as_u64()).map(|v| v as u32);
-                let r = create_group(name, gid, password).await;
+                let r = create_group(name, gid, user, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "group.create", name, ok, "");
                 r
             }
             "delete_group" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                let r = delete_group(name, password).await;
+                let r = delete_group(name, user, password).await;
                 let ok = r.get("error").is_none();
                 crate::audit::log(user, "group.delete", name, ok, "");
                 r
@@ -451,7 +450,7 @@ async fn is_valid_shell(shell: &str) -> bool {
 //  Create user
 // ──────────────────────────────────────────────────────────────
 
-async fn create_user(data: &Value, password: &str) -> Value {
+async fn create_user(data: &Value, user: &str, password: &str) -> Value {
     let username = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
     let gecos = data.get("gecos").and_then(|v| v.as_str()).unwrap_or("");
     let home = data.get("home").and_then(|v| v.as_str()).unwrap_or("");
@@ -521,14 +520,15 @@ async fn create_user(data: &Value, password: &str) -> Value {
     args.push(username.to_string());
 
     // Create the user
-    let result = sudo_action(password, &args).await;
+    let result = sudo_action(user, password, &args).await;
     if result.get("error").is_some() {
         return result;
     }
 
     // Set password if provided
     if !new_password.is_empty() {
-        let pw_result = set_password_internal(username, new_password, force_change, password).await;
+        let pw_result =
+            set_password_internal(username, new_password, force_change, user, password).await;
         if pw_result.get("error").is_some() {
             return pw_result;
         }
@@ -541,7 +541,7 @@ async fn create_user(data: &Value, password: &str) -> Value {
 //  Modify user
 // ──────────────────────────────────────────────────────────────
 
-async fn modify_user(data: &Value, password: &str) -> Value {
+async fn modify_user(data: &Value, user: &str, password: &str) -> Value {
     let username = data.get("username").and_then(|v| v.as_str()).unwrap_or("");
 
     if !is_valid_username(username) {
@@ -609,14 +609,14 @@ async fn modify_user(data: &Value, password: &str) -> Value {
     args.push("--".into());
     args.push(username.to_string());
 
-    sudo_action(password, &args).await
+    sudo_action(user, password, &args).await
 }
 
 // ──────────────────────────────────────────────────────────────
 //  Delete user
 // ──────────────────────────────────────────────────────────────
 
-async fn delete_user(username: &str, remove_home: bool, password: &str) -> Value {
+async fn delete_user(username: &str, remove_home: bool, user: &str, password: &str) -> Value {
     if !is_valid_username(username) {
         return json!({ "error": "Invalid username" });
     }
@@ -633,60 +633,67 @@ async fn delete_user(username: &str, remove_home: bool, password: &str) -> Value
     args.push("--".into());
     args.push(username.to_string());
 
-    sudo_action(password, &args).await
+    sudo_action(user, password, &args).await
 }
 
 // ──────────────────────────────────────────────────────────────
 //  Lock / Unlock user
 // ──────────────────────────────────────────────────────────────
 
-async fn lock_user(username: &str, password: &str) -> Value {
+async fn lock_user(username: &str, user: &str, password: &str) -> Value {
     if !is_valid_username(username) {
         return json!({ "error": "Invalid username" });
     }
     if username == "root" {
         return json!({ "error": "Cannot lock root account" });
     }
-    sudo_action(password, &["usermod", "-L", "--", username]).await
+    sudo_action(user, password, &["usermod", "-L", "--", username]).await
 }
 
-async fn unlock_user(username: &str, password: &str) -> Value {
+async fn unlock_user(username: &str, user: &str, password: &str) -> Value {
     if !is_valid_username(username) {
         return json!({ "error": "Invalid username" });
     }
-    sudo_action(password, &["usermod", "-U", "--", username]).await
+    sudo_action(user, password, &["usermod", "-U", "--", username]).await
 }
 
 // ──────────────────────────────────────────────────────────────
 //  Set password
 // ──────────────────────────────────────────────────────────────
 
-async fn set_password(username: &str, new_pw: &str, force_change: bool, sudo_pw: &str) -> Value {
+async fn set_password(
+    username: &str,
+    new_pw: &str,
+    force_change: bool,
+    user: &str,
+    sudo_pw: &str,
+) -> Value {
     if !is_valid_username(username) {
         return json!({ "error": "Invalid username" });
     }
     if new_pw.is_empty() {
         return json!({ "error": "New password cannot be empty" });
     }
-    set_password_internal(username, new_pw, force_change, sudo_pw).await
+    set_password_internal(username, new_pw, force_change, user, sudo_pw).await
 }
 
 async fn set_password_internal(
     username: &str,
     new_pw: &str,
     force_change: bool,
+    user: &str,
     sudo_pw: &str,
 ) -> Value {
     // Use chpasswd via stdin: "username:password\n"
     let input = format!("{username}:{new_pw}\n");
-    let result = sudo_stdin_write(sudo_pw, &["chpasswd"], &input).await;
+    let result = sudo_stdin_write_as_user(user, sudo_pw, &["chpasswd"], &input).await;
     if result.get("error").is_some() {
         return result;
     }
 
     // Force password change on first login if requested
     if force_change {
-        let chage_result = sudo_action(sudo_pw, &["chage", "-d", "0", "--", username]).await;
+        let chage_result = sudo_action(user, sudo_pw, &["chage", "-d", "0", "--", username]).await;
         if chage_result.get("error").is_some() {
             return chage_result;
         }
@@ -699,7 +706,7 @@ async fn set_password_internal(
 //  Group management
 // ──────────────────────────────────────────────────────────────
 
-async fn create_group(name: &str, gid: Option<u32>, password: &str) -> Value {
+async fn create_group(name: &str, gid: Option<u32>, user: &str, password: &str) -> Value {
     if !is_valid_groupname(name) {
         return json!({ "error": "Invalid group name. Must be 1-32 chars, start with lowercase letter or _, contain only lowercase letters, digits, hyphens, underscores." });
     }
@@ -710,10 +717,10 @@ async fn create_group(name: &str, gid: Option<u32>, password: &str) -> Value {
     }
     args.push("--".into());
     args.push(name.to_string());
-    sudo_action(password, &args).await
+    sudo_action(user, password, &args).await
 }
 
-async fn delete_group(name: &str, password: &str) -> Value {
+async fn delete_group(name: &str, user: &str, password: &str) -> Value {
     if !is_valid_groupname(name) {
         return json!({ "error": "Invalid group name" });
     }
@@ -721,7 +728,7 @@ async fn delete_group(name: &str, password: &str) -> Value {
     if matches!(name, "root" | "wheel" | "sudo" | "adm") {
         return json!({ "error": format!("Cannot delete system group: {name}") });
     }
-    sudo_action(password, &["groupdel", "--", name]).await
+    sudo_action(user, password, &["groupdel", "--", name]).await
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -788,93 +795,10 @@ fn is_valid_gecos(gecos: &str) -> bool {
 //  Helpers
 // ──────────────────────────────────────────────────────────────
 
-async fn sudo_action(password: &str, args: &[impl AsRef<str>]) -> Value {
-    let str_args: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
-
-    // When running as root, skip sudo entirely — avoid stdin password interference
-    let am_root = unsafe { libc::geteuid() } == 0;
-
-    if !am_root && password.is_empty() {
-        return json!({ "error": "password required" });
-    }
-
-    let (cmd, cmd_args) = if am_root {
-        // Running as root: call the command directly, no sudo needed
-        let first = str_args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = str_args.iter().skip(1).copied().collect();
-        (first.to_string(), rest)
-    } else {
-        // Running as normal user: use sudo -S
-        let mut sa = vec!["-S"];
-        sa.extend_from_slice(&str_args);
-        ("sudo".to_string(), sa)
-    };
-
-    if am_root {
-        // Running as root: no stdin needed, use null
-        let out = tokio::process::Command::new(&cmd)
-            .args(&cmd_args)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .await;
-
-        match out {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                json!({ "ok": true, "output": stdout })
-            }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                let msg = if stderr.is_empty() {
-                    format!("command failed (exit {})", out.status.code().unwrap_or(-1))
-                } else {
-                    stderr
-                };
-                json!({ "error": msg })
-            }
-            Err(e) => json!({ "error": e.to_string() }),
-        }
-    } else {
-        // Running as non-root: pipe password to sudo -S via stdin
-        let child = tokio::process::Command::new(&cmd)
-            .args(&cmd_args)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
-
-        let mut child = match child {
-            Ok(c) => c,
-            Err(e) => return json!({ "error": e.to_string() }),
-        };
-
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-            drop(stdin);
-        }
-
-        match child.wait_with_output().await {
-            Ok(out) if out.status.success() => {
-                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-                json!({ "ok": true, "output": stdout })
-            }
-            Ok(out) => {
-                let stderr = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                let clean = stderr
-                    .lines()
-                    .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                let msg = if clean.is_empty() {
-                    "command failed".to_string()
-                } else {
-                    clean
-                };
-                json!({ "error": msg })
-            }
-            Err(e) => json!({ "error": e.to_string() }),
-        }
-    }
+/// Run a privileged command AS THE USER via sudo, so the host's rules (local
+/// sudoers or FreeIPA sudo via SSSD) decide what is permitted. Replaces the old
+/// root-bypass duplicate of util::sudo_action.
+async fn sudo_action(user: &str, password: &str, args: &[impl AsRef<str>]) -> Value {
+    let refs: Vec<&str> = args.iter().map(|a| a.as_ref()).collect();
+    sudo_as_user(user, password, &refs).await
 }
