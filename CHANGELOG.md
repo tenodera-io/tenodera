@@ -9,6 +9,8 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.1.8] - 2026-07-15
+
 ### Security
 - **Privileged operations are now authorized by the managed host.** Every
   state-changing operation runs *as the logged-in user*: the agent drops to their
@@ -108,7 +110,8 @@ Initial public release.
 - Signed `.deb`/`.rpm` packages (amd64 + arm64), SHA256SUMS + minisign signature.
 - `THREAT_MODEL.md` and a documented security model.
 
-[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.1.7...HEAD
+[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.1.8...HEAD
+[0.1.8]: https://github.com/tenodera-io/tenodera/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/tenodera-io/tenodera/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/tenodera-io/tenodera/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/tenodera-io/tenodera/compare/v0.1.4...v0.1.5
