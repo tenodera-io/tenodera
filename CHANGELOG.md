@@ -9,6 +9,28 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-16
+
+### Added
+- Sidebar sub-navigation: pages that have sub-tabs (Services, Containers,
+  Networking, Packages, Users, DNS, Certificates, Management) now expand their
+  sub-views directly in the sidebar. The active sub-view is reflected in the URL
+  (`?tab=…`), so views are linkable and survive a page refresh.
+- The top bar now shows the host's IP address and labels the panel host as
+  "Panel" (versus "remote" for managed hosts).
+- Responsive layout: on narrow screens the sidebar collapses into a toggleable
+  drawer.
+
+### Changed
+- Reworked the UI with a wider sidebar, a consistent SVG icon set, hover/active
+  states, and a distinct accent for the Admin section.
+- Sub-tabs across all pages now use a unified segmented-control component instead
+  of the previous underline tabs.
+- Standardized page headers (matching icon + title, consistent spacing) on every
+  page.
+- Enlarged the top bar and the session/help menus for readability.
+- All new UI honours the active theme (Catppuccin / Tokyo Night, light and dark).
+
 ## [0.1.9] - 2026-07-16
 
 ### Fixed
@@ -119,7 +141,8 @@ Initial public release.
 - Signed `.deb`/`.rpm` packages (amd64 + arm64), SHA256SUMS + minisign signature.
 - `THREAT_MODEL.md` and a documented security model.
 
-[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.1.9...HEAD
+[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/tenodera-io/tenodera/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/tenodera-io/tenodera/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/tenodera-io/tenodera/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/tenodera-io/tenodera/compare/v0.1.6...v0.1.7

@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { type Message } from '../api/transport.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -68,7 +71,7 @@ function applySorting(list: Unit[], col: SortCol, dir: SortDir): Unit[] {
 export function Services() {
   const { request, openChannel } = useTransport();
   const su = useSuperuser();
-  const [activeTab, setActiveTab] = useState<Tab>('services');
+  const [activeTab, setActiveTab] = useTabParam<Tab>(['services', 'timers'], 'services');
   const [units, setUnits] = useState<Unit[]>([]);
   const [filter, setFilter] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -192,23 +195,15 @@ export function Services() {
 
   return (
     <div>
-      <h2>Services</h2>
+      <PageHeader icon="services" title="Services" />
 
       {/* Tab bar */}
-      <div style={styles.tabBar}>
-        <button
-          style={activeTab === 'services' ? { ...styles.tab, ...styles.tabActive } : styles.tab}
-          onClick={() => setActiveTab('services')}
-        >
-          Services
-        </button>
-        <button
-          style={activeTab === 'timers' ? { ...styles.tab, ...styles.tabActive } : styles.tab}
-          onClick={() => setActiveTab('timers')}
-        >
-          Timers
-        </button>
-      </div>
+      <Tabs
+        tabs={[{ id: 'services', label: 'Services' }, { id: 'timers', label: 'Timers' }]}
+        active={activeTab}
+        onChange={(t) => setActiveTab(t as Tab)}
+        style={{ marginBottom: '1rem' }}
+      />
 
       {activeTab === 'timers' ? (
         <TimersTab su={su} />

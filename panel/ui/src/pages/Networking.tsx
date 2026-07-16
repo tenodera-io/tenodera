@@ -1,6 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -127,11 +130,7 @@ const tooltipItemStyle: React.CSSProperties = { color: 'var(--text-1)' };
 export function Networking() {
   const { request, openChannel } = useTransport();
   const su = useSuperuser();
-  const [tab, setTab] = useState<Tab>(() => {
-    const saved = sessionStorage.getItem('net_tab');
-    return (saved === 'firewall' || saved === 'interfaces' || saved === 'logs') ? saved : 'overview';
-  });
-  const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('net_tab', t); };
+  const [tab, changeTab] = useTabParam<Tab>(['overview', 'firewall', 'interfaces', 'logs'], 'overview');
 
   /* ----- polling interval ----- */
   const [intervalMs, setIntervalMs] = useState<number>(() => {
@@ -482,34 +481,32 @@ export function Networking() {
 
   return (
     <div>
-      <div style={S.headerRow}>
-        <h2 style={{ margin: 0 }}>Networking</h2>
-        <div style={S.intervalBar}>
-          <span style={S.intervalLabel}>Refresh</span>
-          <select
-            value={intervalMs}
-            onChange={e => changeInterval(Number(e.target.value))}
-            style={S.intervalSelect}
-          >
-            {INTERVAL_OPTIONS.map(opt => (
-              <option key={opt.ms} value={opt.ms}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <PageHeader
+        icon="networking"
+        title="Networking"
+        actions={
+          <div style={S.intervalBar}>
+            <span style={S.intervalLabel}>Refresh</span>
+            <select
+              value={intervalMs}
+              onChange={e => changeInterval(Number(e.target.value))}
+              style={S.intervalSelect}
+            >
+              {INTERVAL_OPTIONS.map(opt => (
+                <option key={opt.ms} value={opt.ms}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        }
+      />
 
       {/* ── Tab bar ── */}
-      <div style={S.tabBar}>
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => changeTab(t.id)}
-            style={{ ...S.tabBtn, ...(tab === t.id ? S.tabBtnActive : {}) }}
-          >
-            <span style={{ marginRight: 6 }}>{t.icon}</span>{t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={TABS.map(t => ({ id: t.id, label: t.label }))}
+        active={tab}
+        onChange={(t) => changeTab(t as Tab)}
+        style={{ marginBottom: '1rem' }}
+      />
 
       {/* ── Error bar ── */}
       {actionError && (

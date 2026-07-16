@@ -1,7 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 import type { Message } from '../api/transport.ts';
+import { Tabs } from '../components/Tabs.tsx';
 
 /* ── types ─────────────────────────────────────────────── */
 
@@ -276,7 +278,7 @@ export function LogFiles() {
 
   return (
     <div style={S.container}>
-      <h2 style={{ margin: '0 0 1rem 0' }}>Log Files (/var/log)</h2>
+      <PageHeader icon="logFiles" title="Log Files" />
 
       <div style={S.layout}>
         {/* ── Left: file list ──────────────────────────── */}
@@ -323,20 +325,15 @@ export function LogFiles() {
               <div style={S.selectedPath}>{selectedFile}</div>
 
               {/* Mode tabs */}
-              <div style={S.tabs}>
-                <button
-                  onClick={() => setViewMode('tail')}
-                  style={viewMode === 'tail' ? S.tabActive : S.tab}
-                >
-                  Tail
-                </button>
-                <button
-                  onClick={() => setViewMode('search')}
-                  style={viewMode === 'search' ? S.tabActive : S.tab}
-                >
-                  Search
-                </button>
-              </div>
+              <Tabs
+                tabs={[
+                  { id: 'tail', label: 'Tail' },
+                  { id: 'search', label: 'Search' },
+                ]}
+                active={viewMode}
+                onChange={(t) => setViewMode(t as 'tail' | 'search')}
+                style={{ marginBottom: '1rem' }}
+              />
 
               {/* ── Tail controls ───────────────────────── */}
               {viewMode === 'tail' && (

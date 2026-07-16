@@ -1,31 +1,31 @@
 import { useEffect, useState, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
+
+type CertTab = 'certs' | 'trust' | 'letsencrypt' | 'selfsigned';
 
 export function Certificates() {
   const { request } = useTransport();
   const su = useSuperuser();
-  const [tab, setTab] = useState<'certs' | 'trust' | 'letsencrypt' | 'selfsigned'>('certs');
+  const [tab, setTab] = useTabParam<CertTab>(['certs', 'trust', 'letsencrypt', 'selfsigned'], 'certs');
 
   return (
     <div style={S.page}>
-      <h2 style={S.title}>Certificates</h2>
-      <div style={S.tabBar}>
-        {([
-          ['certs',       'Certificates'],
-          ['trust',       'Trust Store'],
-          ['letsencrypt', "Let's Encrypt"],
-          ['selfsigned',  'Self-Signed'],
-        ] as [typeof tab, string][]).map(([id, label]) => (
-          <button
-            key={id}
-            style={tab === id ? { ...S.tab, ...S.tabActive } : S.tab}
-            onClick={() => setTab(id)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <PageHeader icon="certificates" title="Certificates" />
+      <Tabs
+        tabs={[
+          { id: 'certs', label: 'Certificates' },
+          { id: 'trust', label: 'Trust Store' },
+          { id: 'letsencrypt', label: "Let's Encrypt" },
+          { id: 'selfsigned', label: 'Self-Signed' },
+        ]}
+        active={tab}
+        onChange={(t) => setTab(t as CertTab)}
+        style={{ marginBottom: '1.5rem' }}
+      />
 
       {tab === 'certs'        && <CertsTab su={su} request={request} />}
       {tab === 'trust'        && <TrustStoreTab su={su} request={request} />}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useContext } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { RoleContext } from '../contexts/RoleContext.ts';
@@ -114,12 +115,16 @@ export function Cron() {
 
   return (
     <div>
-      <div style={S.header}>
-        <h2 style={S.title}>Cron Jobs</h2>
-        {!loading && <span style={S.subtitle}>{totalJobs} job{totalJobs !== 1 ? 's' : ''} across {sources.length} source{sources.length !== 1 ? 's' : ''}</span>}
-        <div style={{ flex: 1 }} />
-        <button style={S.refreshBtn} onClick={load} title="Refresh">&#x21BB;</button>
-      </div>
+      <PageHeader
+        icon="cron"
+        title="Cron Jobs"
+        actions={
+          <>
+            {!loading && <span style={S.subtitle}>{totalJobs} job{totalJobs !== 1 ? 's' : ''} across {sources.length} source{sources.length !== 1 ? 's' : ''}</span>}
+            <button style={S.refreshBtn} onClick={load} title="Refresh">&#x21BB;</button>
+          </>
+        }
+      />
 
       {loading && <div style={S.msg}>Loading...</div>}
       {error && <div style={{ ...S.msg, color: 'var(--c-red)' }}>{error}</div>}

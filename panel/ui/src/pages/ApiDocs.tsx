@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
+import { Tabs } from '../components/Tabs.tsx';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -412,20 +414,16 @@ export function ApiDocs() {
 
   return (
     <div style={S.page}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
-        <h2 style={S.title}>API Reference</h2>
-        <div style={{ display: 'flex', gap: '0.35rem' }}>
-          {(['reference', 'recipes'] as const).map(t => (
-            <button
-              key={t}
-              style={{ ...S.tabBtn, ...(activeTab === t ? S.tabActive : {}) }}
-              onClick={() => setActiveTab(t)}
-            >
-              {t === 'reference' ? 'Endpoints' : 'Recipes'}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PageHeader icon="api" title="API Reference" />
+      <Tabs
+        tabs={[
+          { id: 'reference', label: 'Endpoints' },
+          { id: 'recipes', label: 'Recipes' },
+        ]}
+        active={activeTab}
+        onChange={(t) => setActiveTab(t as 'reference' | 'recipes')}
+        style={{ marginBottom: '1.25rem' }}
+      />
 
       {activeTab === 'reference' && (
         <>

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 
 /* ── types ─────────────────────────────────────────────── */
@@ -105,12 +106,11 @@ export function Kdump() {
 
   return (
     <div>
-      <div style={S.header}>
-        <h2 style={{ margin: 0 }}>Kernel Dump (kdump)</h2>
-        <button onClick={fetchInfo} style={S.btn}>
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        icon="kdump"
+        title="Kernel Dump"
+        actions={<button onClick={fetchInfo} style={S.btn}>Refresh</button>}
+      />
 
       {/* Status overview */}
       <div style={S.card}>

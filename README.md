@@ -191,20 +191,47 @@ For production deployments, install directly on the host using the installer abo
 ### Dashboard
 ![Dashboard](src/dashboard.webp)
 
-### Terminal
-![Terminal](src/term.webp)
-
 ### Services
 ![Services](src/services.webp)
 
+### Containers
+![Containers](src/containers.webp)
+
+### Storage
+![Storage](src/storage.webp)
+
 ### Networking
-![Networking](src/net_overview.webp)
+![Networking](src/networking.webp)
 
 ### Packages
 ![Packages](src/packages.webp)
 
 ### Users
 ![Users](src/users.webp)
+
+### Cron Jobs
+![Cron Jobs](src/cron.webp)
+
+### DNS
+![DNS](src/dns.webp)
+
+### Certificates
+![Certificates](src/certificates.webp)
+
+### Journal Logs
+![Journal Logs](src/logs.webp)
+
+### Log Files
+![Log Files](src/log_files.webp)
+
+### Files
+![Files](src/files.webp)
+
+### Terminal
+![Terminal](src/terminal.webp)
+
+### Management
+![Management](src/management.webp)
 
 </details>
 

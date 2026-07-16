@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 import type { Message } from '../api/transport.ts';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
 
 /* ── types ─────────────────────────────────────────────── */
 
@@ -54,11 +57,8 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 export function Packages() {
   const { openChannel } = useTransport();
   const su = useSuperuser();
-  const [tab, setTab] = useState<Tab>(() => {
-    const saved = sessionStorage.getItem('pkg_tab');
-    return (saved === 'search' || saved === 'updates' || saved === 'repos') ? saved : 'installed';
-  });
-  const changeTab = (t: Tab) => { if (updating) return; setTab(t); sessionStorage.setItem('pkg_tab', t); };
+  const [tab, setTabParam] = useTabParam<Tab>(['installed', 'search', 'updates', 'repos'], 'installed');
+  const changeTab = (t: Tab) => { if (updating) return; setTabParam(t); };
   const [backend, setBackend] = useState('');
   const [distroName, setDistroName] = useState('');
   const [loading, setLoading] = useState(false);
@@ -344,33 +344,33 @@ export function Packages() {
   return (
     <div style={S.page}>
       {/* Header */}
-      <div style={S.header}>
-        <h2 style={S.title}>📦 Packages</h2>
-        <div style={S.headerInfo}>
-          <span style={S.badge}>{backend}</span>
-          {distroName && <span style={S.distro}>{distroName}</span>}
-        </div>
-      </div>
+      <PageHeader
+        icon="packages"
+        title="Packages"
+        actions={
+          <div style={S.headerInfo}>
+            <span style={S.badge}>{backend}</span>
+            {distroName && <span style={S.distro}>{distroName}</span>}
+          </div>
+        }
+      />
 
       {/* Messages */}
       {actionMsg && <div style={S.successMsg}>{actionMsg}</div>}
       {actionError && <div style={S.errorMsg}>{actionError}</div>}
 
       {/* Tabs */}
-      <div style={S.tabs}>
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => changeTab(t.id)}
-            style={tab === t.id ? { ...S.tab, ...S.tabActive } : updating ? { ...S.tab, opacity: 0.5, cursor: 'not-allowed' } : S.tab}
-          >
-            {t.icon} {t.label}
-            {t.id === 'updates' && updateCount > 0 && (
-              <span style={S.updateBadge}>{updateCount}</span>
-            )}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={TABS.map(t => ({
+          id: t.id,
+          label: t.id === 'updates' && updateCount > 0
+            ? (<>{t.label}<span style={S.updateBadge}>{updateCount}</span></>)
+            : t.label,
+        }))}
+        active={tab}
+        onChange={(t) => changeTab(t as Tab)}
+        style={{ marginBottom: '1rem' }}
+      />
 
       {/* Content */}
       <div style={S.content}>

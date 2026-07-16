@@ -1,4 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { type Message } from '../api/transport.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -141,7 +142,7 @@ export function Terminal({ user, hostname }: TerminalProps) {
 
   return (
     <div style={S.page}>
-      <h2 style={S.title}>Terminal</h2>
+      <PageHeader icon="terminal" title="Terminal" />
       <div style={copied ? { ...S.hint, ...S.hintCopied } : S.hint}>
         {copied ? 'Copied to clipboard' : 'Ctrl+Shift+C is reserved by the browser \u2014 text is copied automatically when selected'}
       </div>

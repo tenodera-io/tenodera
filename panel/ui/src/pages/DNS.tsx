@@ -1,6 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -21,7 +24,7 @@ const QTYPES = ['A', 'AAAA', 'MX', 'NS', 'TXT', 'CNAME', 'PTR', 'SOA', 'SRV'];
 export function DNS() {
   const { request } = useTransport();
   const su = useSuperuser();
-  const [activeTab, setActiveTab] = useState<DnsTab>('resolver');
+  const [activeTab, setActiveTab] = useTabParam<DnsTab>(['resolver', 'hosts', 'lookup', 'resolved'], 'resolver');
   const [info, setInfo] = useState<DnsInfo | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -41,19 +44,19 @@ export function DNS() {
 
   return (
     <div>
-      <h2>DNS</h2>
+      <PageHeader icon="dns" title="DNS" />
 
-      <div style={S.tabBar}>
-        {(['resolver', 'hosts', 'lookup', 'resolved'] as DnsTab[]).map((t) => (
-          <button
-            key={t}
-            style={activeTab === t ? { ...S.tab, ...S.tabActive } : S.tab}
-            onClick={() => setActiveTab(t)}
-          >
-            {t === 'resolver' ? 'Resolver' : t === 'hosts' ? '/etc/hosts' : t === 'lookup' ? 'Lookup' : 'systemd-resolved'}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={[
+          { id: 'resolver', label: 'Resolver' },
+          { id: 'hosts', label: '/etc/hosts' },
+          { id: 'lookup', label: 'Lookup' },
+          { id: 'resolved', label: 'systemd-resolved' },
+        ]}
+        active={activeTab}
+        onChange={(t) => setActiveTab(t as DnsTab)}
+        style={{ marginBottom: '1.25rem' }}
+      />
 
       {loading && !info ? (
         <p style={S.muted}>Loading…</p>

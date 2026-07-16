@@ -1,7 +1,11 @@
 import { useEffect, useState, useCallback, useContext, useRef } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { request as rawRequest } from '../api/transport.ts';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
 import { useToast } from '../contexts/ToastContext.tsx';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
+import { preferredLocalIp, type IfaceLike } from '../api/primaryIp.ts';
 import type { HostEntry, UserExistsMap } from '../hooks/useHosts.ts';
 import { PendingTab, TokensTab } from './Hosts.tsx';
 import React from 'react';
@@ -31,8 +35,9 @@ type ManagementTab = 'hosts' | 'pending' | 'tokens';
 
 export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts, userExistsMap }: ManagementProps) {
   const su = useContext(SuperuserContext);
-  const [tab, setTab] = useState<ManagementTab>('hosts');
+  const [tab, setTab] = useTabParam<ManagementTab>(['hosts', 'pending', 'tokens'], 'hosts');
   const [pendingCount, setPendingCount] = useState(0);
+  const [localIp, setLocalIp] = useState<string>(() => preferredLocalIp());
   const [results, setResults] = useState<HostWithConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -72,6 +77,14 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts, use
 
   // Initial fetch on mount (fetchAll is stable so this runs exactly once).
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Panel's own primary IP (for the local host card, instead of 127.0.0.1).
+  useEffect(() => {
+    rawRequest('network.stats').then((r) => {
+      const info = r[0] as { interfaces?: IfaceLike[] } | undefined;
+      setLocalIp(preferredLocalIp(info?.interfaces));
+    }).catch(() => { /* best-effort */ });
+  }, []);
 
   // Re-fetch only when the set of *online* hosts actually changes —
   // not on every 8s poll. Skips the first run to avoid double-fetch on mount.
@@ -163,6 +176,7 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts, use
             isActive={activeHost?.id === item.host.id}
             isSelected={selectedId === item.host.id}
             userExists={userExistsMap[item.host.id]}
+            localIp={localIp}
             onSelect={() => setSelectedId(id => id === item.host.id ? null : item.host.id)}
             onSwitch={() => onSwitchHost(item.host)}
             onRemove={() => handleRemove(item.host)}
@@ -178,28 +192,26 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts, use
 
   return (
     <div style={S.page}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-        <h2 style={S.title}>Management</h2>
-        <div style={{ display: 'flex', gap: '0.35rem' }}>
-          {(['hosts', 'pending', 'tokens'] as ManagementTab[]).map(t => (
-            <button
-              key={t}
-              style={{ ...S.tabBtn, ...(tab === t ? S.tabActive : {}) }}
-              onClick={() => setTab(t)}
-            >
-              {t === 'hosts' ? 'Hosts' : t === 'pending'
-                ? `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}`
-                : 'Tokens'}
-            </button>
-          ))}
-        </div>
-        {tab === 'hosts' && (
+      <PageHeader
+        icon="management"
+        title="Management"
+        actions={tab === 'hosts' && (
           <>
             <button style={S.btn} onClick={fetchAll} disabled={loading}>↺ Refresh</button>
             {loading && <span style={S.muted}>Loading…</span>}
           </>
         )}
-      </div>
+      />
+      <Tabs
+        tabs={[
+          { id: 'hosts', label: 'Hosts' },
+          { id: 'pending', label: `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}` },
+          { id: 'tokens', label: 'Tokens' },
+        ]}
+        active={tab}
+        onChange={(t) => setTab(t as ManagementTab)}
+        style={{ marginBottom: '1rem' }}
+      />
 
       {tab === 'pending' && (
         <PendingTab onCountChange={setPendingCount} onChange={onReloadHosts} />
@@ -260,11 +272,12 @@ function formatDate(iso: string): string {
 
 type CardAction = 'remove' | 'restart' | 'role' | null;
 
-function HostCard({ item, isActive, isSelected, userExists, onSelect, onSwitch, onRemove, onRoleChange, onRestart }: {
+function HostCard({ item, isActive, isSelected, userExists, localIp, onSelect, onSwitch, onRemove, onRoleChange, onRestart }: {
   item: HostWithConfig;
   isActive: boolean;
   isSelected: boolean;
   userExists: boolean | null | undefined;
+  localIp: string;
   onSelect: () => void;
   onSwitch: () => void;
   onRemove: () => Promise<void>;
@@ -373,7 +386,7 @@ function HostCard({ item, isActive, isSelected, userExists, onSelect, onSwitch, 
         {host.remote_ip ? (
           <InfoRow label="IP" value={host.remote_ip} />
         ) : host.is_local ? (
-          <InfoRow label="IP" value="127.0.0.1" />
+          <InfoRow label="IP" value={localIp || '127.0.0.1'} />
         ) : null}
         <InfoRow label="Added" value={formatDate(host.added_at)} />
         {config?.uptime_secs !== undefined && config.uptime_secs > 0 && (

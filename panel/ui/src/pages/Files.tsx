@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 import React from 'react';
@@ -336,7 +337,7 @@ export function Files({ user }: FilesProps) {
 
   return (
     <div>
-      <h2 style={{ marginTop: 0, marginBottom: '1rem' }}>Files</h2>
+      <PageHeader icon="files" title="Files" />
 
       {/* Path bar */}
       <div style={S.pathBar}>
