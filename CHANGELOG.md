@@ -9,6 +9,8 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.1.9] - 2026-07-16
+
 ### Fixed
 - Packaging: the panel pinned the agent to an exact version
   (`tenodera-agent (= <version>)` / `Requires: tenodera-agent = %{version}`), so
@@ -117,7 +119,8 @@ Initial public release.
 - Signed `.deb`/`.rpm` packages (amd64 + arm64), SHA256SUMS + minisign signature.
 - `THREAT_MODEL.md` and a documented security model.
 
-[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.1.8...HEAD
+[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.1.9...HEAD
+[0.1.9]: https://github.com/tenodera-io/tenodera/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/tenodera-io/tenodera/compare/v0.1.7...v0.1.8
 [0.1.7]: https://github.com/tenodera-io/tenodera/compare/v0.1.6...v0.1.7
 [0.1.6]: https://github.com/tenodera-io/tenodera/compare/v0.1.5...v0.1.6
