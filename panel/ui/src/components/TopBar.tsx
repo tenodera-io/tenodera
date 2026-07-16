@@ -10,8 +10,10 @@ interface Props {
   connState: ConnectionState;
   suActive: boolean;
   user: string;
+  localIp: string;
   onSuperuserClick: () => void;
   onLogout: () => void;
+  onToggleNav: () => void;
 }
 
 interface GatewayHealth {
@@ -31,7 +33,7 @@ function fmtUptime(secs: number): string {
 
 export function TopBar({
   hostname, activeHost, remoteStatus, connState,
-  suActive, user, onSuperuserClick, onLogout,
+  suActive, user, localIp, onSuperuserClick, onLogout, onToggleNav,
 }: Props) {
   const role = useRole();
   const { theme, setTheme } = useTheme();
@@ -63,6 +65,12 @@ export function TopBar({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  const isRemote = !!activeHost && !activeHost.is_local;
+  const originLabel = isRemote ? 'remote' : 'Panel';
+  const originColor = isRemote ? 'var(--c-blue)' : 'var(--c-green)';
+  const hostGlyph = isRemote ? '🌐' : '🖥️';
+  const displayIp = isRemote ? (activeHost?.remote_ip ?? '') : localIp;
+
   const dotColor = remoteStatus === 'ok' ? 'var(--c-green)' : remoteStatus === 'error' ? 'var(--c-red)' : 'var(--text-3)';
   const connColor = connState === 'connected' ? 'var(--c-green)' : connState === 'reconnecting' ? 'var(--c-yellow)' : 'var(--c-red)';
   const connLabel = connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected';
@@ -70,7 +78,15 @@ export function TopBar({
   return (
     <header style={S.topBar}>
       <div style={S.topLeft}>
-        <span style={S.hostIcon}>{activeHost ? '🌐' : '🖥️'}</span>
+        <button className="nav-toggle" onClick={onToggleNav} aria-label="Toggle menu">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+        <span style={S.hostIcon}>{hostGlyph}</span>
+        {displayIp && <span style={S.hostIp}>{displayIp}</span>}
         <span style={S.hostName}>
           {activeHost ? activeHost.name : hostname || '…'}
         </span>
@@ -81,7 +97,7 @@ export function TopBar({
               marginLeft: '0.4rem', background: dotColor,
               boxShadow: remoteStatus !== 'unknown' ? `0 0 4px ${dotColor}` : 'none',
             }} title={remoteStatus === 'ok' ? 'Connected' : remoteStatus === 'error' ? 'Connection failed' : 'Connecting…'} />
-            <span style={{ fontSize: '0.7rem', color: 'var(--c-blue)', marginLeft: '0.3rem' }}>remote</span>
+            <span style={{ fontSize: '0.7rem', color: originColor, marginLeft: '0.3rem' }}>{originLabel}</span>
           </>
         )}
       </div>
@@ -99,7 +115,7 @@ export function TopBar({
         </button>
 
         <div ref={helpRef} style={S.dropdownWrap}>
-          <button onClick={() => { setHelpOpen(!helpOpen); setSessionOpen(false); }} style={S.topBtn}>
+          <button className="top-btn" onClick={() => { setHelpOpen(!helpOpen); setSessionOpen(false); }}>
             ❓ Help
           </button>
           {helpOpen && (
@@ -122,7 +138,7 @@ export function TopBar({
           </span>
         )}
         <div ref={sessionRef} style={S.dropdownWrap}>
-          <button onClick={() => { setSessionOpen(!sessionOpen); setHelpOpen(false); }} style={S.topBtn}>
+          <button className="top-btn" onClick={() => { setSessionOpen(!sessionOpen); setHelpOpen(false); }}>
             👤 {user}
           </button>
           {sessionOpen && (
@@ -134,15 +150,15 @@ export function TopBar({
               <Row label="Privileges" value={suActive ? 'Administrative' : 'Limited'}
                 valueStyle={{ color: suActive ? 'var(--c-green)' : 'var(--text-2)' }} />
               <hr style={S.hr} />
-              <div style={{ padding: '0.3rem 0.9rem 0.4rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Theme</span>
+              <div style={{ padding: '0.35rem 1rem 0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Theme</span>
                 <select
                   value={theme}
                   onChange={e => setTheme(e.target.value as typeof theme)}
                   style={{
                     background: 'var(--bg-input)', color: 'var(--text-1)',
                     border: '1px solid var(--border-2)', borderRadius: 4,
-                    fontSize: '0.75rem', padding: '0.2rem 0.4rem', cursor: 'pointer',
+                    fontSize: '0.82rem', padding: '0.28rem 0.5rem', cursor: 'pointer',
                     flex: 1,
                   }}
                 >
@@ -176,37 +192,42 @@ import React from 'react';
 
 const S: Record<string, React.CSSProperties> = {
   topBar: {
-    height: 40, minHeight: 40,
+    height: 50, minHeight: 50,
     background: 'var(--bg-panel)', borderBottom: '1px solid var(--border-1)',
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '0 1rem', zIndex: 100,
+    padding: '0 1.1rem', zIndex: 100,
   },
-  topLeft: { display: 'flex', alignItems: 'center', gap: '0.4rem' },
-  hostIcon: { fontSize: '0.9rem' },
-  hostName: { fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-1)' },
-  topRight: { display: 'flex', alignItems: 'center', gap: '0.4rem' },
+  topLeft: { display: 'flex', alignItems: 'center', gap: '0.5rem' },
+  hostIcon: { fontSize: '0.95rem' },
+  hostName: { fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-1)' },
+  hostIp: {
+    fontSize: '0.82rem', fontFamily: 'ui-monospace, monospace', fontWeight: 600,
+    color: 'var(--c-cyan)', letterSpacing: '0.01em',
+  },
+  topRight: { display: 'flex', alignItems: 'center', gap: '0.45rem' },
   topBtn: {
-    padding: '0.25rem 0.65rem', borderRadius: 4,
+    padding: '0.35rem 0.7rem', borderRadius: 6,
     border: '1px solid var(--border-1)', background: 'transparent',
-    color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.78rem', whiteSpace: 'nowrap',
+    color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap',
+    transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
   },
   dropdownWrap: { position: 'relative' },
   dropdown: {
     position: 'absolute', top: 'calc(100% + 6px)', right: 0,
-    background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderRadius: 8,
-    padding: '0.6rem 0', minWidth: 220, zIndex: 200,
+    background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderRadius: 9,
+    padding: '0.7rem 0', minWidth: 250, zIndex: 200,
     boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
   },
   dropdownTitle: {
-    padding: '0.3rem 0.9rem 0.5rem', fontSize: '0.8rem', fontWeight: 700,
-    color: 'var(--text-1)', borderBottom: '1px solid var(--border-1)', marginBottom: '0.3rem',
+    padding: '0.35rem 1rem 0.55rem', fontSize: '0.9rem', fontWeight: 700,
+    color: 'var(--text-1)', borderBottom: '1px solid var(--border-1)', marginBottom: '0.35rem',
   },
-  row: { display: 'flex', justifyContent: 'space-between', padding: '0.3rem 0.9rem', fontSize: '0.78rem', color: 'var(--text-1)' },
+  row: { display: 'flex', justifyContent: 'space-between', padding: '0.38rem 1rem', fontSize: '0.85rem', color: 'var(--text-1)' },
   rowLabel: { color: 'var(--text-2)' },
-  hr: { border: 'none', borderTop: '1px solid var(--border-1)', margin: '0.4rem 0' },
+  hr: { border: 'none', borderTop: '1px solid var(--border-1)', margin: '0.45rem 0' },
   logoutBtn: {
-    width: '100%', padding: '0.4rem 0.9rem', border: 'none',
+    width: '100%', padding: '0.5rem 1rem', border: 'none',
     background: 'transparent', color: 'var(--c-red)',
-    fontSize: '0.8rem', fontWeight: 600, textAlign: 'left', cursor: 'pointer',
+    fontSize: '0.9rem', fontWeight: 600, textAlign: 'left', cursor: 'pointer',
   },
 };

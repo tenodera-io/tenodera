@@ -1,7 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { type Message } from '../api/transport.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
 
 /* ── types ─────────────────────────────────────────────── */
 
@@ -202,11 +205,7 @@ export function Containers() {
   const [volumes, setVolumes] = useState<Volume[]>([]);
   const [networks, setNetworks] = useState<Network[]>([]);
   const [service, setService] = useState<ServiceStatus | null>(null);
-  const [tab, setTab] = useState<Tab>(() => {
-    const s = sessionStorage.getItem('ctr_tab');
-    return (['images', 'volumes', 'networks', 'create'] as string[]).includes(s || '') ? s as Tab : 'containers';
-  });
-  const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('ctr_tab', t); };
+  const [tab, changeTab] = useTabParam<Tab>(['containers', 'images', 'volumes', 'networks', 'create'], 'containers');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{ action: string; id?: string; label: string; extra?: Record<string, unknown> } | null>(null);
@@ -493,10 +492,10 @@ export function Containers() {
 
   /* ── render ──────────────────────────────────────────── */
 
-  if (available === null) return <div><h2>Containers</h2><p style={S.muted}>Detecting container runtime…</p></div>;
+  if (available === null) return <div><PageHeader icon="containers" title="Containers" /><p style={S.muted}>Detecting container runtime…</p></div>;
 
   if (!available) return (
-    <div><h2>Containers</h2>
+    <div><PageHeader icon="containers" title="Containers" />
       <div style={S.card}>
         <p style={{ color: 'var(--c-red)' }}>No container runtime detected.</p>
         <p style={S.muted}>Install <strong>podman</strong> or <strong>docker</strong> to manage containers.</p>
@@ -506,10 +505,11 @@ export function Containers() {
 
   return (
     <div>
-      <div style={S.header}>
-        <h2>Containers</h2>
-        <span style={S.runtimeBadge}>{runtime}</span>
-      </div>
+      <PageHeader
+        icon="containers"
+        title="Containers"
+        actions={<span style={S.runtimeBadge}>{runtime}</span>}
+      />
 
       {error && (
         <div style={S.error}>
@@ -551,11 +551,17 @@ export function Containers() {
 
       {/* Tabs */}
       <div style={S.tabs}>
-        {(['containers', 'images', 'volumes', 'networks', 'create'] as Tab[]).map(t => (
-          <button key={t} onClick={() => changeTab(t)} style={{ ...S.tab, ...(tab === t ? S.tabActive : {}) }}>
-            {t === 'create' ? '+ New Container' : t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
-        ))}
+        <Tabs
+          tabs={[
+            { id: 'containers', label: 'Containers' },
+            { id: 'images', label: 'Images' },
+            { id: 'volumes', label: 'Volumes' },
+            { id: 'networks', label: 'Networks' },
+            { id: 'create', label: '+ New Container' },
+          ]}
+          active={tab}
+          onChange={(t) => changeTab(t as Tab)}
+        />
         <div style={{ flex: 1 }} />
         {tab === 'containers' && (
           <button style={{ ...S.btn, marginRight: '0.25rem', ...(showStats ? { background: 'color-mix(in srgb, var(--c-blue) 20%, transparent)', color: 'var(--c-blue)', borderColor: 'var(--c-blue)' } : {}) }}

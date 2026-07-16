@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
@@ -282,22 +283,25 @@ export function Dashboard() {
 
   return (
     <div>
-      <div style={styles.headerRow}>
-        <h2 style={{ margin: 0 }}>Dashboard</h2>
-        <div style={styles.intervalBar}>
-          <span style={styles.intervalLabel}>Auto-refresh</span>
-          <select
-            value={intervalMs}
-            onChange={e => changeInterval(Number(e.target.value))}
-            style={styles.intervalSelect}
-          >
-            {INTERVAL_OPTIONS.map(opt => (
-              <option key={opt.ms} value={opt.ms}>{opt.label}</option>
-            ))}
-          </select>
-          <button onClick={manualRefresh} style={styles.refreshBtn}>↺</button>
-        </div>
-      </div>
+      <PageHeader
+        icon="dashboard"
+        title="Dashboard"
+        actions={
+          <div style={styles.intervalBar}>
+            <span style={styles.intervalLabel}>Auto-refresh</span>
+            <select
+              value={intervalMs}
+              onChange={e => changeInterval(Number(e.target.value))}
+              style={styles.intervalSelect}
+            >
+              {INTERVAL_OPTIONS.map(opt => (
+                <option key={opt.ms} value={opt.ms}>{opt.label}</option>
+              ))}
+            </select>
+            <button onClick={manualRefresh} style={styles.refreshBtn}>↺</button>
+          </div>
+        }
+      />
 
       {/* ── Row 1: Host + CPU donut + Memory donut ── */}
       <div className="dashboard-grid3" style={styles.grid3}>

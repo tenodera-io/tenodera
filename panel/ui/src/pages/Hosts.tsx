@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
+import { Tabs } from '../components/Tabs.tsx';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -81,23 +83,20 @@ export function Hosts({ onClose, onChange }: HostsProps) {
 
   return (
     <div>
-      <div style={S.header}>
-        <h2 style={S.title}>Hosts</h2>
-        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-          {(['enrolled', 'pending'] as Tab[]).map(t => (
-            <button
-              key={t}
-              style={{ ...S.tabBtn, ...(tab === t ? S.tabActive : {}) }}
-              onClick={() => setTab(t)}
-            >
-              {t === 'enrolled'
-                ? 'Enrolled'
-                : `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}`}
-            </button>
-          ))}
-          <button style={S.iconBtn} onClick={onClose} title="Close">&#x2715;</button>
-        </div>
-      </div>
+      <PageHeader
+        icon="monitor"
+        title="Hosts"
+        actions={<button style={S.iconBtn} onClick={onClose} title="Close">&#x2715;</button>}
+      />
+      <Tabs
+        tabs={[
+          { id: 'enrolled', label: 'Enrolled' },
+          { id: 'pending', label: `Pending${pendingCount > 0 ? ` (${pendingCount})` : ''}` },
+        ]}
+        active={tab}
+        onChange={(t) => setTab(t as Tab)}
+        style={{ marginBottom: '1rem' }}
+      />
 
       {tab === 'enrolled' && (
         <EnrolledTab onChange={onChange} />

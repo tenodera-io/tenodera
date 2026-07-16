@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -234,21 +235,24 @@ export function Storage() {
 
   return (
     <div>
-      <div style={S.headerRow}>
-        <h2 style={{ margin: 0 }}>Storage</h2>
-        <div style={S.intervalBar}>
-          <span style={S.intervalLabel}>Refresh</span>
-          <select
-            value={intervalMs}
-            onChange={e => changeInterval(Number(e.target.value))}
-            style={S.intervalSelect}
-          >
-            {INTERVAL_OPTIONS.map(opt => (
-              <option key={opt.ms} value={opt.ms}>{opt.label}</option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <PageHeader
+        icon="storage"
+        title="Storage"
+        actions={
+          <div style={S.intervalBar}>
+            <span style={S.intervalLabel}>Refresh</span>
+            <select
+              value={intervalMs}
+              onChange={e => changeInterval(Number(e.target.value))}
+              style={S.intervalSelect}
+            >
+              {INTERVAL_OPTIONS.map(opt => (
+                <option key={opt.ms} value={opt.ms}>{opt.label}</option>
+              ))}
+            </select>
+          </div>
+        }
+      />
 
       {/* ── I/O Charts ── */}
       <div style={S.chartsRow}>

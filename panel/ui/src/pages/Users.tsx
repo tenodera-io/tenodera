@@ -1,7 +1,10 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 import type { Message } from '../api/transport.ts';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
 
 /* ── types ─────────────────────────────────────────────── */
 
@@ -71,11 +74,7 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 export function Users() {
   const { openChannel } = useTransport();
   const su = useSuperuser();
-  const [tab, setTab] = useState<Tab>(() => {
-    const saved = sessionStorage.getItem('users_tab');
-    return (saved === 'groups' || saved === 'create') ? saved : 'users';
-  });
-  const changeTab = (t: Tab) => { setTab(t); sessionStorage.setItem('users_tab', t); };
+  const [tab, changeTab] = useTabParam<Tab>(['users', 'groups', 'create'], 'users');
   const [loading, setLoading] = useState(0);
   const isLoading = loading > 0;
 
@@ -493,26 +492,19 @@ export function Users() {
   return (
     <div style={S.page}>
       {/* Header */}
-      <div style={S.header}>
-        <h2 style={S.title}>👤 Users & Groups</h2>
-      </div>
+      <PageHeader icon="users" title="Users & Groups" />
 
       {/* Messages */}
       {actionMsg && <div style={S.successMsg} onClick={() => setActionMsg('')}>{actionMsg}</div>}
       {actionError && <div style={S.errorMsg} onClick={() => setActionError('')}>{actionError}</div>}
 
       {/* Tabs */}
-      <div style={S.tabs}>
-        {TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => changeTab(t.id)}
-            style={tab === t.id ? { ...S.tab, ...S.tabActive } : S.tab}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-      </div>
+      <Tabs
+        tabs={TABS.map(t => ({ id: t.id, label: t.label }))}
+        active={tab}
+        onChange={(t) => changeTab(t as Tab)}
+        style={{ marginBottom: '1rem' }}
+      />
 
       {/* Content */}
       <div style={S.content}>

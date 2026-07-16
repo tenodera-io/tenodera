@@ -7,6 +7,7 @@ import { RoleContext } from '../contexts/RoleContext.ts';
 import { ToastProvider } from '../contexts/ToastContext.tsx';
 import { ThemeProvider } from '../contexts/ThemeContext.tsx';
 import { useHosts } from '../hooks/useHosts.ts';
+import { preferredLocalIp, type IfaceLike } from '../api/primaryIp.ts';
 import { useSuperuser } from '../hooks/useSuperuser.ts';
 import { TopBar } from '../components/TopBar.tsx';
 import { Sidebar } from '../components/Sidebar.tsx';
@@ -44,7 +45,9 @@ export function Shell({ user, role, onLogout }: ShellProps) {
   const [connected, setConnected] = useState(false);
   const [connState, setConnState] = useState<ConnectionState>('disconnected');
   const [hostname, setHostname] = useState('');
+  const [localIp, setLocalIp] = useState<string>(() => preferredLocalIp());
   const [hostManageOpen, setHostManageOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const navigate = useNavigate();
 
   const { hosts, activeHost, hostStatuses, remoteStatus, userExistsMap, loadHosts, switchHost } = useHosts(connected);
@@ -54,6 +57,10 @@ export function Shell({ user, role, onLogout }: ShellProps) {
     request('system.info').then((results) => {
       const info = results[0] as { hostname?: string } | undefined;
       if (info?.hostname) setHostname(info.hostname);
+    }).catch(() => { /* best-effort */ });
+    request('network.stats').then((results) => {
+      const data = results[0] as { interfaces?: IfaceLike[] } | undefined;
+      setLocalIp(preferredLocalIp(data?.interfaces));
     }).catch(() => { /* best-effort */ });
     loadHosts();
   }, [loadHosts]);
@@ -97,7 +104,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
     <RoleContext.Provider value={role}>
     <SuperuserContext.Provider value={suCtx}>
     <ToastProvider>
-      <div style={S.wrapper}>
+      <div className="app-shell">
         <TopBar
           hostname={hostname}
           activeHost={activeHost}
@@ -105,8 +112,10 @@ export function Shell({ user, role, onLogout }: ShellProps) {
           connState={connState}
           suActive={su.suActive}
           user={user}
+          localIp={localIp}
           onSuperuserClick={su.handleSuperuserClick}
           onLogout={handleLogout}
+          onToggleNav={() => setNavOpen((v) => !v)}
         />
 
         {activeHost && userExistsMap[activeHost.id] === false && (
@@ -137,17 +146,22 @@ export function Shell({ user, role, onLogout }: ShellProps) {
           />
         )}
 
-        <div style={S.body}>
+        <div className="app-body">
+          <div
+            className={`sidebar-backdrop${navOpen ? ' show' : ''}`}
+            onClick={() => setNavOpen(false)}
+          />
           <Sidebar
             hosts={hosts}
             activeHost={activeHost}
             hostStatuses={hostStatuses}
             connState={connState}
-
+            open={navOpen}
             onSwitchHost={switchHost}
             onOpenManageHosts={() => setHostManageOpen(true)}
+            onClose={() => setNavOpen(false)}
           />
-          <main style={S.main} className="page-fade-in">
+          <main className="app-main page-fade-in">
             <HostTransportProvider value={activeHost?.id ?? null}>
               {connected && !activeHost ? (
                 <div style={S.offlineOverlay}>
@@ -220,9 +234,6 @@ export function Shell({ user, role, onLogout }: ShellProps) {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  wrapper: { display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' },
-  body: { display: 'flex', flex: 1, overflow: 'hidden' },
-  main: { flex: 1, padding: '1.5rem', overflow: 'auto' },
   lazyFallback: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-2)', fontSize: '0.9rem' },
   offlineOverlay: { display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1, height: '100%' },
   offlineBox: { textAlign: 'center', color: 'var(--text-2)', fontSize: '0.9rem' },

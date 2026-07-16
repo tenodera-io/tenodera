@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 
@@ -52,7 +53,7 @@ export function Logs() {
 
   return (
     <div>
-      <h2>Journal Logs</h2>
+      <PageHeader icon="logs" title="Journal Logs" />
       <div style={styles.controls}>
         <input
           type="text"

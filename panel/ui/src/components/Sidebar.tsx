@@ -1,6 +1,8 @@
-import { useNavigate, NavLink } from 'react-router-dom';
+import { useNavigate, NavLink, useLocation, useSearchParams } from 'react-router-dom';
 import { useContext } from 'react';
+import React from 'react';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
+import { Icon, type IconName } from './Icons.tsx';
 import type { HostEntry, HostStatus } from '../hooks/useHosts.ts';
 import type { ConnectionState } from '../api/transport.ts';
 
@@ -9,45 +11,160 @@ interface Props {
   activeHost: HostEntry | null;
   hostStatuses: Record<string, HostStatus>;
   connState: ConnectionState;
+  open: boolean;
   onSwitchHost: (host: HostEntry | null) => void;
   onOpenManageHosts: () => void;
+  onClose: () => void;
 }
 
-const NAV_SECTIONS = [
+interface NavItem { path: string; label: string; icon: IconName; }
+
+const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'System',
     items: [
-      { path: '/', label: 'Dashboard', icon: '📊' },
-      { path: '/services', label: 'Services', icon: '⚙️' },
-      { path: '/containers', label: 'Containers', icon: '🐳' },
-      { path: '/storage', label: 'Storage', icon: '💾' },
-      { path: '/networking', label: 'Networking', icon: '🌐' },
-      { path: '/packages', label: 'Packages', icon: '📦' },
-      { path: '/users', label: 'Users', icon: '👤' },
-      { path: '/cron', label: 'Cron Jobs', icon: '⏰' },
-      { path: '/dns', label: 'DNS', icon: '🌍' },
-      { path: '/certificates', label: 'Certificates', icon: '🔒' },
+      { path: '/', label: 'Dashboard', icon: 'dashboard' },
+      { path: '/services', label: 'Services', icon: 'services' },
+      { path: '/containers', label: 'Containers', icon: 'containers' },
+      { path: '/storage', label: 'Storage', icon: 'storage' },
+      { path: '/networking', label: 'Networking', icon: 'networking' },
+      { path: '/packages', label: 'Packages', icon: 'packages' },
+      { path: '/users', label: 'Users', icon: 'users' },
+      { path: '/cron', label: 'Cron Jobs', icon: 'cron' },
+      { path: '/dns', label: 'DNS', icon: 'dns' },
+      { path: '/certificates', label: 'Certificates', icon: 'certificates' },
     ],
   },
   {
     label: 'Tools',
     items: [
-      { path: '/logs', label: 'Logs', icon: '📜' },
-      { path: '/log-files', label: 'Log Files', icon: '🗒️' },
-      { path: '/files', label: 'Files', icon: '📁' },
-      { path: '/kdump', label: 'Kernel Dump', icon: '💥' },
+      { path: '/logs', label: 'Logs', icon: 'logs' },
+      { path: '/log-files', label: 'Log Files', icon: 'logFiles' },
+      { path: '/files', label: 'Files', icon: 'files' },
+      { path: '/kdump', label: 'Kernel Dump', icon: 'kdump' },
     ],
   },
 ];
 
+const ADMIN_ITEMS: NavItem[] = [
+  { path: '/terminal', label: 'Terminal', icon: 'terminal' },
+  { path: '/management', label: 'Management', icon: 'management' },
+  { path: '/api-docs', label: 'API', icon: 'api' },
+];
+
+interface SubItem { id: string; label: string; }
+
+// Sub-tabs mirrored into the sidebar. The first entry is the default tab
+// (represented by the absence of ?tab= — see useTabParam).
+const SUBNAV: Record<string, SubItem[]> = {
+  '/services': [
+    { id: 'services', label: 'Services' },
+    { id: 'timers', label: 'Timers' },
+  ],
+  '/networking': [
+    { id: 'overview', label: 'Overview' },
+    { id: 'firewall', label: 'Firewall' },
+    { id: 'interfaces', label: 'Interfaces' },
+    { id: 'logs', label: 'Logs' },
+  ],
+  '/containers': [
+    { id: 'containers', label: 'Containers' },
+    { id: 'images', label: 'Images' },
+    { id: 'volumes', label: 'Volumes' },
+    { id: 'networks', label: 'Networks' },
+    { id: 'create', label: '+ New Container' },
+  ],
+  '/packages': [
+    { id: 'installed', label: 'Installed' },
+    { id: 'search', label: 'Search' },
+    { id: 'updates', label: 'Updates' },
+    { id: 'repos', label: 'Repositories' },
+  ],
+  '/users': [
+    { id: 'users', label: 'Users' },
+    { id: 'groups', label: 'Groups' },
+    { id: 'create', label: 'Create Account' },
+  ],
+  '/dns': [
+    { id: 'resolver', label: 'Resolver' },
+    { id: 'hosts', label: '/etc/hosts' },
+    { id: 'lookup', label: 'Lookup' },
+    { id: 'resolved', label: 'systemd-resolved' },
+  ],
+  '/certificates': [
+    { id: 'certs', label: 'Certificates' },
+    { id: 'trust', label: 'Trust Store' },
+    { id: 'letsencrypt', label: "Let's Encrypt" },
+    { id: 'selfsigned', label: 'Self-Signed' },
+  ],
+  '/management': [
+    { id: 'hosts', label: 'Hosts' },
+    { id: 'pending', label: 'Pending' },
+    { id: 'tokens', label: 'Tokens' },
+  ],
+};
+
+function NavRow({
+  item, admin, onClose, currentPath, currentTab, onNavigateSub,
+}: {
+  item: NavItem;
+  admin?: boolean;
+  onClose: () => void;
+  currentPath: string;
+  currentTab: string | null;
+  onNavigateSub: (path: string, id: string, defaultId: string) => void;
+}) {
+  const subItems = SUBNAV[item.path];
+  const showSub = subItems && currentPath === item.path;
+  const activeSub = currentTab ?? subItems?.[0]?.id;
+
+  return (
+    <li>
+      <NavLink
+        to={item.path}
+        end={item.path === '/'}
+        onClick={onClose}
+        className={({ isActive }) =>
+          `nav-link${admin ? ' nav-link--admin' : ''}${isActive ? ' active' : ''}`
+        }
+      >
+        <span className="nav-icon"><Icon name={item.icon} size={18} /></span>
+        {item.label}
+      </NavLink>
+      {showSub && (
+        <ul className="nav-sub">
+          {subItems!.map((s) => (
+            <li key={s.id}>
+              <button
+                className={`nav-sublink${admin ? ' nav-sublink--admin' : ''}${activeSub === s.id ? ' active' : ''}`}
+                onClick={() => onNavigateSub(item.path, s.id, subItems![0].id)}
+              >
+                {s.label}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 export function Sidebar({
-  hosts, activeHost, hostStatuses, connState,
-  onSwitchHost, onOpenManageHosts,
+  hosts, activeHost, hostStatuses, connState, open,
+  onSwitchHost, onOpenManageHosts, onClose,
 }: Props) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+  const currentTab = searchParams.get('tab');
   const su = useContext(SuperuserContext);
   const [hostSelectorOpen, setHostSelectorOpen] = React.useState(false);
   const hostSelectorRef = React.useRef<HTMLDivElement>(null);
+
+  const handleNavigateSub = (path: string, id: string, defaultId: string) => {
+    navigate(id === defaultId ? path : `${path}?tab=${id}`);
+    onClose();
+  };
 
   React.useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -61,11 +178,15 @@ export function Sidebar({
   const connColor = connState === 'connected' ? 'var(--c-green)' : connState === 'reconnecting' ? 'var(--c-yellow)' : 'var(--c-red)';
   const connLabel = connState === 'connected' ? '● Connected' : connState === 'reconnecting' ? '◌ Reconnecting…' : '○ Disconnected';
 
-  const visibleHosts = hosts;
-
   return (
-    <nav style={S.sidebar}>
-      <div style={S.logo} onClick={() => navigate('/')} role="button" tabIndex={0}>
+    <nav className={`sidebar${open ? ' open' : ''}`}>
+      <div
+        className="sidebar-logo"
+        onClick={() => { navigate('/'); onClose(); }}
+        role="button"
+        tabIndex={0}
+        style={{ marginBottom: '0.5rem' }}
+      >
         <img src="/tenodera_icon.webp" alt="Tenodera" style={S.logoImg} />
         Tenodera
       </div>
@@ -74,17 +195,21 @@ export function Sidebar({
       {/* ── Host Selector ── */}
       <div ref={hostSelectorRef} style={S.hostSelector}>
         <button
-          style={{ ...S.hostSelectorBtn, borderColor: activeHost ? 'var(--c-blue)' : 'var(--border-1)' }}
+          className="host-selector-btn"
+          style={{ borderColor: activeHost ? 'var(--c-blue)' : 'var(--border-1)' }}
           onClick={() => setHostSelectorOpen(!hostSelectorOpen)}
         >
-          <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {activeHost ? (activeHost.is_local ? `🖥️ ${activeHost.name}` : `🌐 ${activeHost.name}`) : '🖥️ Select host…'}
+          <span style={{ display: 'inline-flex', flexShrink: 0, color: activeHost && !activeHost.is_local ? 'var(--c-blue)' : 'var(--text-2)' }}>
+            <Icon name={activeHost && !activeHost.is_local ? 'globe' : 'monitor'} size={16} />
           </span>
-          <span style={{ fontSize: '0.65rem', opacity: 0.6 }}>▼</span>
+          <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {activeHost ? activeHost.name : 'Select host…'}
+          </span>
+          <Icon name="chevronDown" size={14} style={{ opacity: 0.6 }} />
         </button>
         {hostSelectorOpen && (
           <div style={S.hostDropdown}>
-            {visibleHosts.map((h) => {
+            {hosts.map((h) => {
               const st = hostStatuses[h.id] ?? 'unknown';
               return (
                 <HostOption
@@ -100,35 +225,31 @@ export function Sidebar({
             })}
             <div style={S.divider} />
             <div
-              style={{ ...S.hostOption, color: 'var(--c-blue)', justifyContent: 'center' }}
+              className="host-option"
+              style={{ color: 'var(--c-blue)', justifyContent: 'center' }}
               onClick={() => { setHostSelectorOpen(false); onOpenManageHosts(); }}
             >
-              ⚙ Manage hosts…
+              <Icon name="settings" size={15} /> Manage hosts…
             </div>
           </div>
         )}
       </div>
 
       {/* ── Nav ── */}
-      <ul style={S.navList}>
-        {NAV_SECTIONS.map((section, si) => (
-          <li key={section.label}>
-            <div style={{ ...S.sectionDivider, ...(si === 0 ? { marginTop: 0 } : {}) }} />
-            <div style={S.sectionLabel}>{section.label}</div>
-            <ul style={S.sectionList}>
-              {section.items.map(({ path, label, icon }) => (
-                <li key={path}>
-                  <NavLink
-                    to={path} end={path === '/'}
-                    style={({ isActive }) => ({
-                      ...S.navLink,
-                      background: isActive ? 'var(--bg-surface)' : 'transparent',
-                      borderLeft: isActive ? '3px solid var(--c-green)' : '3px solid transparent',
-                    })}
-                  >
-                    <span style={S.navIcon}>{icon}</span>{label}
-                  </NavLink>
-                </li>
+      <ul className="nav-list">
+        {NAV_SECTIONS.map((section) => (
+          <li className="nav-section" key={section.label}>
+            <div className="nav-section-label">{section.label}</div>
+            <ul className="nav-section-items">
+              {section.items.map((item) => (
+                <NavRow
+                  key={item.path}
+                  item={item}
+                  onClose={onClose}
+                  currentPath={location.pathname}
+                  currentTab={currentTab}
+                  onNavigateSub={handleNavigateSub}
+                />
               ))}
             </ul>
           </li>
@@ -136,46 +257,20 @@ export function Sidebar({
 
         {/* Admin section — visible only when superuser is active */}
         {su.active && (
-          <li>
-            <div style={S.sectionDivider} />
-            <div style={S.sectionLabel}>Admin</div>
-            <ul style={S.sectionList}>
-              <li>
-                <NavLink
-                  to="/terminal"
-                  style={({ isActive }) => ({
-                    ...S.navLink,
-                    background: isActive ? 'var(--bg-surface)' : 'transparent',
-                    borderLeft: isActive ? '3px solid var(--c-purple)' : '3px solid transparent',
-                  })}
-                >
-                  <span style={S.navIcon}>🖥️</span>Terminal
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/management"
-                  style={({ isActive }) => ({
-                    ...S.navLink,
-                    background: isActive ? 'var(--bg-surface)' : 'transparent',
-                    borderLeft: isActive ? '3px solid var(--c-purple)' : '3px solid transparent',
-                  })}
-                >
-                  <span style={S.navIcon}>🗂️</span>Management
-                </NavLink>
-              </li>
-              <li>
-                <NavLink
-                  to="/api-docs"
-                  style={({ isActive }) => ({
-                    ...S.navLink,
-                    background: isActive ? 'var(--bg-surface)' : 'transparent',
-                    borderLeft: isActive ? '3px solid var(--c-purple)' : '3px solid transparent',
-                  })}
-                >
-                  <span style={S.navIcon}>📡</span>API
-                </NavLink>
-              </li>
+          <li className="nav-section">
+            <div className="nav-section-label">Admin</div>
+            <ul className="nav-section-items">
+              {ADMIN_ITEMS.map((item) => (
+                <NavRow
+                  key={item.path}
+                  item={item}
+                  admin
+                  onClose={onClose}
+                  currentPath={location.pathname}
+                  currentTab={currentTab}
+                  onNavigateSub={handleNavigateSub}
+                />
+              ))}
             </ul>
           </li>
         )}
@@ -192,9 +287,9 @@ function HostOption({
 }) {
   return (
     <div
+      className="host-option"
       style={{
-        ...S.hostOption,
-        background: isActive ? `${activeColor}22` : 'transparent',
+        background: isActive ? `color-mix(in srgb, ${activeColor} 13%, transparent)` : undefined,
         borderLeft: isActive ? `3px solid ${activeColor}` : '3px solid transparent',
       }}
       onClick={onClick}
@@ -211,54 +306,17 @@ function HostOption({
   );
 }
 
-import React from 'react';
-
 const S: Record<string, React.CSSProperties> = {
-  sidebar: {
-    width: '220px', minWidth: '220px',
-    background: 'var(--bg-panel)', padding: '1rem',
-    display: 'flex', flexDirection: 'column',
-    borderRight: '1px solid var(--border-1)', overflowY: 'auto',
-  },
-  logo: {
-    fontSize: '1.25rem', fontWeight: 700, marginBottom: '0.5rem',
-    color: 'var(--c-blue)', display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer',
-  },
   logoImg: { width: '32px', height: '32px', objectFit: 'contain' },
-  status: { fontSize: '0.75rem', color: 'var(--text-2)', marginBottom: '0.75rem' },
-  hostSelector: { position: 'relative', marginBottom: '0.75rem' },
-  hostSelectorBtn: {
-    width: '100%', display: 'flex', alignItems: 'center', gap: '0.4rem',
-    padding: '0.45rem 0.6rem', borderRadius: 6, border: '1px solid var(--border-1)',
-    background: 'var(--bg-surface)', color: 'var(--text-1)',
-    fontSize: '0.82rem', cursor: 'pointer',
-  },
+  status: { fontSize: '0.75rem', color: 'var(--text-2)', marginBottom: '0.75rem', paddingLeft: '0.35rem' },
+  hostSelector: { position: 'relative', marginBottom: '1rem' },
   hostDropdown: {
     position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0,
     background: 'var(--bg-app)', border: '1px solid var(--border-1)', borderRadius: 8,
     padding: '0.3rem 0', zIndex: 300, maxHeight: 290, overflowY: 'auto',
     boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
   },
-  hostOption: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    padding: '0.45rem 0.6rem', cursor: 'pointer',
-    fontSize: '0.82rem', color: 'var(--text-1)',
-  },
-  hostName: { fontWeight: 600, fontSize: '0.82rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  hostName: { fontWeight: 600, fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   hostAddr: { fontSize: '0.7rem', color: 'var(--text-2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
   divider: { height: 1, background: 'var(--border-1)', margin: '0.25rem 0' },
-  navList: { listStyle: 'none', flex: 1, display: 'flex', flexDirection: 'column', gap: 0 },
-  sectionDivider: { height: '1px', background: 'var(--bg-hover)', marginTop: '0.75rem', marginBottom: '0.5rem' },
-  sectionLabel: {
-    fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-2)',
-    textTransform: 'uppercase', letterSpacing: '0.08em',
-    padding: '0 0.75rem', marginBottom: '0.35rem',
-  },
-  sectionList: { listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.15rem' },
-  navLink: {
-    display: 'flex', alignItems: 'center', gap: '0.5rem',
-    padding: '0.5rem 0.75rem', borderRadius: '4px',
-    color: 'var(--text-1)', textDecoration: 'none', fontSize: '0.9rem',
-  },
-  navIcon: { fontSize: '1rem', width: '1.4rem', textAlign: 'center' },
 };

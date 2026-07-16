@@ -183,3 +183,323 @@ a {
   from { opacity: 0; transform: translateX(1rem); }
   to   { opacity: 1; transform: translateX(0); }
 }
+
+/* ════════════════════════════════════════════════════════════
+   App layout shell (responsive)
+   All colours come from theme variables so every theme works.
+   ════════════════════════════════════════════════════════════ */
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+.app-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+.app-main {
+  flex: 1;
+  padding: 1.5rem;
+  overflow: auto;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────── */
+.sidebar {
+  width: 256px;
+  min-width: 256px;
+  background: var(--bg-panel);
+  padding: 1rem 0.85rem;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border-1);
+  overflow-y: auto;
+  transition: transform 0.22s ease;
+}
+.sidebar-backdrop { display: none; }
+
+.sidebar-logo {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--c-blue);
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  cursor: pointer;
+  padding: 0.15rem 0.35rem;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+}
+.sidebar-logo:hover { background: var(--bg-surface); }
+
+.host-selector-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-1);
+  background: var(--bg-surface);
+  color: var(--text-1);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.host-selector-btn:hover { background: var(--bg-hover); border-color: var(--border-2); }
+
+.host-option {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.65rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-1);
+  transition: background 0.12s ease;
+}
+.host-option:hover { background: var(--bg-surface); }
+
+/* ── Nav sections & links ────────────────────────────────── */
+.nav-list {
+  list-style: none;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.nav-section { list-style: none; }
+.nav-section + .nav-section { margin-top: 1.1rem; }
+.nav-section-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 0 0.7rem;
+  margin-bottom: 0.45rem;
+}
+.nav-section-items {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.62rem 0.7rem;
+  border-radius: 9px;
+  color: var(--text-2);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 500;
+  position: relative;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.nav-link:hover { background: var(--bg-surface); color: var(--text-1); }
+.nav-link.active {
+  background: color-mix(in srgb, var(--c-green) 15%, transparent);
+  color: var(--text-1);
+  font-weight: 600;
+}
+.nav-link.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 55%;
+  border-radius: 0 3px 3px 0;
+  background: var(--c-green);
+}
+.nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-3);
+  transition: color 0.15s ease;
+}
+.nav-link:hover .nav-icon { color: var(--text-1); }
+.nav-link.active .nav-icon { color: var(--c-green); }
+/* Admin section uses the purple accent */
+.nav-link--admin.active { background: color-mix(in srgb, var(--c-purple) 15%, transparent); }
+.nav-link--admin.active::before { background: var(--c-purple); }
+.nav-link--admin.active .nav-icon { color: var(--c-purple); }
+
+/* ── Top bar ─────────────────────────────────────────────── */
+.top-btn {
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-1);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.top-btn:hover { background: var(--bg-surface); color: var(--text-1); border-color: var(--border-2); }
+
+.nav-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--border-1);
+  background: transparent;
+  color: var(--text-1);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.nav-toggle:hover { background: var(--bg-surface); }
+
+/* ── Standard page header ────────────────────────────────── */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0 0 1.25rem 0;
+  min-height: 2rem;
+}
+.page-header-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+.page-header-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text-1);
+}
+.page-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+/* ── Segmented-control tabs (shared <Tabs>) ──────────────── */
+.seg-tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  width: fit-content;
+  gap: 2px;
+  padding: 3px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-1);
+  border-radius: 10px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.seg-tabs::-webkit-scrollbar { display: none; }
+.seg-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.9rem;
+  border: none;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.seg-tab:hover {
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--bg-surface) 60%, transparent);
+}
+.seg-tab.active {
+  color: var(--text-1);
+  font-weight: 600;
+  background: var(--bg-surface);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+              0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.seg-tab-icon { display: inline-flex; align-items: center; }
+
+/* ── Sidebar sub-navigation (expanded under active section) ── */
+.nav-sub {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0.15rem 0 0.1rem 0;
+  padding-left: 1.75rem;
+  position: relative;
+}
+.nav-sub::before {
+  content: "";
+  position: absolute;
+  left: 1.15rem;
+  top: 0.15rem;
+  bottom: 0.35rem;
+  width: 1px;
+  background: var(--border-2);
+}
+.nav-sublink {
+  display: flex;
+  align-items: center;
+  padding: 0.34rem 0.6rem;
+  border-radius: 6px;
+  color: var(--text-3);
+  text-decoration: none;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  text-align: left;
+  width: 100%;
+  transition: background 0.13s ease, color 0.13s ease;
+}
+.nav-sublink:hover { color: var(--text-1); background: var(--bg-surface); }
+.nav-sublink.active {
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--c-green) 13%, transparent);
+  font-weight: 600;
+}
+.nav-sublink--admin.active {
+  background: color-mix(in srgb, var(--c-purple) 13%, transparent);
+}
+
+/* ── Responsive: below 768px the sidebar becomes a drawer ── */
+@media (max-width: 768px) {
+  .app-main { padding: 1rem; }
+  .sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 400;
+    transform: translateX(-100%);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+  }
+  .sidebar.open { transform: translateX(0); }
+  .sidebar-backdrop.show {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 350;
+    background: rgba(0, 0, 0, 0.5);
+  }
+  .nav-toggle { display: inline-flex; }
+}
