@@ -33,6 +33,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { path: '/cron', label: 'Cron Jobs', icon: 'cron' },
       { path: '/dns', label: 'DNS', icon: 'dns' },
       { path: '/certificates', label: 'Certificates', icon: 'certificates' },
+      { path: '/system', label: 'System', icon: 'system' },
     ],
   },
   {
@@ -61,10 +62,15 @@ const SUBNAV: Record<string, SubItem[]> = {
     { id: 'services', label: 'Services' },
     { id: 'timers', label: 'Timers' },
   ],
+  '/storage': [
+    { id: 'overview', label: 'Overview' },
+    { id: 'mounts', label: 'Mounts' },
+  ],
   '/networking': [
     { id: 'overview', label: 'Overview' },
     { id: 'firewall', label: 'Firewall' },
     { id: 'interfaces', label: 'Interfaces' },
+    { id: 'ports', label: 'Ports' },
     { id: 'logs', label: 'Logs' },
   ],
   '/containers': [
@@ -79,6 +85,7 @@ const SUBNAV: Record<string, SubItem[]> = {
     { id: 'search', label: 'Search' },
     { id: 'updates', label: 'Updates' },
     { id: 'repos', label: 'Repositories' },
+    { id: 'autoupdate', label: 'Auto-updates' },
   ],
   '/users': [
     { id: 'users', label: 'Users' },
@@ -101,6 +108,13 @@ const SUBNAV: Record<string, SubItem[]> = {
     { id: 'hosts', label: 'Hosts' },
     { id: 'pending', label: 'Pending' },
     { id: 'tokens', label: 'Tokens' },
+  ],
+  // The time-sync sub-tab is conditional per host (only when the daemon has a
+  // management tab). System.tsx redirects ?tab=timesync back to Settings and
+  // cleans the URL on hosts where it isn't available.
+  '/system': [
+    { id: 'settings', label: 'Settings' },
+    { id: 'timesync', label: 'Time sync' },
   ],
 };
 

@@ -32,7 +32,12 @@ impl ChannelHandler for PackagesHandler {
 
         if !matches!(
             action,
-            "detect" | "list_installed" | "search" | "package_info" | "list_updates"
+            "detect"
+                | "list_installed"
+                | "search"
+                | "package_info"
+                | "list_updates"
+                | "autoupdate_status"
         ) && let Some(err) = crate::util::require_admin(data)
         {
             return vec![Message::Data {
@@ -93,6 +98,25 @@ impl ChannelHandler for PackagesHandler {
                 remove_repo(user, password, repo).await
             }
             "refresh_repos" => refresh_repos(user, password).await,
+
+            // ── Automatic updates ──
+            "autoupdate_status" => autoupdate_status().await,
+            "autoupdate_set" => {
+                let r = autoupdate_set(data, user, password).await;
+                let ok = r.get("error").is_none();
+                let enabled = data
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                crate::audit::log(
+                    user,
+                    "pkg.autoupdate_set",
+                    if enabled { "enable" } else { "disable" },
+                    ok,
+                    "",
+                );
+                r
+            }
 
             _ => serde_json::json!({ "error": format!("unknown action: {action}") }),
         };
@@ -1217,4 +1241,558 @@ fn is_valid_repo_url(url: &str) -> bool {
         && !url.contains('|')
         && !url.contains('&');
     has_valid_proto && no_dangerous_chars
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Automatic updates — comprehensive management
+//  apt → unattended-upgrades ; dnf → dnf-automatic
+//  Controls: enable, apply mode (install/download), scope (all/security),
+//  schedule (systemd timer), auto-reboot (+time on apt), remove-unused (apt).
+// ──────────────────────────────────────────────────────────────
+
+use serde_json::{Value, json};
+
+const APT_AUTO_CONF: &str = "/etc/apt/apt.conf.d/20auto-upgrades";
+const APT_TENODERA_CONF: &str = "/etc/apt/apt.conf.d/51tenodera-unattended";
+const DNF_AUTO_CONF: &str = "/etc/dnf/automatic.conf";
+const APT_TIMER: &str = "apt-daily-upgrade.timer";
+const DNF_TIMER: &str = "dnf-automatic.timer";
+
+async fn autoupdate_status() -> Value {
+    match detect_backend().await {
+        PkgBackend::Apt => apt_status().await,
+        PkgBackend::Dnf => dnf_status().await,
+        b => json!({ "backend": backend_name(b), "supported": false }),
+    }
+}
+
+async fn autoupdate_set(data: &Value, user: &str, password: &str) -> Value {
+    match detect_backend().await {
+        PkgBackend::Apt => apt_set(data, user, password).await,
+        PkgBackend::Dnf => dnf_set(data, user, password).await,
+        _ => json!({ "error": "automatic updates are not supported for this package manager" }),
+    }
+}
+
+fn au_bool(d: &Value, k: &str) -> Option<bool> {
+    d.get(k).and_then(|v| v.as_bool())
+}
+fn au_str(d: &Value, k: &str) -> Option<String> {
+    d.get(k).and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
+// ── apt / unattended-upgrades ──
+
+async fn apt_status() -> Value {
+    let installed = which("unattended-upgrade").await;
+    let periodic = std::fs::read_to_string(APT_AUTO_CONF).unwrap_or_default();
+    let unattended = apt_periodic_value(&periodic, "Unattended-Upgrade").as_deref() == Some("1");
+    let download =
+        apt_periodic_value(&periodic, "Download-Upgradeable-Packages").as_deref() == Some("1");
+    let enabled = installed && (unattended || download);
+    let mode = if unattended { "install" } else { "download" };
+
+    let managed = std::fs::read_to_string(APT_TENODERA_CONF).unwrap_or_default();
+    let reboot = apt_uu_bool(&managed, "Automatic-Reboot").unwrap_or(false);
+    let reboot_time =
+        apt_uu_raw(&managed, "Automatic-Reboot-Time").unwrap_or_else(|| "02:00".into());
+    let remove_unused = apt_uu_bool(&managed, "Remove-Unused-Dependencies").unwrap_or(false);
+    // We own the origins pattern; presence of a "-updates" origin means "all".
+    let scope = if managed.contains("-updates") {
+        "all"
+    } else {
+        "security"
+    };
+
+    let (ta, te, next) = timer_state(APT_TIMER).await;
+    let schedule = timer_oncalendar(APT_TIMER).await;
+
+    json!({
+        "backend": "apt", "supported": true, "tool": "unattended-upgrades",
+        "installed": installed, "enabled": enabled,
+        "timer": APT_TIMER, "timer_active": ta, "timer_enabled": te, "next_run": next,
+        "caps": { "mode": true, "scope": true, "schedule": true, "reboot": true, "reboot_time": true, "remove_unused": true },
+        "settings": {
+            "mode": mode, "scope": scope, "schedule": schedule,
+            "reboot": reboot, "reboot_time": reboot_time, "remove_unused": remove_unused,
+        },
+    })
+}
+
+async fn apt_set(data: &Value, user: &str, password: &str) -> Value {
+    let cur = apt_status().await;
+    let cs = cur.get("settings").cloned().unwrap_or_default();
+    let gets = |k: &str, def: &str| {
+        au_str(data, k)
+            .or_else(|| cs.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| def.to_string())
+    };
+    let getb = |k: &str, def: bool| {
+        au_bool(data, k)
+            .or_else(|| cs.get(k).and_then(|v| v.as_bool()))
+            .unwrap_or(def)
+    };
+
+    let enabled = au_bool(data, "enabled").unwrap_or_else(|| {
+        cur.get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    });
+    let mode = gets("mode", "install");
+    let scope = gets("scope", "security");
+    let schedule = gets("schedule", "");
+    let reboot = getb("reboot", false);
+    let reboot_time = gets("reboot_time", "02:00");
+    let remove_unused = getb("remove_unused", false);
+
+    if mode != "install" && mode != "download" {
+        return json!({ "error": "invalid mode" });
+    }
+    if scope != "all" && scope != "security" {
+        return json!({ "error": "invalid scope" });
+    }
+    if !is_valid_hhmm(&reboot_time) {
+        return json!({ "error": "invalid reboot time (expected HH:MM)" });
+    }
+
+    if enabled && !which("unattended-upgrade").await {
+        let r = install_packages(user, password, &["unattended-upgrades".to_string()]).await;
+        if r.get("error").is_some() {
+            return r;
+        }
+    }
+
+    let periodic = build_apt_periodic(enabled, &mode);
+    let w = sudo_stdin_write_as_user(user, password, &["tee", APT_AUTO_CONF], &periodic).await;
+    if w.get("error").is_some() {
+        return w;
+    }
+    let managed = build_apt_tenodera(&scope, reboot, &reboot_time, remove_unused);
+    let w2 = sudo_stdin_write_as_user(user, password, &["tee", APT_TENODERA_CONF], &managed).await;
+    if w2.get("error").is_some() {
+        return w2;
+    }
+    if !schedule.trim().is_empty() {
+        let r = set_timer_schedule(APT_TIMER, &schedule, user, password).await;
+        if r.get("error").is_some() {
+            return r;
+        }
+    }
+    if enabled {
+        let _ = sudo_as_user(
+            user,
+            password,
+            &["systemctl", "enable", "--now", "apt-daily.timer", APT_TIMER],
+        )
+        .await;
+    }
+    json!({ "ok": true })
+}
+
+fn build_apt_periodic(enabled: bool, mode: &str) -> String {
+    let unattended = if enabled && mode == "install" {
+        "1"
+    } else {
+        "0"
+    };
+    let download = if enabled { "1" } else { "0" };
+    format!(
+        "// Managed by Tenodera\nAPT::Periodic::Update-Package-Lists \"1\";\nAPT::Periodic::Download-Upgradeable-Packages \"{download}\";\nAPT::Periodic::Unattended-Upgrade \"{unattended}\";\n"
+    )
+}
+
+/// Tenodera-managed unattended-upgrades options (origins, reboot, autoremove).
+/// Clears the distro's Allowed-Origins so our Origins-Pattern is authoritative.
+fn build_apt_tenodera(scope: &str, reboot: bool, reboot_time: &str, remove_unused: bool) -> String {
+    let mut s = String::from("// Managed by Tenodera — do not edit by hand\n");
+    s.push_str("Unattended-Upgrade::Allowed-Origins { };\n");
+    s.push_str("Unattended-Upgrade::Origins-Pattern {\n");
+    s.push_str("    \"origin=${distro_id},codename=${distro_codename}-security,label=*\";\n");
+    s.push_str("    \"origin=${distro_id}ESMApps,codename=${distro_codename}-apps-security\";\n");
+    s.push_str("    \"origin=${distro_id}ESM,codename=${distro_codename}-infra-security\";\n");
+    if scope == "all" {
+        s.push_str("    \"origin=${distro_id},codename=${distro_codename}-updates\";\n");
+        s.push_str("    \"origin=${distro_id},codename=${distro_codename}\";\n");
+    }
+    s.push_str("};\n");
+    s.push_str(&format!(
+        "Unattended-Upgrade::Automatic-Reboot \"{}\";\n",
+        if reboot { "true" } else { "false" }
+    ));
+    s.push_str(&format!(
+        "Unattended-Upgrade::Automatic-Reboot-Time \"{reboot_time}\";\n"
+    ));
+    s.push_str(&format!(
+        "Unattended-Upgrade::Remove-Unused-Dependencies \"{}\";\n",
+        if remove_unused { "true" } else { "false" }
+    ));
+    s
+}
+
+/// Read the numeric value of an `APT::Periodic::<key>` directive.
+fn apt_periodic_value(conf: &str, key: &str) -> Option<String> {
+    let needle = format!("APT::Periodic::{key}");
+    for line in conf.lines() {
+        let l = line.trim();
+        if l.starts_with("//") || l.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = l.strip_prefix(&needle) {
+            let v: String = rest.chars().filter(|c| c.is_ascii_digit()).collect();
+            if !v.is_empty() {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
+
+/// Read the quoted value of an `Unattended-Upgrade::<opt> "value";` directive.
+fn apt_uu_raw(conf: &str, opt: &str) -> Option<String> {
+    let needle = format!("Unattended-Upgrade::{opt}");
+    for line in conf.lines() {
+        let l = line.trim();
+        if l.starts_with("//") || l.starts_with('#') {
+            continue;
+        }
+        if let Some(rest) = l.strip_prefix(&needle) {
+            let start = rest.find('"')?;
+            let rest2 = &rest[start + 1..];
+            let end = rest2.find('"')?;
+            return Some(rest2[..end].to_string());
+        }
+    }
+    None
+}
+fn apt_uu_bool(conf: &str, opt: &str) -> Option<bool> {
+    apt_uu_raw(conf, opt).map(|v| v.eq_ignore_ascii_case("true") || v == "1")
+}
+
+// ── dnf / dnf-automatic ──
+
+async fn dnf_status() -> Value {
+    let installed = which("dnf-automatic").await || Path::new(DNF_AUTO_CONF).exists();
+    let conf = std::fs::read_to_string(DNF_AUTO_CONF).unwrap_or_default();
+    let apply = ini_get(&conf, "commands", "apply_updates").unwrap_or_default();
+    let upgrade_type =
+        ini_get(&conf, "commands", "upgrade_type").unwrap_or_else(|| "default".into());
+    let reboot_val = ini_get(&conf, "commands", "reboot").unwrap_or_else(|| "never".into());
+    let (ta, te, next) = timer_state(DNF_TIMER).await;
+    let mode = if apply.eq_ignore_ascii_case("yes") {
+        "install"
+    } else {
+        "download"
+    };
+    let scope = if upgrade_type.eq_ignore_ascii_case("security") {
+        "security"
+    } else {
+        "all"
+    };
+    let reboot = !reboot_val.eq_ignore_ascii_case("never");
+    let schedule = timer_oncalendar(DNF_TIMER).await;
+
+    json!({
+        "backend": "dnf", "supported": true, "tool": "dnf-automatic",
+        "installed": installed, "enabled": te || ta,
+        "timer": DNF_TIMER, "timer_active": ta, "timer_enabled": te, "next_run": next,
+        "caps": { "mode": true, "scope": true, "schedule": true, "reboot": true, "reboot_time": false, "remove_unused": false },
+        "settings": {
+            "mode": mode, "scope": scope, "schedule": schedule,
+            "reboot": reboot, "reboot_time": "", "remove_unused": false,
+        },
+    })
+}
+
+async fn dnf_set(data: &Value, user: &str, password: &str) -> Value {
+    let cur = dnf_status().await;
+    let cs = cur.get("settings").cloned().unwrap_or_default();
+    let gets = |k: &str, def: &str| {
+        au_str(data, k)
+            .or_else(|| cs.get(k).and_then(|v| v.as_str()).map(|s| s.to_string()))
+            .unwrap_or_else(|| def.to_string())
+    };
+    let getb = |k: &str, def: bool| {
+        au_bool(data, k)
+            .or_else(|| cs.get(k).and_then(|v| v.as_bool()))
+            .unwrap_or(def)
+    };
+
+    let enabled = au_bool(data, "enabled").unwrap_or_else(|| {
+        cur.get("enabled")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    });
+    let mode = gets("mode", "install");
+    let scope = gets("scope", "security");
+    let schedule = gets("schedule", "");
+    let reboot = getb("reboot", false);
+
+    if mode != "install" && mode != "download" {
+        return json!({ "error": "invalid mode" });
+    }
+    if scope != "all" && scope != "security" {
+        return json!({ "error": "invalid scope" });
+    }
+
+    if !enabled {
+        let r = sudo_as_user(
+            user,
+            password,
+            &["systemctl", "disable", "--now", DNF_TIMER],
+        )
+        .await;
+        return if r.get("error").is_some() {
+            r
+        } else {
+            json!({ "ok": true })
+        };
+    }
+
+    if !which("dnf-automatic").await && !Path::new(DNF_AUTO_CONF).exists() {
+        let r = install_packages(user, password, &["dnf-automatic".to_string()]).await;
+        if r.get("error").is_some() {
+            return r;
+        }
+    }
+
+    let apply = if mode == "install" { "yes" } else { "no" };
+    let upgrade_type = if scope == "security" {
+        "security"
+    } else {
+        "default"
+    };
+    let reboot_v = if reboot { "when-needed" } else { "never" };
+    let current = std::fs::read_to_string(DNF_AUTO_CONF).unwrap_or_default();
+    let updated = ini_set(
+        &current,
+        "commands",
+        &[
+            ("download_updates", "yes"),
+            ("apply_updates", apply),
+            ("upgrade_type", upgrade_type),
+            ("reboot", reboot_v),
+        ],
+    );
+    let w = sudo_stdin_write_as_user(user, password, &["tee", DNF_AUTO_CONF], &updated).await;
+    if w.get("error").is_some() {
+        return w;
+    }
+    if !schedule.trim().is_empty() {
+        let r = set_timer_schedule(DNF_TIMER, &schedule, user, password).await;
+        if r.get("error").is_some() {
+            return r;
+        }
+    }
+    let r = sudo_as_user(user, password, &["systemctl", "enable", "--now", DNF_TIMER]).await;
+    if r.get("error").is_some() {
+        r
+    } else {
+        json!({ "ok": true })
+    }
+}
+
+// ── systemd timer helpers ──
+
+/// (active, enabled, next_run) for a systemd timer.
+async fn timer_state(unit: &str) -> (bool, bool, Option<String>) {
+    let active = run_cmd(&["systemctl", "is-active", unit]).await.trim() == "active";
+    let enabled = run_cmd(&["systemctl", "is-enabled", unit]).await.trim() == "enabled";
+    let show = run_cmd(&[
+        "systemctl",
+        "show",
+        unit,
+        "-p",
+        "NextElapseUSecRealtime",
+        "--value",
+    ])
+    .await;
+    let t = show.trim();
+    let next = if t.is_empty() || t == "0" {
+        None
+    } else {
+        Some(t.to_string())
+    };
+    (active, enabled, next)
+}
+
+/// Effective OnCalendar spec of a timer.
+async fn timer_oncalendar(unit: &str) -> String {
+    let out = run_cmd(&["systemctl", "show", unit, "-p", "TimersCalendar", "--value"]).await;
+    parse_oncalendar(&out)
+}
+fn parse_oncalendar(s: &str) -> String {
+    if let Some(i) = s.find("OnCalendar=") {
+        let rest = &s[i + "OnCalendar=".len()..];
+        let end = rest
+            .find(" ; ")
+            .or_else(|| rest.find('}'))
+            .unwrap_or(rest.len());
+        return rest[..end].trim().to_string();
+    }
+    String::new()
+}
+fn is_valid_oncalendar(s: &str) -> bool {
+    !s.is_empty()
+        && s.len() <= 100
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || " :,-*/.".contains(c))
+}
+
+/// Override a timer's OnCalendar via a drop-in and reload.
+async fn set_timer_schedule(unit: &str, oncalendar: &str, user: &str, password: &str) -> Value {
+    if !is_valid_oncalendar(oncalendar) {
+        return json!({ "error": "invalid schedule" });
+    }
+    let dir = format!("/etc/systemd/system/{unit}.d");
+    let file = format!("{dir}/50-tenodera.conf");
+    let content =
+        format!("[Timer]\nOnCalendar=\nOnCalendar={oncalendar}\nRandomizedDelaySec=30m\n");
+    let mk = sudo_as_user(user, password, &["mkdir", "-p", &dir]).await;
+    if mk.get("error").is_some() {
+        return mk;
+    }
+    let w = sudo_stdin_write_as_user(user, password, &["tee", &file], &content).await;
+    if w.get("error").is_some() {
+        return w;
+    }
+    let _ = sudo_as_user(user, password, &["systemctl", "daemon-reload"]).await;
+    let _ = sudo_as_user(user, password, &["systemctl", "restart", unit]).await;
+    json!({ "ok": true })
+}
+
+fn is_valid_hhmm(s: &str) -> bool {
+    let b = s.as_bytes();
+    s.len() == 5
+        && b[2] == b':'
+        && s[..2].chars().all(|c| c.is_ascii_digit())
+        && s[3..].chars().all(|c| c.is_ascii_digit())
+}
+
+// ── minimal INI read/write (dnf automatic.conf) ──
+
+fn ini_get(content: &str, section: &str, key: &str) -> Option<String> {
+    let mut in_section = false;
+    for line in content.lines() {
+        let l = line.trim();
+        if l.starts_with('[') && l.ends_with(']') {
+            in_section = &l[1..l.len() - 1] == section;
+            continue;
+        }
+        if in_section
+            && let Some((k, v)) = l.split_once('=')
+            && k.trim() == key
+        {
+            return Some(v.trim().to_string());
+        }
+    }
+    None
+}
+
+fn ini_set(content: &str, section: &str, kv: &[(&str, &str)]) -> String {
+    let mut out: Vec<String> = Vec::new();
+    let mut in_section = false;
+    let mut seen_section = false;
+    let mut set: std::collections::HashSet<&str> = std::collections::HashSet::new();
+    for line in content.lines() {
+        let l = line.trim();
+        if l.starts_with('[') && l.ends_with(']') {
+            if in_section {
+                ini_append_missing(&mut out, kv, &set);
+            }
+            in_section = &l[1..l.len() - 1] == section;
+            if in_section {
+                seen_section = true;
+            }
+            out.push(line.to_string());
+            continue;
+        }
+        if in_section
+            && let Some((k, _)) = l.split_once('=')
+            && let Some((key, v)) = kv.iter().find(|(kk, _)| *kk == k.trim())
+        {
+            out.push(format!("{key} = {v}"));
+            set.insert(key);
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    if in_section {
+        ini_append_missing(&mut out, kv, &set);
+    }
+    if !seen_section {
+        out.push(format!("[{section}]"));
+        for (k, v) in kv {
+            out.push(format!("{k} = {v}"));
+        }
+    }
+    let mut s = out.join("\n");
+    s.push('\n');
+    s
+}
+fn ini_append_missing(
+    out: &mut Vec<String>,
+    kv: &[(&str, &str)],
+    set: &std::collections::HashSet<&str>,
+) {
+    for (k, v) in kv {
+        if !set.contains(k) {
+            out.push(format!("{k} = {v}"));
+        }
+    }
+}
+
+#[cfg(test)]
+mod autoupdate_tests {
+    use super::*;
+
+    #[test]
+    fn apt_parsers() {
+        let periodic = "APT::Periodic::Unattended-Upgrade \"1\";\n";
+        assert_eq!(
+            apt_periodic_value(periodic, "Unattended-Upgrade").as_deref(),
+            Some("1")
+        );
+        let managed = "Unattended-Upgrade::Automatic-Reboot \"true\";\nUnattended-Upgrade::Automatic-Reboot-Time \"03:30\";\n";
+        assert_eq!(apt_uu_bool(managed, "Automatic-Reboot"), Some(true));
+        assert_eq!(
+            apt_uu_raw(managed, "Automatic-Reboot-Time").as_deref(),
+            Some("03:30")
+        );
+    }
+
+    #[test]
+    fn ini_roundtrip() {
+        let conf = "[commands]\nupgrade_type = default\napply_updates = no\n\n[emitters]\nemit_via = stdio\n";
+        let up = ini_set(
+            conf,
+            "commands",
+            &[("apply_updates", "yes"), ("reboot", "when-needed")],
+        );
+        assert_eq!(
+            ini_get(&up, "commands", "apply_updates").as_deref(),
+            Some("yes")
+        );
+        assert_eq!(
+            ini_get(&up, "commands", "reboot").as_deref(),
+            Some("when-needed")
+        );
+        assert_eq!(
+            ini_get(&up, "emitters", "emit_via").as_deref(),
+            Some("stdio")
+        );
+    }
+
+    #[test]
+    fn oncalendar_and_hhmm() {
+        assert_eq!(
+            parse_oncalendar("{ OnCalendar=*-*-* 06:00:00 ; next_elapse=x }"),
+            "*-*-* 06:00:00"
+        );
+        assert!(is_valid_oncalendar("daily"));
+        assert!(is_valid_oncalendar("*-*-* 06:00:00"));
+        assert!(!is_valid_oncalendar("a;b"));
+        assert!(is_valid_hhmm("02:00"));
+        assert!(!is_valid_hhmm("2:00"));
+        assert!(!is_valid_hhmm("0200"));
+    }
 }

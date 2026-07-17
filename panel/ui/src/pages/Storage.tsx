@@ -1,5 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { PageHeader } from '../components/PageHeader.tsx';
+import { Tabs } from '../components/Tabs.tsx';
+import { useTabParam } from '../hooks/useTabParam.ts';
+import { StorageMounts } from './StorageMounts.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -147,6 +150,7 @@ const tooltipItemStyle: React.CSSProperties = { color: 'var(--text-1)' };
 
 export function Storage() {
   const { request } = useTransport();
+  const [tab, setTab] = useTabParam<'overview' | 'mounts'>(['overview', 'mounts'], 'overview');
   const [history, setHistory] = useState<IoPoint[]>([]);
   const [blockRows, setBlockRows] = useState<FlatRow[]>([]);
   const [swap, setSwap] = useState<SwapInfo | null>(null);
@@ -254,6 +258,16 @@ export function Storage() {
         }
       />
 
+      <Tabs
+        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'mounts', label: 'Mounts' }]}
+        active={tab}
+        onChange={(t) => setTab(t as 'overview' | 'mounts')}
+        style={{ marginBottom: '1rem' }}
+      />
+
+      {tab === 'mounts' && <StorageMounts />}
+
+      {tab === 'overview' && (<>
       {/* ── I/O Charts ── */}
       <div style={S.chartsRow}>
         <div style={S.chartCard}>
@@ -472,6 +486,7 @@ export function Storage() {
         </table>
         {blockRows.length === 0 && <p style={S.muted}>Loading block devices…</p>}
       </div>
+      </>)}
     </div>
   );
 }

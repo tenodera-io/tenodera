@@ -60,13 +60,24 @@ interface VpnEntry {
 
 /* ── constants ─────────────────────────────────────────── */
 
-type Tab = 'overview' | 'firewall' | 'interfaces' | 'logs';
+type Tab = 'overview' | 'firewall' | 'interfaces' | 'ports' | 'logs';
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'overview', label: 'Overview', icon: '📈' },
   { id: 'firewall', label: 'Firewall', icon: '🛡️' },
   { id: 'interfaces', label: 'Interfaces', icon: '🔌' },
+  { id: 'ports', label: 'Ports', icon: '🔌' },
   { id: 'logs', label: 'Logs', icon: '📋' },
 ];
+
+interface ListeningPort {
+  proto: string;
+  state: string;
+  local: string;
+  address: string;
+  port: number;
+  process: string;
+  pid: number;
+}
 
 const HISTORY_LEN = 90;
 const IFACE_COLORS = ['var(--c-blue)', 'var(--c-red)', 'var(--c-green)', 'var(--c-yellow)', 'var(--c-purple)', 'var(--c-cyan)', 'var(--c-orange)', 'var(--c-teal)'];
@@ -130,7 +141,7 @@ const tooltipItemStyle: React.CSSProperties = { color: 'var(--text-1)' };
 export function Networking() {
   const { request, openChannel } = useTransport();
   const su = useSuperuser();
-  const [tab, changeTab] = useTabParam<Tab>(['overview', 'firewall', 'interfaces', 'logs'], 'overview');
+  const [tab, changeTab] = useTabParam<Tab>(['overview', 'firewall', 'interfaces', 'ports', 'logs'], 'overview');
 
   /* ----- polling interval ----- */
   const [intervalMs, setIntervalMs] = useState<number>(() => {
@@ -168,6 +179,10 @@ export function Networking() {
   const [netLogs, setNetLogs] = useState<string[]>([]);
   const [fwLogs, setFwLogs] = useState<string[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+
+  const [ports, setPorts] = useState<ListeningPort[]>([]);
+  const [portsLoading, setPortsLoading] = useState(false);
+  const [portFilter, setPortFilter] = useState('');
 
   /* ----- firewall rule form ----- */
   const [ruleBackend, setRuleBackend] = useState('');
@@ -383,6 +398,22 @@ export function Networking() {
     setLogsLoading(false);
   }, [sendManage]);
 
+  /* ── listening ports ──────────────────────────────────── */
+  const loadPorts = useCallback(async () => {
+    setPortsLoading(true);
+    try {
+      const res = await sendManage({ action: 'list_ports' });
+      setPorts((res.ports as ListeningPort[]) || []);
+    } catch { /* best-effort */ }
+    setPortsLoading(false);
+  }, [sendManage]);
+
+  const killPort = async (p: ListeningPort, signal: 'TERM' | 'KILL') => {
+    if (!p.pid) return;
+    await doPrivileged({ action: 'kill_process', pid: p.pid, signal });
+    loadPorts();
+  };
+
   /* ── load data on tab switch, superuser change, or host change ── */
   useEffect(() => {
     if (tab === 'overview' || tab === 'interfaces') {
@@ -391,7 +422,8 @@ export function Networking() {
     }
     if (tab === 'firewall') loadFirewall();
     if (tab === 'logs') loadLogs();
-  }, [tab, su.active, loadInterfaces, loadVpn, loadFirewall, loadLogs]);
+    if (tab === 'ports') loadPorts();
+  }, [tab, su.active, loadInterfaces, loadVpn, loadFirewall, loadLogs, loadPorts]);
 
   /* ── privileged action helper ─────────────────────────── */
   const doPrivileged = useCallback(async (actionData: Record<string, unknown>) => {
@@ -965,6 +997,58 @@ export function Networking() {
             )}
           </div>
         </>
+      )}
+
+      {tab === 'ports' && (
+        <div style={{ ...S.card, marginTop: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '0.75rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+            <h3 style={{ ...S.cardTitle, marginBottom: 0 }}>Listening ports ({ports.length})</h3>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input style={{ ...S.input, width: 210 }} placeholder="Filter port, process, address…" value={portFilter} onChange={e => setPortFilter(e.target.value)} />
+              <button onClick={loadPorts} style={S.btnSecondary}>↻ Refresh</button>
+            </div>
+          </div>
+          {portsLoading ? (
+            <p style={S.muted}>Loading ports…</p>
+          ) : (() => {
+            const q = portFilter.trim().toLowerCase();
+            const rows = ports.filter(p => !q
+              || String(p.port).includes(q) || p.process.toLowerCase().includes(q)
+              || p.address.toLowerCase().includes(q) || p.proto.includes(q));
+            return (
+              <div style={{ overflowX: 'auto' }}>
+                <table style={S.table}>
+                  <thead>
+                    <tr>
+                      <th style={S.th}>Proto</th><th style={S.th}>Address</th><th style={S.th}>Port</th>
+                      <th style={S.th}>Process</th><th style={S.th}>PID</th><th style={S.th} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((p, i) => (
+                      <tr key={i}>
+                        <td style={S.td}>{p.proto}</td>
+                        <td style={{ ...S.td, fontFamily: 'monospace' }}>{p.address}</td>
+                        <td style={{ ...S.td, fontFamily: 'monospace', fontWeight: 600 }}>{p.port}</td>
+                        <td style={S.td}>{p.process || '—'}</td>
+                        <td style={{ ...S.td, fontFamily: 'monospace' }}>{p.pid || '—'}</td>
+                        <td style={S.td}>
+                          {p.pid > 0 && (
+                            <div style={{ display: 'flex', gap: '0.35rem' }}>
+                              <button style={S.btnSmallDanger} onClick={() => killPort(p, 'TERM')} title="Send SIGTERM">Kill</button>
+                              <button style={S.btnSmallDanger} onClick={() => killPort(p, 'KILL')} title="Send SIGKILL (force)">Force</button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {rows.length === 0 && <tr><td style={S.td} colSpan={6}>No listening ports.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+        </div>
       )}
     </div>
   );

@@ -26,6 +26,7 @@ const Storage     = lazy(() => import('./Storage.tsx').then(m => ({ default: m.S
 const Networking  = lazy(() => import('./Networking.tsx').then(m => ({ default: m.Networking })));
 const Packages    = lazy(() => import('./Packages.tsx').then(m => ({ default: m.Packages })));
 const Kdump       = lazy(() => import('./Kdump.tsx').then(m => ({ default: m.Kdump })));
+const System      = lazy(() => import('./System.tsx').then(m => ({ default: m.System })));
 const LogFiles    = lazy(() => import('./LogFiles.tsx').then(m => ({ default: m.LogFiles })));
 const Users       = lazy(() => import('./Users.tsx').then(m => ({ default: m.Users })));
 const Cron        = lazy(() => import('./Cron.tsx').then(m => ({ default: m.Cron })));
@@ -193,6 +194,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/api-docs" element={su.suActive ? <ApiDocs /> : <Navigate to="/" />} />
                       <Route path="/files" element={<Files user={user} />} />
                       <Route path="/kdump" element={<Kdump />} />
+                      <Route path="/system" element={<System />} />
                       <Route path="/log-files" element={<LogFiles />} />
                     </Routes>
                   </Suspense>

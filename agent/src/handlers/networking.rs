@@ -142,7 +142,7 @@ impl ChannelHandler for NetworkManageHandler {
 
         if !matches!(
             action,
-            "list_interfaces" | "firewall_status" | "firewall_rules"
+            "list_interfaces" | "firewall_status" | "firewall_rules" | "list_ports"
         ) && let Some(err) = crate::util::require_admin(data)
         {
             return vec![Message::Data {
@@ -259,6 +259,17 @@ impl ChannelHandler for NetworkManageHandler {
             "network_logs" => {
                 let lines = data.get("lines").and_then(|v| v.as_u64()).unwrap_or(100);
                 network_logs(lines).await
+            }
+
+            // ── Listening ports ──
+            "list_ports" => list_ports().await,
+            "kill_process" => {
+                let pid = data.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
+                let signal = data
+                    .get("signal")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("TERM");
+                kill_process(user, password, pid, signal).await
             }
 
             _ => serde_json::json!({ "error": format!("unknown action: {action}") }),
@@ -1306,5 +1317,142 @@ async fn sudo_run_cmd(password: &str, args: &[&str]) -> String {
             }
         }
         Err(e) => format!("error: {e}"),
+    }
+}
+
+// ──────────────────────────────────────────────────────────────
+//  Listening ports (ss) + process kill
+// ──────────────────────────────────────────────────────────────
+
+async fn list_ports() -> serde_json::Value {
+    if !which("ss").await {
+        return serde_json::json!({ "error": "ss (iproute2) is not available", "ports": [] });
+    }
+    // -t tcp, -u udp, -l listening, -p process, -n numeric, -H no header.
+    let out = run_cmd(&["ss", "-tulpnH"]).await;
+    let ports: Vec<serde_json::Value> = out.lines().filter_map(parse_ss_line).collect();
+    serde_json::json!({ "ports": ports, "count": ports.len() })
+}
+
+fn parse_ss_line(line: &str) -> Option<serde_json::Value> {
+    let t = line.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let cols: Vec<&str> = t.split_whitespace().collect();
+    if cols.len() < 5 {
+        return None;
+    }
+    // Columns: Netid State Recv-Q Send-Q Local-Address:Port [Peer] [Process]
+    let proto = cols[0];
+    let state = cols[1];
+    let local = cols[4];
+    let (address, port) = split_hostport(local);
+    let (process, pid) = match t.find("users:((") {
+        Some(i) => parse_proc(&t[i..]),
+        None => (String::new(), 0),
+    };
+    Some(serde_json::json!({
+        "proto": proto,
+        "state": state,
+        "local": local,
+        "address": address,
+        "port": port,
+        "process": process,
+        "pid": pid,
+    }))
+}
+
+/// Split "addr:port", stripping IPv6 brackets: "[::]:22" → ("::", 22).
+fn split_hostport(s: &str) -> (String, u32) {
+    match s.rfind(':') {
+        Some(i) => {
+            let addr = s[..i].trim_matches(['[', ']']);
+            let port = s[i + 1..].parse().unwrap_or(0);
+            (addr.to_string(), port)
+        }
+        None => (s.to_string(), 0),
+    }
+}
+
+/// Extract (process_name, pid) from ss's `users:(("name",pid=NN,fd=NN))` field.
+fn parse_proc(s: &str) -> (String, u64) {
+    let name = s
+        .find('"')
+        .and_then(|a| {
+            s[a + 1..]
+                .find('"')
+                .map(|b| s[a + 1..a + 1 + b].to_string())
+        })
+        .unwrap_or_default();
+    let pid = s
+        .find("pid=")
+        .map(|i| &s[i + 4..])
+        .map(|r| {
+            r.chars()
+                .take_while(|c| c.is_ascii_digit())
+                .collect::<String>()
+        })
+        .and_then(|d| d.parse().ok())
+        .unwrap_or(0);
+    (name, pid)
+}
+
+async fn kill_process(user: &str, password: &str, pid: u64, signal: &str) -> serde_json::Value {
+    if pid <= 1 {
+        return serde_json::json!({ "error": "refusing to signal this pid" });
+    }
+    let sig = match signal {
+        "KILL" | "TERM" | "HUP" | "INT" => signal,
+        _ => "TERM",
+    };
+    let r = net_sudo(
+        user,
+        password,
+        &["kill".to_string(), format!("-{sig}"), pid.to_string()],
+    )
+    .await;
+    let ok = r.get("error").is_none();
+    crate::audit::log(user, "net.kill_process", &pid.to_string(), ok, sig);
+    if !ok {
+        r
+    } else {
+        serde_json::json!({ "ok": true })
+    }
+}
+
+#[cfg(test)]
+mod ports_tests {
+    use super::*;
+
+    #[test]
+    fn parse_ss_tcp_line() {
+        let line =
+            "tcp   LISTEN 0      128    0.0.0.0:22    0.0.0.0:*    users:((\"sshd\",pid=800,fd=3))";
+        let v = parse_ss_line(line).unwrap();
+        assert_eq!(v["proto"], "tcp");
+        assert_eq!(v["port"], 22);
+        assert_eq!(v["address"], "0.0.0.0");
+        assert_eq!(v["process"], "sshd");
+        assert_eq!(v["pid"], 800);
+    }
+
+    #[test]
+    fn parse_ss_ipv6_no_proc() {
+        let line = "udp   UNCONN 0      0      [::]:5353   [::]:*";
+        let v = parse_ss_line(line).unwrap();
+        assert_eq!(v["proto"], "udp");
+        assert_eq!(v["address"], "::");
+        assert_eq!(v["port"], 5353);
+        assert_eq!(v["pid"], 0);
+    }
+
+    #[test]
+    fn hostport_split() {
+        assert_eq!(
+            split_hostport("127.0.0.1:631"),
+            ("127.0.0.1".to_string(), 631)
+        );
+        assert_eq!(split_hostport("*:5353"), ("*".to_string(), 5353));
     }
 }
