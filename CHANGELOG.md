@@ -9,6 +9,29 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-17
+
+### Added
+- **System page** — clock & timezone, time synchronization, hostname, locale &
+  keyboard, and power (reboot/shutdown with an optional delay or scheduled time).
+  A per-host **Time sync** tab manages whichever daemon is active: chrony (rich
+  tracking/sources/config view) or a generic status+config view for
+  systemd-timesyncd, ntpd/NTPsec, OpenNTPD and PTP (ptp4l/phc2sys).
+- **Automatic updates** management (Packages → Auto-updates) — enable/disable,
+  apply mode (install vs. download-only), scope (security-only vs. all), schedule,
+  automatic reboot and unused-package cleanup, for `unattended-upgrades` (apt) and
+  `dnf-automatic` (dnf).
+- **Listening ports** (Networking → Ports) — sockets in LISTEN/UNCONN state with
+  process and PID, a filter, and the ability to kill a process (SIGTERM/SIGKILL).
+- **Storage mounts** (Storage → Mounts) — mount/unmount block devices and edit
+  `/etc/fstab` (with a backup).
+- Sidebar sub-navigation for the new and updated pages.
+
+### Fixed
+- Containers: short image names (e.g. `nginx`) are auto-qualified to Docker Hub
+  (`docker.io/library/nginx`) so podman — which has no unqualified-search
+  registries by default — resolves them like Docker.
+
 ## [0.2.0] - 2026-07-16
 
 ### Added
@@ -141,7 +164,8 @@ Initial public release.
 - Signed `.deb`/`.rpm` packages (amd64 + arm64), SHA256SUMS + minisign signature.
 - `THREAT_MODEL.md` and a documented security model.
 
-[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/tenodera-io/tenodera/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/tenodera-io/tenodera/compare/v0.1.9...v0.2.0
 [0.1.9]: https://github.com/tenodera-io/tenodera/compare/v0.1.8...v0.1.9
 [0.1.8]: https://github.com/tenodera-io/tenodera/compare/v0.1.7...v0.1.8

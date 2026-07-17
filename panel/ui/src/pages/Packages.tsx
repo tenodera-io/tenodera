@@ -44,20 +44,47 @@ interface RepoInfo {
 
 /* ── constants ─────────────────────────────────────────── */
 
-type Tab = 'installed' | 'search' | 'updates' | 'repos';
+type Tab = 'installed' | 'search' | 'updates' | 'repos' | 'autoupdate';
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'installed', label: 'Installed', icon: '📦' },
   { id: 'search', label: 'Search', icon: '🔍' },
   { id: 'updates', label: 'Updates', icon: '⬆️' },
   { id: 'repos', label: 'Repositories', icon: '🗄️' },
+  { id: 'autoupdate', label: 'Auto-updates', icon: '🔄' },
 ];
+
+interface AuCaps {
+  mode: boolean; scope: boolean; schedule: boolean;
+  reboot: boolean; reboot_time: boolean; remove_unused: boolean;
+}
+interface AuSettings {
+  mode: 'install' | 'download';
+  scope: 'all' | 'security';
+  schedule: string;
+  reboot: boolean;
+  reboot_time: string;
+  remove_unused: boolean;
+}
+interface AutoUpdate {
+  backend: string;
+  supported: boolean;
+  tool?: string;
+  installed?: boolean;
+  enabled?: boolean;
+  timer?: string;
+  timer_active?: boolean;
+  timer_enabled?: boolean;
+  next_run?: string | null;
+  caps?: AuCaps;
+  settings?: AuSettings;
+}
 
 /* ── component ─────────────────────────────────────────── */
 
 export function Packages() {
   const { openChannel } = useTransport();
   const su = useSuperuser();
-  const [tab, setTabParam] = useTabParam<Tab>(['installed', 'search', 'updates', 'repos'], 'installed');
+  const [tab, setTabParam] = useTabParam<Tab>(['installed', 'search', 'updates', 'repos', 'autoupdate'], 'installed');
   const changeTab = (t: Tab) => { if (updating) return; setTabParam(t); };
   const [backend, setBackend] = useState('');
   const [distroName, setDistroName] = useState('');
@@ -82,6 +109,11 @@ export function Packages() {
   const [repos, setRepos] = useState<RepoInfo[]>([]);
   const [newRepoUrl, setNewRepoUrl] = useState('');
   const [newRepoName, setNewRepoName] = useState('');
+
+  // Automatic updates
+  const [autoUpdate, setAutoUpdate] = useState<AutoUpdate | null>(null);
+  const [auForm, setAuForm] = useState<AuSettings | null>(null);
+  const [auEnabled, setAuEnabled] = useState(false);
 
   // Actions
   const [actionMsg, setActionMsg] = useState('');
@@ -236,6 +268,33 @@ export function Packages() {
   useEffect(() => {
     if (tab === 'repos' && repos.length === 0) loadRepos();
   }, [tab, repos.length, loadRepos]);
+
+  /* ── automatic updates ────────────────────────────────── */
+  const loadAutoUpdate = useCallback(async () => {
+    setLoading(true);
+    const res = await sendManage({ action: 'autoupdate_status' });
+    const au = res as unknown as AutoUpdate;
+    setAutoUpdate(au);
+    if (au.settings) setAuForm({ ...au.settings });
+    setAuEnabled(!!au.enabled);
+    setLoading(false);
+  }, [sendManage]);
+
+  useEffect(() => {
+    if (tab === 'autoupdate' && !autoUpdate) loadAutoUpdate();
+  }, [tab, autoUpdate, loadAutoUpdate]);
+
+  const patchAuForm = (patch: Partial<AuSettings>) => setAuForm((f) => (f ? { ...f, ...patch } : f));
+
+  const saveAutoUpdate = async () => {
+    if (!auForm) return;
+    setActionMsg(''); setActionError('');
+    const res = await sudoAction({ action: 'autoupdate_set', enabled: auEnabled, ...auForm });
+    if (res.error) { setActionError(String(res.error)); return; }
+    setActionMsg('Automatic updates settings saved.');
+    setAutoUpdate(null); setAuForm(null);
+    loadAutoUpdate();
+  };
 
   /* ── actions ──────────────────────────────────────────── */
   const installPkg = async (name: string) => {
@@ -890,6 +949,101 @@ export function Packages() {
           </div>
         )}
 
+        {/* ── Auto-updates tab ── */}
+        {tab === 'autoupdate' && autoUpdate && (
+          !autoUpdate.supported ? (
+            <div style={S.emptyState}>
+              Automatic updates aren&apos;t supported for {autoUpdate.backend === 'none' ? 'this host' : autoUpdate.backend} yet.
+            </div>
+          ) : !auForm ? (
+            <div style={S.loadingText}>Loading…</div>
+          ) : (
+            <div style={S.formCard}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.85rem', flexWrap: 'wrap' }}>
+                <h4 style={{ ...S.formTitle, margin: 0 }}>Automatic updates</h4>
+                <span style={{
+                  fontSize: '0.72rem', padding: '0.14rem 0.5rem', borderRadius: 4,
+                  color: autoUpdate.enabled ? 'var(--c-green)' : 'var(--text-2)',
+                  background: `color-mix(in srgb, ${autoUpdate.enabled ? 'var(--c-green)' : 'var(--text-3)'} 14%, transparent)`,
+                  border: `1px solid color-mix(in srgb, ${autoUpdate.enabled ? 'var(--c-green)' : 'var(--text-3)'} 30%, transparent)`,
+                }}>{autoUpdate.enabled ? '● enabled' : '○ disabled'}</span>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-2)' }}>via {autoUpdate.tool}</span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '0.4rem', marginBottom: '1rem' }}>
+                <AuInfo label="Package installed" value={autoUpdate.installed ? 'yes' : 'no'} />
+                <AuInfo label="Timer" value={`${autoUpdate.timer_active ? 'active' : 'inactive'} · ${autoUpdate.timer_enabled ? 'enabled' : 'disabled'}`} />
+                {autoUpdate.next_run && <AuInfo label="Next run" value={autoUpdate.next_run} />}
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer', marginBottom: '0.5rem' }}>
+                <input type="checkbox" checked={auEnabled} onChange={(e) => setAuEnabled(e.target.checked)} />
+                Enable automatic updates
+              </label>
+
+              <div style={{ opacity: auEnabled ? 1 : 0.5, pointerEvents: auEnabled ? 'auto' : 'none' }}>
+                {autoUpdate.caps?.mode && (
+                  <AuRow label="Apply" hint={auForm.mode === 'install'
+                    ? 'Downloads and installs updates automatically on schedule.'
+                    : 'Downloads updates in the background but leaves installing them to you.'}>
+                    <Seg value={auForm.mode} onChange={(v) => patchAuForm({ mode: v as 'install' | 'download' })}
+                      options={[['install', 'Install automatically'], ['download', 'Download only']]} />
+                  </AuRow>
+                )}
+                {autoUpdate.caps?.scope && (
+                  <AuRow label="Updates" hint={auForm.scope === 'security'
+                    ? 'Only security fixes are applied automatically.'
+                    : 'Every available update is applied automatically.'}>
+                    <Seg value={auForm.scope} onChange={(v) => patchAuForm({ scope: v as 'all' | 'security' })}
+                      options={[['security', 'Security only'], ['all', 'All updates']]} />
+                  </AuRow>
+                )}
+                {autoUpdate.caps?.schedule && (
+                  <AuRow label="Schedule" hint="When the automatic run happens — a systemd OnCalendar spec (e.g. “daily”, “weekly”, or “*-*-* 06:00:00”). A random delay up to 30 min is added.">
+                    <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input style={{ ...S.input, width: 210 }} value={auForm.schedule}
+                        onChange={(e) => patchAuForm({ schedule: e.target.value })} placeholder="e.g. daily or *-*-* 06:00:00" />
+                      <button style={auForm.schedule === 'daily' ? S.btn : S.btnCancel} onClick={() => patchAuForm({ schedule: 'daily' })}>daily</button>
+                      <button style={auForm.schedule === 'weekly' ? S.btn : S.btnCancel} onClick={() => patchAuForm({ schedule: 'weekly' })}>weekly</button>
+                    </div>
+                  </AuRow>
+                )}
+                {autoUpdate.caps?.reboot && (
+                  <AuRow label="Auto-reboot" hint={autoUpdate.caps?.reboot_time
+                    ? 'Reboot the host automatically after updates when one is required, at the chosen time.'
+                    : 'Reboot the host automatically after updates when one is required.'}>
+                    <div style={{ display: 'flex', gap: '0.7rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={auForm.reboot} onChange={(e) => patchAuForm({ reboot: e.target.checked })} />
+                        Reboot if required
+                      </label>
+                      {autoUpdate.caps?.reboot_time && auForm.reboot && (
+                        <input type="time" style={{ ...S.input, width: 120 }} value={auForm.reboot_time}
+                          onChange={(e) => patchAuForm({ reboot_time: e.target.value })} />
+                      )}
+                    </div>
+                  </AuRow>
+                )}
+                {autoUpdate.caps?.remove_unused && (
+                  <AuRow label="Cleanup" hint="Automatically remove packages that are no longer needed after upgrades (apt autoremove).">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={auForm.remove_unused} onChange={(e) => patchAuForm({ remove_unused: e.target.checked })} />
+                      Remove unused dependencies
+                    </label>
+                  </AuRow>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.85rem' }}>
+                <button style={S.btnSuccess} onClick={saveAutoUpdate}>Save settings</button>
+              </div>
+              <p style={S.formHint}>
+                {autoUpdate.tool} · config in {autoUpdate.backend === 'apt' ? '/etc/apt/apt.conf.d/' : '/etc/dnf/automatic.conf'} + systemd timer drop-in
+              </p>
+            </div>
+          )
+        )}
+
         {loading && tab !== 'search' && <div style={S.loadingText}>Loading...</div>}
       </div>
 
@@ -921,6 +1075,45 @@ export function Packages() {
 }
 
 /* ── styles ─────────────────────────────────────────────── */
+
+function AuInfo({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', padding: '0.35rem 0.55rem', borderRadius: 5, background: 'var(--bg-app)' }}>
+      <span style={{ color: 'var(--text-2)', fontSize: '0.8rem' }}>{label}</span>
+      <span style={{ fontSize: '0.8rem', fontWeight: 600, fontFamily: 'monospace', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis' }}>{value}</span>
+    </div>
+  );
+}
+
+function AuRow({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-start', padding: '0.65rem 0', borderTop: '1px solid var(--border)', flexWrap: 'wrap' }}>
+      <div style={{ width: 130, flexShrink: 0, color: 'var(--text-1)', fontSize: '0.85rem', fontWeight: 600, paddingTop: '0.35rem' }}>{label}</div>
+      <div style={{ flex: 1, minWidth: 220 }}>
+        {children}
+        {hint && <div style={{ fontSize: '0.75rem', color: 'var(--text-2)', marginTop: '0.4rem', lineHeight: 1.4 }}>{hint}</div>}
+      </div>
+    </div>
+  );
+}
+
+function Seg({ value, onChange, options }: { value: string; onChange: (v: string) => void; options: [string, string][] }) {
+  return (
+    <div className="seg-tabs" role="radiogroup">
+      {options.map(([v, label]) => (
+        <button
+          key={v}
+          role="radio"
+          aria-checked={value === v}
+          className={`seg-tab${value === v ? ' active' : ''}`}
+          onClick={() => onChange(v)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const S: Record<string, React.CSSProperties> = {
   page: {

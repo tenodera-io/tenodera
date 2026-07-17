@@ -132,9 +132,18 @@ impl ChannelHandler for HostActionHandler {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
+        // Optional scheduling: minutes to delay a power action (0 = immediate).
+        let delay_mins = options
+            .extra
+            .get("delay_mins")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+
         let result = match action {
             "set_role" => set_role(&extra, user, password).await,
-            "restart" => restart_host(user, password).await,
+            "restart" => restart_host(user, password, delay_mins).await,
+            "poweroff" => poweroff_host(user, password, delay_mins).await,
+            "cancel_shutdown" => cancel_shutdown(user, password).await,
             other => json!({ "error": format!("unknown action: {other}") }),
         };
 
@@ -179,7 +188,27 @@ async fn set_role(data: &Value, user: &str, password: &str) -> Value {
     sudo_stdin_write_as_user(user, password, &["tee", env_path], &new_content).await
 }
 
-async fn restart_host(user: &str, password: &str) -> Value {
+async fn restart_host(user: &str, password: &str, delay_mins: u64) -> Value {
+    if delay_mins > 0 {
+        // Scheduled: `shutdown -r +N` returns immediately after arming the timer.
+        let when = format!("+{delay_mins}");
+        let r = sudo_as_user(user, password, &["shutdown", "-r", &when]).await;
+        crate::audit::log(
+            user,
+            "system.reboot",
+            &when,
+            r.get("error").is_none(),
+            "scheduled",
+        );
+        return if r.get("error").is_some() {
+            r
+        } else {
+            json!({ "ok": true, "msg": format!("Reboot scheduled in {delay_mins} min") })
+        };
+    }
+    // Immediate: the machine dies before the sudo call returns, so audit intent now
+    // and spawn so the response flushes before `reboot` tears the connection down.
+    crate::audit::log(user, "system.reboot", "", true, "");
     let pw = password.to_string();
     let user = user.to_string();
     tokio::spawn(async move {
@@ -187,4 +216,50 @@ async fn restart_host(user: &str, password: &str) -> Value {
         sudo_as_user(&user, &pw, &["reboot"]).await;
     });
     json!({ "ok": true, "msg": "Reboot initiated" })
+}
+
+async fn poweroff_host(user: &str, password: &str, delay_mins: u64) -> Value {
+    if delay_mins > 0 {
+        // Scheduled: `shutdown -h +N` returns immediately after arming the timer.
+        let when = format!("+{delay_mins}");
+        let r = sudo_as_user(user, password, &["shutdown", "-h", &when]).await;
+        crate::audit::log(
+            user,
+            "system.poweroff",
+            &when,
+            r.get("error").is_none(),
+            "scheduled",
+        );
+        return if r.get("error").is_some() {
+            r
+        } else {
+            json!({ "ok": true, "msg": format!("Shutdown scheduled in {delay_mins} min") })
+        };
+    }
+    // Immediate: the machine dies before the sudo call returns, so audit intent now
+    // and spawn so the response flushes before `poweroff` tears the connection down.
+    crate::audit::log(user, "system.poweroff", "", true, "");
+    let pw = password.to_string();
+    let user = user.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(400)).await;
+        sudo_as_user(&user, &pw, &["poweroff"]).await;
+    });
+    json!({ "ok": true, "msg": "Shutdown initiated" })
+}
+
+async fn cancel_shutdown(user: &str, password: &str) -> Value {
+    let r = sudo_as_user(user, password, &["shutdown", "-c"]).await;
+    crate::audit::log(
+        user,
+        "system.cancel_shutdown",
+        "",
+        r.get("error").is_none(),
+        "",
+    );
+    if r.get("error").is_some() {
+        r
+    } else {
+        json!({ "ok": true, "msg": "Scheduled power action cancelled" })
+    }
 }

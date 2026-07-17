@@ -125,14 +125,6 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts, use
     fetchAll();
   };
 
-  const handleRestart = async (host: HostEntry) => {
-    await rawRequest('host.action', {
-      host: host.id,
-      action: 'restart',
-      password: su.password,
-    });
-  };
-
   // Filter by search query
   const q = query.trim().toLowerCase();
   const filtered = q
@@ -181,7 +173,6 @@ export function Management({ hosts, activeHost, onSwitchHost, onReloadHosts, use
             onSwitch={() => onSwitchHost(item.host)}
             onRemove={() => handleRemove(item.host)}
             onRoleChange={(r) => handleRoleChange(item.host, r)}
-            onRestart={() => handleRestart(item.host)}
           />
         ))}
       </div>
@@ -270,9 +261,9 @@ function formatDate(iso: string): string {
   } catch { return iso; }
 }
 
-type CardAction = 'remove' | 'restart' | 'role' | null;
+type CardAction = 'remove' | 'role' | null;
 
-function HostCard({ item, isActive, isSelected, userExists, localIp, onSelect, onSwitch, onRemove, onRoleChange, onRestart }: {
+function HostCard({ item, isActive, isSelected, userExists, localIp, onSelect, onSwitch, onRemove, onRoleChange }: {
   item: HostWithConfig;
   isActive: boolean;
   isSelected: boolean;
@@ -282,7 +273,6 @@ function HostCard({ item, isActive, isSelected, userExists, localIp, onSelect, o
   onSwitch: () => void;
   onRemove: () => Promise<void>;
   onRoleChange: (role: string) => Promise<void>;
-  onRestart: () => Promise<void>;
 }) {
   const { host, config, error } = item;
   const online = host.online || host.is_local;
@@ -317,16 +307,6 @@ function HostCard({ item, isActive, isSelected, userExists, localIp, onSelect, o
       toast.success(`${displayName} removed.`);
     } catch (e) {
       toast.error(`Remove failed: ${e}`);
-    } finally { setBusy(false); setActiveAction(null); }
-  };
-
-  const confirmRestart = async () => {
-    setBusy(true);
-    try {
-      await onRestart();
-      toast.warn(`Reboot initiated — ${displayName} will go offline shortly.`);
-    } catch (e) {
-      toast.error(`Restart failed: ${e}`);
     } finally { setBusy(false); setActiveAction(null); }
   };
 
@@ -407,16 +387,6 @@ function HostCard({ item, isActive, isSelected, userExists, localIp, onSelect, o
         </div>
       )}
 
-      {activeAction === 'restart' && (
-        <div style={S.confirm} onClick={stop}>
-          <span style={{ fontSize: '0.8rem' }}>Reboot <b>{displayName}</b>?</span>
-          <div style={S.confirmBtns}>
-            <button style={S.btnWarn} onClick={confirmRestart} disabled={busy}>{busy ? '…' : 'Reboot'}</button>
-            <button style={S.btnGhost} onClick={cancel}>Cancel</button>
-          </div>
-        </div>
-      )}
-
       {activeAction === 'role' && (
         <div style={S.confirm} onClick={stop}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-2)', marginBottom: '0.25rem' }}>Roles:</div>
@@ -472,11 +442,6 @@ function HostCard({ item, isActive, isSelected, userExists, localIp, onSelect, o
             </button>
           )}
           {online && <button style={S.btnAction} onClick={() => startAction('role')}>Role</button>}
-          {online && !host.is_local && (
-            <button style={{ ...S.btnAction, color: 'var(--c-yellow)' }} onClick={() => startAction('restart')}>
-              Restart
-            </button>
-          )}
           {!host.is_local && (
             <button style={{ ...S.btnAction, color: 'var(--c-red)' }} onClick={() => startAction('remove')}>
               Remove
@@ -584,7 +549,6 @@ const S: Record<string, React.CSSProperties> = {
   confirmBtns:   { display: 'flex', gap: '0.35rem' },
   btnPrimary:    { padding: '0.22rem 0.65rem', fontSize: '0.76rem', borderRadius: 4, border: 'none', background: 'var(--c-blue)', color: 'var(--bg-app)', cursor: 'pointer', fontWeight: 600 },
   btnDanger:     { padding: '0.22rem 0.65rem', fontSize: '0.76rem', borderRadius: 4, border: 'none', background: 'var(--c-red)', color: 'var(--bg-app)', cursor: 'pointer', fontWeight: 600 },
-  btnWarn:       { padding: '0.22rem 0.65rem', fontSize: '0.76rem', borderRadius: 4, border: 'none', background: 'var(--c-yellow)', color: 'var(--bg-app)', cursor: 'pointer', fontWeight: 600 },
   btnGhost:      { padding: '0.22rem 0.65rem', fontSize: '0.76rem', borderRadius: 4, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-2)', cursor: 'pointer' },
   tagBox:        { display: 'flex', flexWrap: 'wrap', gap: '0.3rem', alignItems: 'center', background: 'var(--bg-surface)', border: '1px solid var(--bg-hover)', borderRadius: 4, padding: '0.25rem 0.4rem', minHeight: 30 },
   tag:           { display: 'inline-flex', alignItems: 'center', gap: '0.25rem', background: 'color-mix(in srgb, var(--c-blue) 13%, transparent)', border: '1px solid color-mix(in srgb, var(--c-blue) 27%, transparent)', borderRadius: 3, padding: '0.1rem 0.35rem', fontSize: '0.75rem', color: 'var(--c-blue)' },

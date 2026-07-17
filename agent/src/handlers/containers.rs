@@ -533,7 +533,10 @@ async fn pull_image(rt: &str, image: &str, user: &str, password: &str) -> serde_
     if image.is_empty() {
         return serde_json::json!({ "error": "no image specified" });
     }
-    if !is_valid_image_ref(image) {
+    // Auto-qualify short names (nginx → docker.io/library/nginx) so podman, which
+    // has no unqualified-search-registries by default, resolves them like Docker.
+    let image = qualify_image(image);
+    if !is_valid_image_ref(&image) {
         return serde_json::json!({ "error": "invalid image reference" });
     }
     if password.is_empty() {
@@ -541,7 +544,7 @@ async fn pull_image(rt: &str, image: &str, user: &str, password: &str) -> serde_
     }
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(300),
-        sudo_cmd(user, password, &[rt, "pull", "--", image]),
+        sudo_cmd(user, password, &[rt, "pull", "--", &image]),
     )
     .await;
     match output {
@@ -604,11 +607,14 @@ async fn create_container(
     user: &str,
     password: &str,
 ) -> serde_json::Value {
-    let image = data.get("image").and_then(|v| v.as_str()).unwrap_or("");
-    if image.is_empty() {
+    let image_input = data.get("image").and_then(|v| v.as_str()).unwrap_or("");
+    if image_input.is_empty() {
         return serde_json::json!({ "error": "no image specified" });
     }
-    if !is_valid_image_ref(image) {
+    // Auto-qualify short names (nginx → docker.io/library/nginx) so podman, which
+    // has no unqualified-search-registries by default, resolves them like Docker.
+    let image = qualify_image(image_input);
+    if !is_valid_image_ref(&image) {
         return serde_json::json!({ "error": "invalid image reference" });
     }
     if password.is_empty() {
@@ -682,7 +688,7 @@ async fn create_container(
     }
 
     args.push("--".into());
-    args.push(image.into());
+    args.push(image);
 
     // Optional command — accept either a string (split by whitespace) or
     // an array of strings (used as-is, preserving arguments with spaces).
@@ -1009,6 +1015,25 @@ fn is_valid_image_ref(image: &str) -> bool {
             .chars()
             .all(|c| c.is_alphanumeric() || "-_./: ".contains(c))
         && !image.contains("..")
+}
+
+/// Expand an unqualified image name to a Docker Hub reference, matching Docker's
+/// implicit `docker.io[/library]` default. podman has no unqualified-search
+/// registries by default, so `nginx` would otherwise fail to resolve.
+/// A ref whose first path segment looks like a registry host (has a dot or port,
+/// or is `localhost`) is left untouched.
+fn qualify_image(image: &str) -> String {
+    let image = image.trim();
+    let first = image.split('/').next().unwrap_or("");
+    let has_registry =
+        image.contains('/') && (first.contains('.') || first.contains(':') || first == "localhost");
+    if has_registry {
+        image.to_string()
+    } else if image.contains('/') {
+        format!("docker.io/{image}")
+    } else {
+        format!("docker.io/library/{image}")
+    }
 }
 
 /// Valid restart policy: no, always, unless-stopped, on-failure[:max-retries].
@@ -1471,4 +1496,33 @@ fn is_valid_volume_driver_name(driver: &str) -> bool {
         && driver
             .chars()
             .all(|c| c.is_alphanumeric() || "-_.".contains(c))
+}
+
+#[cfg(test)]
+mod qualify_tests {
+    use super::qualify_image;
+
+    #[test]
+    fn qualifies_short_names() {
+        assert_eq!(qualify_image("nginx"), "docker.io/library/nginx");
+        assert_eq!(qualify_image("nginx:1.27"), "docker.io/library/nginx:1.27");
+        assert_eq!(qualify_image("bitnami/nginx"), "docker.io/bitnami/nginx");
+    }
+
+    #[test]
+    fn leaves_qualified_refs() {
+        assert_eq!(
+            qualify_image("docker.io/library/nginx"),
+            "docker.io/library/nginx"
+        );
+        assert_eq!(
+            qualify_image("ghcr.io/user/app:tag"),
+            "ghcr.io/user/app:tag"
+        );
+        assert_eq!(
+            qualify_image("quay.io/podman/hello"),
+            "quay.io/podman/hello"
+        );
+        assert_eq!(qualify_image("localhost:5000/app"), "localhost:5000/app");
+    }
 }
