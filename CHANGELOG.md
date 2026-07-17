@@ -9,6 +9,22 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-07-18
+
+### Added
+- **SSH access** management (Admin → SSH access):
+  - *Authorized keys* — manage `authorized_keys` per user; add, edit and remove
+    keys (validated with `ssh-keygen`, correct `~/.ssh` ownership/permissions
+    restored on write). The user field is free text with local-user suggestions,
+    so directory users (FreeIPA/AD) can be entered too, and defaults to the
+    logged-in user.
+  - *Server config* — edit `sshd_config` as a table of directives (add / edit /
+    remove; comments preserved). Changes are validated with `sshd -t` before they
+    are applied and are rejected if invalid; a backup is kept as
+    `sshd_config.tenodera.bak` and the service is reloaded.
+- **Audit log** viewer (Admin → Audit log) — a filterable table of actions taken
+  through the panel (time, user, action, target, result, details), newest first.
+
 ## [0.2.2] - 2026-07-17
 
 ### Added

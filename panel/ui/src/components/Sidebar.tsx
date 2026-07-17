@@ -50,6 +50,8 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
 const ADMIN_ITEMS: NavItem[] = [
   { path: '/terminal', label: 'Terminal', icon: 'terminal' },
   { path: '/management', label: 'Management', icon: 'management' },
+  { path: '/ssh', label: 'SSH access', icon: 'key' },
+  { path: '/audit', label: 'Audit log', icon: 'audit' },
   { path: '/api-docs', label: 'API', icon: 'api' },
 ];
 
@@ -108,6 +110,10 @@ const SUBNAV: Record<string, SubItem[]> = {
     { id: 'hosts', label: 'Hosts' },
     { id: 'pending', label: 'Pending' },
     { id: 'tokens', label: 'Tokens' },
+  ],
+  '/ssh': [
+    { id: 'keys', label: 'Authorized keys' },
+    { id: 'sshd', label: 'Server config' },
   ],
   // The time-sync sub-tab is conditional per host (only when the daemon has a
   // management tab). System.tsx redirects ?tab=timesync back to Settings and
