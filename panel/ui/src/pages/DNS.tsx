@@ -232,21 +232,51 @@ function ResolverTab({ info, su, request, onReload }: {
 
 // ── Hosts tab ──────────────────────────────────────────────────────────────────
 
+interface HostRow { comment: boolean; raw?: string; ip?: string; hostnames?: string }
+
+/// Parse /etc/hosts into rows, keeping comment/blank lines so they survive a save.
+function parseHosts(content: string): HostRow[] {
+  return content.split('\n').map((line) => {
+    const t = line.trim();
+    if (t === '' || t.startsWith('#')) return { comment: true, raw: line };
+    const parts = t.split(/\s+/);
+    return { comment: false, ip: parts[0], hostnames: parts.slice(1).join(' ') };
+  });
+}
+
+/// Rebuild the file: comment lines verbatim, entries as `ip<TAB>hostnames`.
+function buildHosts(rows: HostRow[]): string {
+  const body = rows
+    .map((r) => (r.comment ? (r.raw ?? '') : `${(r.ip ?? '').trim()}\t${(r.hostnames ?? '').trim()}`.trim()))
+    .join('\n')
+    .replace(/\n+$/, '');
+  return body + '\n';
+}
+
 function EtcHostsTab({ info, su, request, onReload }: {
   info: DnsInfo | null;
   su: ReturnType<typeof useSuperuser>;
   request: ReturnType<typeof useTransport>['request'];
   onReload: () => void;
 }) {
-  const [content, setContent] = useState(info?.hosts ?? '');
+  const [rows, setRows] = useState<HostRow[]>(() => parseHosts(info?.hosts ?? ''));
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState('');
   const [pwPrompt, setPwPrompt] = useState(false);
   const [pw, setPw] = useState('');
 
-  useEffect(() => { if (info) setContent(info.hosts); }, [info]);
+  useEffect(() => { if (info) setRows(parseHosts(info.hosts)); }, [info]);
 
   const flash = (m: string) => { setMsg(m); setTimeout(() => setMsg(''), 4000); };
+
+  const content = buildHosts(rows);
+  const changed = content !== (info?.hosts ?? '');
+  const entryCount = rows.filter((r) => !r.comment).length;
+
+  const updateRow = (i: number, patch: Partial<HostRow>) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const removeRow = (i: number) => setRows((prev) => prev.filter((_, idx) => idx !== i));
+  const addRow = () => setRows((prev) => [...prev, { comment: false, ip: '', hostnames: '' }]);
 
   const saveHosts = async (password: string) => {
     setSaving(true);
@@ -270,24 +300,60 @@ function EtcHostsTab({ info, su, request, onReload }: {
     setPwPrompt(false); setPw('');
   };
 
-  const lines = content.split('\n').length;
-  const changed = content !== (info?.hosts ?? '');
+  const inp: React.CSSProperties = {
+    width: '100%', boxSizing: 'border-box', padding: '0.35rem 0.5rem', borderRadius: 5,
+    border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-1)',
+    fontSize: '0.85rem', fontFamily: 'monospace', outline: 'none',
+  };
 
   return (
     <div style={S.section}>
       <div style={S.card}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-          <div style={S.cardTitle}>/etc/hosts <span style={S.muted}>({lines} lines)</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+          <div style={S.cardTitle}>/etc/hosts <span style={S.muted}>({entryCount} entries)</span></div>
           {msg && <span style={{ fontSize: '0.8rem', color: msg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)' }}>{msg}</span>}
         </div>
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          style={{ ...S.textarea, minHeight: 360 }}
-          rows={20}
-          spellCheck={false}
-        />
+
+        <div style={{ overflowX: 'auto' }}>
+          <table style={S.table}>
+            <thead>
+              <tr>
+                <th style={{ ...S.th, width: '34%' }}>IP address</th>
+                <th style={S.th}>Hostnames / aliases</th>
+                <th style={{ ...S.th, width: 44 }} />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (r.comment ? null : (
+                <tr key={i}>
+                  <td style={S.td}>
+                    <input style={inp} value={r.ip ?? ''} placeholder="e.g. 192.168.1.10"
+                      onChange={(e) => updateRow(i, { ip: e.target.value })} />
+                  </td>
+                  <td style={S.td}>
+                    <input style={inp} value={r.hostnames ?? ''} placeholder="host.example.com alias"
+                      onChange={(e) => updateRow(i, { hostnames: e.target.value })} />
+                  </td>
+                  <td style={S.td}>
+                    <button
+                      style={{ width: 28, height: 28, borderRadius: 5, border: '1px solid var(--border)', background: 'transparent', color: 'var(--c-red)', cursor: 'pointer', fontSize: '1rem', lineHeight: 1 }}
+                      onClick={() => removeRow(i)} title="Remove entry">×</button>
+                  </td>
+                </tr>
+              )))}
+              {entryCount === 0 && (
+                <tr><td style={S.td} colSpan={3}><span style={S.muted}>No entries.</span></td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
         <div style={S.btnRow}>
+          <button style={S.cancelBtn} onClick={addRow}>+ Add entry</button>
+          <span style={{ flex: 1 }} />
+          {changed && (
+            <button style={S.cancelBtn} onClick={() => setRows(parseHosts(info?.hosts ?? ''))}>Revert</button>
+          )}
           <button
             style={{ ...S.saveBtn, opacity: changed ? 1 : 0.4, cursor: changed ? 'pointer' : 'default' }}
             onClick={handleSave}
@@ -295,10 +361,8 @@ function EtcHostsTab({ info, su, request, onReload }: {
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
-          {changed && (
-            <button style={S.cancelBtn} onClick={() => setContent(info?.hosts ?? '')}>Revert</button>
-          )}
         </div>
+        <p style={S.muted}>Comment lines (#) are preserved. One row per host line; put extra aliases after the primary hostname, space-separated.</p>
       </div>
 
       {pwPrompt && (

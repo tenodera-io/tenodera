@@ -52,101 +52,177 @@ impl ChannelHandler for TerminalPtyHandler {
         tx: mpsc::Sender<Message>,
         mut shutdown: watch::Receiver<bool>,
     ) {
-        // Resolve target user from gateway-injected _user field
-        let target_user = options
-            .extra
-            .get("_user")
-            .and_then(|v| v.as_str())
-            .filter(|u| {
-                u.chars()
-                    .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
-            })
-            .map(|s| s.to_string());
-        let user_info = target_user.as_deref().and_then(crate::util::lookup_user);
-
-        let default_shell = user_info
-            .as_ref()
-            .map(|(_, _, _, s)| s.clone())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| get_user_shell().unwrap_or_else(|| "/bin/sh".to_string()));
-        let shell = options
-            .extra
-            .get("shell")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or(default_shell);
-
-        // Validate shell path against allowed shells
-        const ALLOWED_SHELLS: &[&str] = &[
-            "/bin/sh",
-            "/bin/bash",
-            "/bin/zsh",
-            "/bin/fish",
-            "/usr/bin/sh",
-            "/usr/bin/bash",
-            "/usr/bin/zsh",
-            "/usr/bin/fish",
-        ];
-        if !ALLOWED_SHELLS.contains(&shell.as_str()) {
-            tracing::warn!(shell = %shell, "rejected non-whitelisted shell");
-            let _ = tx
-                .send(Message::Close {
-                    channel: channel.into(),
-                    problem: Some(format!("shell not allowed: {shell}")),
-                })
-                .await;
-            return;
-        }
-
         let cols = options
             .extra
             .get("cols")
             .and_then(|v| v.as_u64())
             .unwrap_or(80) as u16;
-
         let rows = options
             .extra
             .get("rows")
             .and_then(|v| v.as_u64())
             .unwrap_or(24) as u16;
-
-        let default_cwd = user_info
-            .as_ref()
-            .map(|(_, _, home, _)| home.clone())
-            .unwrap_or_else(|| "/tmp".to_string());
-        let cwd = options
-            .extra
-            .get("cwd")
-            .and_then(|v| v.as_str())
-            .unwrap_or(&default_cwd);
-
         let channel: ChannelId = channel.into();
 
-        // Audit log: terminal open
-        let audit_user = target_user.as_deref().unwrap_or("unknown");
-        crate::audit::log(
-            audit_user,
-            "terminal.open",
-            &format!("shell={shell}"),
-            true,
-            "",
-        );
+        // A `container` option turns this into an interactive exec into that
+        // container (`<rt> exec -it <container> <shell>`), gated on a verified
+        // superuser password. Otherwise it is a login shell as the caller.
+        let container = options
+            .extra
+            .get("container")
+            .and_then(|v| v.as_str())
+            .filter(|c| {
+                !c.is_empty()
+                    && c.len() <= 128
+                    && c.chars().all(|ch| {
+                        ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':' | '/')
+                    })
+            });
+
+        let pty = if let Some(container) = container {
+            let user = options
+                .extra
+                .get("_user")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let password = options
+                .extra
+                .get("password")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            // Verify the caller's password + sudo access (PAM/SSSD) before a root shell into a container.
+            let v = crate::handlers::superuser_verify::verify_password(user, password).await;
+            if v.get("ok").and_then(|x| x.as_bool()) != Some(true) {
+                let _ = tx
+                    .send(Message::Close {
+                        channel,
+                        problem: Some("authentication required".into()),
+                    })
+                    .await;
+                return;
+            }
+            let rt = if crate::util::which("docker").await {
+                "docker"
+            } else if crate::util::which("podman").await {
+                "podman"
+            } else {
+                let _ = tx
+                    .send(Message::Close {
+                        channel,
+                        problem: Some("no container runtime".into()),
+                    })
+                    .await;
+                return;
+            };
+            let requested = options
+                .extra
+                .get("shell")
+                .and_then(|v| v.as_str())
+                .filter(|s| matches!(*s, "sh" | "bash" | "ash" | "/bin/sh" | "/bin/bash"));
+            crate::audit::log(
+                user,
+                "container.exec",
+                &format!("{rt} {container} {}", requested.unwrap_or("auto")),
+                true,
+                "",
+            );
+            // Honour an explicit shell; otherwise detect one inside the container —
+            // prefer bash, fall back to ash/sh — since minimal images vary.
+            let args: Vec<&str> = match requested {
+                Some(sh) => vec!["exec", "-it", container, sh],
+                None => vec![
+                    "exec",
+                    "-it",
+                    container,
+                    "/bin/sh",
+                    "-c",
+                    "exec \"$(command -v bash || command -v ash || echo /bin/sh)\"",
+                ],
+            };
+            // Runs as the agent (root) against the host's rootful runtime.
+            open_pty_cmd(rt, &args, cols, rows, "/", None)
+        } else {
+            // ── Login shell as the target user ──
+            let target_user = options
+                .extra
+                .get("_user")
+                .and_then(|v| v.as_str())
+                .filter(|u| {
+                    u.chars()
+                        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+                })
+                .map(|s| s.to_string());
+            let user_info = target_user.as_deref().and_then(crate::util::lookup_user);
+
+            let default_shell = user_info
+                .as_ref()
+                .map(|(_, _, _, s)| s.clone())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| get_user_shell().unwrap_or_else(|| "/bin/sh".to_string()));
+            let shell = options
+                .extra
+                .get("shell")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or(default_shell);
+
+            const ALLOWED_SHELLS: &[&str] = &[
+                "/bin/sh",
+                "/bin/bash",
+                "/bin/zsh",
+                "/bin/fish",
+                "/usr/bin/sh",
+                "/usr/bin/bash",
+                "/usr/bin/zsh",
+                "/usr/bin/fish",
+            ];
+            if !ALLOWED_SHELLS.contains(&shell.as_str()) {
+                tracing::warn!(shell = %shell, "rejected non-whitelisted shell");
+                let _ = tx
+                    .send(Message::Close {
+                        channel,
+                        problem: Some(format!("shell not allowed: {shell}")),
+                    })
+                    .await;
+                return;
+            }
+
+            let default_cwd = user_info
+                .as_ref()
+                .map(|(_, _, home, _)| home.clone())
+                .unwrap_or_else(|| "/tmp".to_string());
+            let cwd = options
+                .extra
+                .get("cwd")
+                .and_then(|v| v.as_str())
+                .unwrap_or(&default_cwd);
+
+            let audit_user = target_user.as_deref().unwrap_or("unknown");
+            crate::audit::log(
+                audit_user,
+                "terminal.open",
+                &format!("shell={shell}"),
+                true,
+                "",
+            );
+
+            open_pty_cmd(&shell, &[], cols, rows, cwd, target_user.as_deref())
+        };
 
         // Open PTY — returns (async reader via AsyncFd, writer OwnedFd, child process)
-        let (reader, writer, child) =
-            match open_pty(&shell, cols, rows, cwd, target_user.as_deref()) {
-                Ok(tuple) => tuple,
-                Err(e) => {
-                    tracing::error!(error = %e, "failed to open PTY");
-                    let _ = tx
-                        .send(Message::Close {
-                            channel,
-                            problem: Some(format!("pty-error: {e}")),
-                        })
-                        .await;
-                    return;
-                }
-            };
+        let (reader, writer, child) = match pty {
+            Ok(tuple) => tuple,
+            Err(e) => {
+                tracing::error!(error = %e, "failed to open PTY");
+                let _ = tx
+                    .send(Message::Close {
+                        channel,
+                        problem: Some(format!("pty-error: {e}")),
+                    })
+                    .await;
+                return;
+            }
+        };
 
         // Spawn a background task to reap the child process.
         // Without this, the child becomes a zombie after exit because
@@ -312,8 +388,9 @@ fn get_user_shell() -> Option<String> {
 ///
 /// Returns (AsyncFd reader, OwnedFd writer, Child) for the master side.
 /// The caller MUST reap the Child (via wait/spawn_blocking) to avoid zombies.
-fn open_pty(
-    shell: &str,
+fn open_pty_cmd(
+    program: &str,
+    args: &[&str],
     cols: u16,
     rows: u16,
     cwd: &str,
@@ -340,20 +417,21 @@ fn open_pty(
 
     // Prepare argv0 — login shell prefix if switching user
     let argv0 = if run_as_user.is_some() {
-        let basename = shell.rsplit('/').next().unwrap_or(shell);
+        let basename = program.rsplit('/').next().unwrap_or(program);
         format!("-{basename}")
     } else {
-        shell.rsplit('/').next().unwrap_or(shell).to_string()
+        program.rsplit('/').next().unwrap_or(program).to_string()
     };
 
     // Resolve user info for pre_exec (uid, gid, home, username)
     let user_info = run_as_user.and_then(|u| {
         crate::util::lookup_user(u).map(|(uid, gid, home, _)| (uid, gid, home, u.to_string()))
     });
-    let shell_for_env = shell.to_string();
+    let shell_for_env = program.to_string();
 
-    let mut cmd = Command::new(shell);
+    let mut cmd = Command::new(program);
     cmd.arg0(&argv0);
+    cmd.args(args);
     cmd.stdin(Stdio::from(slave_for_stdin));
     cmd.stdout(Stdio::from(slave_for_stdout));
     cmd.stderr(Stdio::from(slave_for_stderr));
@@ -397,7 +475,7 @@ fn open_pty(
     // Spawn the child process — this does fork+exec safely
     let child = cmd
         .spawn()
-        .map_err(|e| anyhow::anyhow!("failed to spawn shell {shell}: {e}"))?;
+        .map_err(|e| anyhow::anyhow!("failed to spawn {program}: {e}"))?;
 
     // Close slave fds in parent — they're only needed by the child
     drop(pty.slave);

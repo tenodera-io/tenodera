@@ -5,6 +5,7 @@ import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 import { Tabs } from '../components/Tabs.tsx';
 import { useTabParam } from '../hooks/useTabParam.ts';
+import { ContainerExec } from './ContainerExec.tsx';
 
 /* ── types ─────────────────────────────────────────────── */
 
@@ -117,6 +118,21 @@ function friendlyError(action: string, raw: string): string {
 
 function getId(c: Container | ContainerImage): string { return (c.Id || c.ID || '').slice(0, 12); }
 
+interface ContainerInspect {
+  Id?: string;
+  Name?: string;
+  Created?: string;
+  Config?: { Image?: string; Cmd?: string[] | null; Entrypoint?: string[] | null; Env?: string[] | null; WorkingDir?: string };
+  State?: { Status?: string; Running?: boolean; Health?: { Status?: string } };
+  HostConfig?: { RestartPolicy?: { Name?: string } };
+  Mounts?: Array<{ Type?: string; Source?: string; Destination?: string; RW?: boolean; Name?: string }>;
+  NetworkSettings?: {
+    IPAddress?: string;
+    Ports?: Record<string, Array<{ HostIp?: string; HostPort?: string }> | null> | null;
+    Networks?: Record<string, { IPAddress?: string }> | null;
+  };
+}
+
 function getContainerName(c: Container): string {
   if (c.Names) {
     if (Array.isArray(c.Names)) return c.Names[0]?.replace(/^\//, '') || '';
@@ -217,6 +233,9 @@ export function Containers() {
   const [logsTail, setLogsTail] = useState(200);
   const logsPreRef = useRef<HTMLPreElement | null>(null);
 
+  // Exec (interactive shell into a container)
+  const [execTarget, setExecTarget] = useState<{ id: string; name: string } | null>(null);
+
   // Stats
   const [statsMap, setStatsMap] = useState<Map<string, ContainerStat>>(new Map());
   const [statsLoading, setStatsLoading] = useState(false);
@@ -225,6 +244,7 @@ export function Containers() {
   // Inspect modals
   const [netInspect, setNetInspect] = useState<NetworkInspect | null>(null);
   const [volInspect, setVolInspect] = useState<VolumeInspect | null>(null);
+  const [ctrInspect, setCtrInspect] = useState<ContainerInspect | null>(null);
   const netInspectRef = useRef<NetworkInspect | null>(null);
   netInspectRef.current = netInspect;
 
@@ -318,7 +338,7 @@ export function Containers() {
     setService(null); setError(null); setLogs(null); setPulling(null);
     setCtrSearch(''); setImgSearch(''); setVolSearch(''); setNetSearch('');
     setConfirmingRemove(null); setStatsMap(new Map()); setShowStats(false);
-    setNetInspect(null); setVolInspect(null);
+    setNetInspect(null); setVolInspect(null); setCtrInspect(null);
 
     const ch = openChannel('container.manage');
     channelRef.current = ch;
@@ -358,6 +378,9 @@ export function Containers() {
           else if (data?.error) setError(String(data.error));
         } else if (action === 'network_inspect') {
           if (Array.isArray(data) && data.length > 0) setNetInspect(data[0] as NetworkInspect);
+          else if (data?.error) setError(String(data.error));
+        } else if (action === 'inspect') {
+          if (Array.isArray(data) && data.length > 0) setCtrInspect(data[0] as ContainerInspect);
           else if (data?.error) setError(String(data.error));
         } else if (action === 'stats_all') {
           setStatsLoading(false);
@@ -623,6 +646,14 @@ export function Containers() {
                             {state !== 'running' && <button style={S.actBtn} onClick={() => requestPrivileged('start', `Start ${getContainerName(c)}`, id, { owner })} title="Start">▶</button>}
                             {state === 'running' && <button style={S.actBtn} onClick={() => requestPrivileged('stop', `Stop ${getContainerName(c)}`, id, { owner })} title="Stop">■</button>}
                             <button style={S.actBtn} onClick={() => requestPrivileged('restart', `Restart ${getContainerName(c)}`, id, { owner })} title="Restart">↻</button>
+                            {state === 'running' && (
+                              <button style={S.actBtn} title="Shell (exec)"
+                                onClick={() => {
+                                  if (!su.active) { setError('Enable superuser mode (top bar) to open a container shell.'); return; }
+                                  setExecTarget({ id, name: getContainerName(c) });
+                                }}>❯_</button>
+                            )}
+                            <button style={S.actBtn} onClick={() => sendAction('inspect', { id, owner })} title="Inspect">🔍</button>
                             <button style={S.actBtn} onClick={() => { sendAction('logs', { id, tail: logsTail, owner }); setLogs({ id, owner, text: '…' }); }} title="Logs">📋</button>
                             {confirmingRemove === `ctr:${id}:${owner}` ? (
                               <span style={S.confirmInline}>
@@ -1117,6 +1148,56 @@ export function Containers() {
             </div>
           </div>
         </div>
+      )}
+
+      {ctrInspect && (() => {
+        const ci = ctrInspect;
+        const name = (ci.Name || '').replace(/^\//, '') || (ci.Id ? ci.Id.slice(0, 12) : 'container');
+        const cmd = [...(ci.Config?.Entrypoint || []), ...(ci.Config?.Cmd || [])].join(' ');
+        const ports = Object.entries(ci.NetworkSettings?.Ports || {})
+          .flatMap(([k, arr]) => (arr || []).map(b => `${b.HostIp || '0.0.0.0'}:${b.HostPort || ''} → ${k}`));
+        const mounts = (ci.Mounts || []).map(m => `${m.Name || m.Source || '?'} → ${m.Destination || '?'}${m.RW === false ? ' (ro)' : ''}`);
+        const nets = Object.entries(ci.NetworkSettings?.Networks || {}).map(([n, i]) => `${n}: ${i.IPAddress || '—'}`);
+        if (nets.length === 0 && ci.NetworkSettings?.IPAddress) nets.push(ci.NetworkSettings.IPAddress);
+        const env = ci.Config?.Env || [];
+        const detTitle: React.CSSProperties = { color: 'var(--text-2)', fontSize: '0.8rem', margin: '0.7rem 0 0.3rem' };
+        const detMono: React.CSSProperties = { fontFamily: 'monospace', fontSize: '0.82rem', padding: '0.15rem 0', wordBreak: 'break-all' };
+        return (
+          <div style={S.overlay} onClick={() => setCtrInspect(null)}>
+            <div style={{ ...S.modal, maxWidth: 720 }} onClick={e => e.stopPropagation()}>
+              <div style={S.modalHeader}>
+                <h3 style={{ margin: 0 }}>Container: {name}</h3>
+                <button style={S.actBtn} onClick={() => setCtrInspect(null)}>✕</button>
+              </div>
+              <div style={S.inspectGrid}>
+                <InspectRow label="Image" value={ci.Config?.Image || '—'} mono />
+                <InspectRow label="Command" value={cmd || '—'} mono />
+                <InspectRow label="Status" value={`${ci.State?.Status || '?'}${ci.State?.Health?.Status ? ` · ${ci.State.Health.Status}` : ''}`} />
+                <InspectRow label="Created" value={ci.Created ? new Date(ci.Created).toLocaleString() : '—'} />
+                <InspectRow label="Restart" value={ci.HostConfig?.RestartPolicy?.Name || '—'} />
+                <InspectRow label="Working dir" value={ci.Config?.WorkingDir || '—'} mono />
+              </div>
+              {ports.length > 0 && <><div style={detTitle}>Ports</div>{ports.map((p, i) => <div key={i} style={detMono}>{p}</div>)}</>}
+              {mounts.length > 0 && <><div style={detTitle}>Mounts</div>{mounts.map((m, i) => <div key={i} style={detMono}>{m}</div>)}</>}
+              {nets.length > 0 && <><div style={detTitle}>Networks</div>{nets.map((n, i) => <div key={i} style={detMono}>{n}</div>)}</>}
+              {env.length > 0 && (
+                <>
+                  <div style={detTitle}>Environment ({env.length})</div>
+                  <pre style={{ margin: 0, maxHeight: 200, overflow: 'auto', background: 'var(--bg-app)', padding: '0.5rem', borderRadius: 6, fontSize: '0.78rem', fontFamily: 'monospace' }}>{env.join('\n')}</pre>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {execTarget && (
+        <ContainerExec
+          container={execTarget.id}
+          label={execTarget.name}
+          password={su.password}
+          onClose={() => setExecTarget(null)}
+        />
       )}
     </div>
   );

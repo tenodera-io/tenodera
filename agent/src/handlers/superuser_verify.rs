@@ -125,7 +125,7 @@ impl ChannelHandler for SuperuserVerifyHandler {
     }
 }
 
-async fn verify_password(user: &str, password: &str) -> serde_json::Value {
+pub(crate) async fn verify_password(user: &str, password: &str) -> serde_json::Value {
     // Validate the password AND that the user actually has sudo on THIS host, by
     // running `sudo -v` **as the user** (util::sudo_as_user drops to the user first).
     //
