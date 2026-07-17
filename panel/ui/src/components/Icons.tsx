@@ -7,7 +7,7 @@ export type IconName =
   | 'packages' | 'users' | 'cron' | 'dns' | 'certificates'
   | 'logs' | 'logFiles' | 'files' | 'kdump'
   | 'terminal' | 'management' | 'api'
-  | 'monitor' | 'globe' | 'settings' | 'power' | 'system' | 'chevronDown';
+  | 'monitor' | 'globe' | 'settings' | 'power' | 'system' | 'audit' | 'key' | 'chevronDown';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   dashboard: (
@@ -171,6 +171,20 @@ const PATHS: Record<IconName, React.ReactNode> = {
       <line x1="14" x2="14" y1="2" y2="6" />
       <line x1="8" x2="8" y1="10" y2="14" />
       <line x1="16" x2="16" y1="18" y2="22" />
+    </>
+  ),
+  audit: (
+    <>
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+      <rect width="8" height="4" x="8" y="3" rx="1" />
+      <path d="m9 14 2 2 4-4" />
+    </>
+  ),
+  key: (
+    <>
+      <path d="m15.5 7.5 2.3 2.3a1 1 0 0 0 1.4 0l2.1-2.1a1 1 0 0 0 0-1.4L19 4" />
+      <path d="m21 2-9.6 9.6" />
+      <circle cx="7.5" cy="15.5" r="5.5" />
     </>
   ),
   chevronDown: <polyline points="6 9 12 15 18 9" />,

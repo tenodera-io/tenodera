@@ -8,11 +8,11 @@ use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
 use crate::handlers::{
-    certs, chrony, containers, cron, disk_usage, dns, file_list, file_ops, hardware_info,
-    host_config, hosts, journal_query, kdump, log_files, metrics_snapshot, metrics_stream,
-    network_stats, networking, networking_snapshot, packages, storage, storage_manage,
-    storage_snapshot, superuser_verify, system_info, system_pubkey, system_settings,
-    systemd_timers, systemd_units, terminal_pty, timesync, top_processes, users,
+    audit_query, certs, chrony, containers, cron, disk_usage, dns, file_list, file_ops,
+    hardware_info, host_config, hosts, journal_query, kdump, log_files, metrics_snapshot,
+    metrics_stream, network_stats, networking, networking_snapshot, packages, ssh_manage, storage,
+    storage_manage, storage_snapshot, superuser_verify, system_info, system_pubkey,
+    system_settings, systemd_timers, systemd_units, terminal_pty, timesync, top_processes, users,
 };
 
 /// Active streaming channel state.
@@ -52,6 +52,7 @@ impl Router {
     /// Register built-in handlers for MVP payloads.
     pub fn register_defaults(&mut self) {
         self.register(Arc::new(system_info::SystemInfoHandler));
+        self.register(Arc::new(audit_query::AuditQueryHandler));
         self.register(Arc::new(system_pubkey::SystemPubkeyHandler));
         self.register(Arc::new(host_config::HostConfigHandler));
         self.register(Arc::new(host_config::HostActionHandler));
@@ -73,6 +74,7 @@ impl Router {
         self.register(Arc::new(containers::ContainersHandler));
         self.register(Arc::new(storage::StorageStreamHandler));
         self.register(Arc::new(storage_manage::StorageManageHandler));
+        self.register(Arc::new(ssh_manage::SshManageHandler));
         self.register(Arc::new(superuser_verify::SuperuserVerifyHandler));
         self.register(Arc::new(networking::NetworkStreamHandler));
         self.register(Arc::new(networking::NetworkManageHandler));

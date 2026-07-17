@@ -1,3 +1,4 @@
+pub mod audit_query;
 pub mod certs;
 pub mod chrony;
 pub mod containers;
@@ -18,6 +19,7 @@ pub mod network_stats;
 pub mod networking;
 pub mod networking_snapshot;
 pub mod packages;
+pub mod ssh_manage;
 pub mod storage;
 pub mod storage_manage;
 pub mod storage_snapshot;

@@ -34,6 +34,8 @@ const DNS          = lazy(() => import('./DNS.tsx').then(m => ({ default: m.DNS 
 const Certificates = lazy(() => import('./Certificates.tsx').then(m => ({ default: m.Certificates })));
 const Management   = lazy(() => import('./Management.tsx').then(m => ({ default: m.Management })));
 const ApiDocs      = lazy(() => import('./ApiDocs.tsx').then(m => ({ default: m.ApiDocs })));
+const Audit        = lazy(() => import('./Audit.tsx').then(m => ({ default: m.Audit })));
+const Ssh          = lazy(() => import('./Ssh.tsx').then(m => ({ default: m.Ssh })));
 
 interface ShellProps {
   sessionId: string;
@@ -192,6 +194,8 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/certificates" element={<Certificates />} />
                       <Route path="/management" element={<Management hosts={hosts} activeHost={activeHost} onSwitchHost={switchHost} onReloadHosts={loadHosts} userExistsMap={userExistsMap} />} />
                       <Route path="/api-docs" element={su.suActive ? <ApiDocs /> : <Navigate to="/" />} />
+                      <Route path="/audit" element={su.suActive ? <Audit /> : <Navigate to="/" />} />
+                      <Route path="/ssh" element={su.suActive ? <Ssh loginUser={user} /> : <Navigate to="/" />} />
                       <Route path="/files" element={<Files user={user} />} />
                       <Route path="/kdump" element={<Kdump />} />
                       <Route path="/system" element={<System />} />
