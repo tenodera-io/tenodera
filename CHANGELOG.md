@@ -9,6 +9,23 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-07-18
+
+### Added
+- **Per-user brokering of container reads.** Container/image listing, inspect,
+  logs, stats, and volume/network reads now run **as the logged-in user** on the
+  host — they see only their own container-runtime resources (via `docker` group
+  membership or a rootless podman socket) instead of everything as root. The
+  superuser password still escalates via `sudo` to reveal root's resources, exactly
+  matching the existing "your resources / root resources" toggle on the Containers
+  page. This completes per-user read brokering for the command-based handlers
+  (journal, log files, process list, listening-port owners, containers).
+
+### Documentation
+- Updated SECURITY, THREAT_MODEL and DOCS: container reads are now brokered; the
+  remaining root reads are the world-readable baseline introspection plus a few
+  borderline file reads (cron, kdump, cert keys).
+
 ## [0.2.6] - 2026-07-18
 
 ### Added
@@ -256,7 +273,8 @@ Initial public release.
 - Signed `.deb`/`.rpm` packages (amd64 + arm64), SHA256SUMS + minisign signature.
 - `THREAT_MODEL.md` and a documented security model.
 
-[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.6...HEAD
+[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.7...HEAD
+[0.2.7]: https://github.com/tenodera-io/tenodera/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/tenodera-io/tenodera/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/tenodera-io/tenodera/compare/v0.2.4...v0.2.5
 [0.2.4]: https://github.com/tenodera-io/tenodera/compare/v0.2.3...v0.2.4
