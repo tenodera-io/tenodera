@@ -137,6 +137,67 @@ pub async fn sudo_as_user(user: &str, password: &str, args: &[&str]) -> Value {
     }
 }
 
+/// Outcome of running a read-only command dropped to a target user (no sudo, no
+/// password). Lets callers distinguish "this user has no account here" (baseline
+/// only) from a command that actually ran.
+pub enum UserReadOutcome {
+    /// The user is unknown to this host — the caller should surface a `restricted`
+    /// result (only baseline, world-readable data is available to them).
+    NoAccount,
+    /// The command ran; inspect `.status` / `.stdout` / `.stderr`. A non-zero exit
+    /// is still `Ran` — the kernel's own permission check, not a spawn failure.
+    Ran(std::process::Output),
+    /// The command could not be spawned (e.g. the privilege drop failed).
+    SpawnFailed(String),
+}
+
+/// Run a read-only `args` **as `user`** by dropping privileges (initgroups → setgid →
+/// setuid) in `pre_exec`, with **no sudo and no password**. The host's own file
+/// permissions and group membership then decide what the user may read — exactly what
+/// that user would see in their own shell session on the host. A user unknown to this
+/// host yields [`UserReadOutcome::NoAccount`].
+///
+/// This is the read-side counterpart to [`sudo_as_user`]: same per-host authorization
+/// gate, but without escalating — reads never prompt for a password.
+pub async fn run_cmd_as_user(user: &str, args: &[&str]) -> UserReadOutcome {
+    let Some((uid, gid, _home, _shell)) = lookup_user(user) else {
+        return UserReadOutcome::NoAccount;
+    };
+    let ucstr = match std::ffi::CString::new(user) {
+        Ok(c) => c,
+        Err(_) => return UserReadOutcome::SpawnFailed("invalid username".to_string()),
+    };
+    let Some((program, rest)) = args.split_first() else {
+        return UserReadOutcome::SpawnFailed("no command".to_string());
+    };
+
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.args(rest)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // pre_exec runs in the forked child before exec: drop to the target user so the
+    // kernel enforces *their* access rights. gid before uid; initgroups pulls
+    // supplementary groups so group-based ACLs (e.g. `adm` on the journal) apply.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::initgroups(ucstr.as_ptr(), gid) != 0
+                || libc::setgid(gid) != 0
+                || libc::setuid(uid) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+
+    match cmd.output().await {
+        Ok(out) => UserReadOutcome::Ran(out),
+        Err(e) => UserReadOutcome::SpawnFailed(e.to_string()),
+    }
+}
+
 /// Run a read-only command AS THE USER via sudo and return its stdout, so the host
 /// decides who may read privileged content. A refusal (wrong password, or the host's
 /// rules denying the command) comes back as `error: <message>`, which callers already
@@ -276,6 +337,14 @@ mod tests {
         let err = res.get("error").and_then(|v| v.as_str()).unwrap_or("");
         assert!(err.contains("not present on this host"), "got: {res}");
         assert!(res.get("ok").is_none());
+    }
+
+    #[tokio::test]
+    async fn run_cmd_as_user_rejects_unknown_user() {
+        // A user not present on this host yields NoAccount before anything is spawned —
+        // the read-side per-host authorization gate. Runs without root.
+        let res = run_cmd_as_user("no-such-user-9f3a2b1c", &["true"]).await;
+        assert!(matches!(res, UserReadOutcome::NoAccount));
     }
 
     #[test]

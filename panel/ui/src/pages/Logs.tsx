@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { PageHeader } from '../components/PageHeader.tsx';
+import { RestrictedNotice } from '../components/RestrictedNotice.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 
@@ -20,6 +21,7 @@ export function Logs() {
   const [debouncedUnit, setDebouncedUnit] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [restricted, setRestricted] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // Debounce unit filter — wait 400ms after last keystroke
@@ -31,14 +33,21 @@ export function Logs() {
   const fetchLogs = useCallback(() => {
     const opts: Record<string, unknown> = { lines };
     if (debouncedUnit) opts.unit = debouncedUnit;
+    // Superuser mode escalates via `sudo journalctl` on the host (host sudoers decides).
     if (su.active && su.password) opts.password = su.password;
 
     setLoading(true);
     setError('');
+    // Reads run as the logged-in user on the host — the host's group ACLs decide what
+    // is visible. `restricted` is expected (not an error) when access is limited.
     request('journal.query', opts).then((results) => {
-      const data = results[0] as { entries: LogEntry[] } | undefined;
-      if (data?.entries) setEntries(data.entries);
-      else setEntries([]);
+      const data = results[0] as
+        | { entries?: LogEntry[]; restricted?: boolean; reason?: string; error?: string }
+        | undefined;
+      setEntries(data?.entries ?? []);
+      setRestricted(data?.restricted ? data.reason ?? 'restricted' : null);
+      // A genuine failure (e.g. wrong sudo password) — restricted is handled separately.
+      setError(!data?.restricted && data?.error ? data.error : '');
     }).catch((e) => {
       setError(e instanceof Error ? e.message : 'Failed to load logs');
     }).finally(() => {
@@ -76,6 +85,7 @@ export function Logs() {
         </button>
       </div>
       {error && <p style={styles.error}>{error}</p>}
+      {restricted && <RestrictedNotice reason={restricted} what="the system journal" />}
       <div style={styles.logContainer}>
         {entries.map((entry, i) => (
           <div key={i} style={styles.logLine}>
@@ -87,7 +97,7 @@ export function Logs() {
             <span>{decodeMessage(entry.MESSAGE)}</span>
           </div>
         ))}
-        {entries.length === 0 && !loading && !error && <p style={{ color: 'var(--text-2)', padding: '0.5rem' }}>No log entries.</p>}
+        {entries.length === 0 && !loading && !error && !restricted && <p style={{ color: 'var(--text-2)', padding: '0.5rem' }}>No log entries.</p>}
       </div>
     </div>
   );

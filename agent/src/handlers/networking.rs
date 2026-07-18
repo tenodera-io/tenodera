@@ -4,7 +4,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, watch};
 
 use crate::handler::ChannelHandler;
-use crate::util::{run_cmd, sudo_as_user, which};
+use crate::util::{
+    UserReadOutcome, is_valid_username, run_cmd, run_cmd_as_user, sudo_as_user, which,
+};
 
 // ──────────────────────────────────────────────────────────────
 //  Streaming handler  –  network traffic (TX / RX rates)
@@ -262,7 +264,7 @@ impl ChannelHandler for NetworkManageHandler {
             }
 
             // ── Listening ports ──
-            "list_ports" => list_ports().await,
+            "list_ports" => list_ports(user, password).await,
             "kill_process" => {
                 let pid = data.get("pid").and_then(|v| v.as_u64()).unwrap_or(0);
                 let signal = data
@@ -1324,14 +1326,49 @@ async fn sudo_run_cmd(password: &str, args: &[&str]) -> String {
 //  Listening ports (ss) + process kill
 // ──────────────────────────────────────────────────────────────
 
-async fn list_ports() -> serde_json::Value {
+/// List listening ports. Brokered per-user: `ss -p` reveals which process owns each
+/// socket, which the kernel only shows for sockets the caller owns (or to root). Run
+/// AS the logged-in user so the process/pid columns are populated only for their own
+/// sockets — everyone still sees the port list itself. Superuser mode runs `sudo ss`
+/// AS the user (host sudoers decides) to reveal every owner.
+///
+/// -t tcp, -u udp, -l listening, -p process, -n numeric, -H no header.
+async fn list_ports(user: &str, password: &str) -> serde_json::Value {
     if !which("ss").await {
         return serde_json::json!({ "error": "ss (iproute2) is not available", "ports": [] });
     }
-    // -t tcp, -u udp, -l listening, -p process, -n numeric, -H no header.
-    let out = run_cmd(&["ss", "-tulpnH"]).await;
-    let ports: Vec<serde_json::Value> = out.lines().filter_map(parse_ss_line).collect();
-    serde_json::json!({ "ports": ports, "count": ports.len() })
+    if !is_valid_username(user) {
+        return serde_json::json!({ "ports": [], "error": "no session user" });
+    }
+    let args = ["ss", "-tulpnH"];
+
+    if !password.is_empty() {
+        let res = sudo_as_user(user, password, &args).await;
+        return match res.get("output").and_then(|v| v.as_str()) {
+            Some(out) => ports_json(out),
+            None => serde_json::json!({
+                "ports": [],
+                "error": res.get("error").and_then(|v| v.as_str()).unwrap_or("command failed")
+            }),
+        };
+    }
+
+    match run_cmd_as_user(user, &args).await {
+        UserReadOutcome::NoAccount => {
+            serde_json::json!({ "ports": [], "restricted": true, "reason": "no-account" })
+        }
+        UserReadOutcome::SpawnFailed(e) => serde_json::json!({ "ports": [], "error": e }),
+        UserReadOutcome::Ran(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            ports_json(&stdout)
+        }
+    }
+}
+
+fn ports_json(ss_output: &str) -> serde_json::Value {
+    let ports: Vec<serde_json::Value> = ss_output.lines().filter_map(parse_ss_line).collect();
+    let count = ports.len();
+    serde_json::json!({ "ports": ports, "count": count })
 }
 
 fn parse_ss_line(line: &str) -> Option<serde_json::Value> {

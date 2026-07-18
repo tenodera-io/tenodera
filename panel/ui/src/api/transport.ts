@@ -229,7 +229,10 @@ export function request(
       } else if (msg.type === 'close') {
         settled = true;
         clearTimeout(timer);
-        channelListeners.delete(ch.channel);
+        // Send our own close back so the agent frees its per-channel tracking
+        // (channel_handlers/channel_options). Without this, every one-shot request
+        // leaks a map entry on the agent — over a long session that grows unbounded.
+        ch.close();
         if ('problem' in msg && msg.problem) {
           reject(new Error(String(msg.problem)));
         } else {

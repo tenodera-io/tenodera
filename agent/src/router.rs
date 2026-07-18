@@ -148,7 +148,22 @@ impl Router {
                             .insert(channel.clone(), handler.clone());
                         self.channel_options
                             .insert(channel.clone(), options.clone());
-                        handler.open(&channel, &options).await
+                        let msgs = handler.open(&channel, &options).await;
+                        // If the handler already closed the channel (one-shot
+                        // request/response), no data() will follow — free the tracking now.
+                        // We can't rely on the client's Close: the gateway tears down the
+                        // channel route as soon as we close, so a client Close never
+                        // reaches us and these maps would otherwise grow unbounded.
+                        // Interactive handlers that stay open (no Close yet) keep their
+                        // tracking for subsequent data() calls.
+                        let closed = msgs.iter().any(
+                            |m| matches!(m, Message::Close { channel: c, .. } if *c == channel),
+                        );
+                        if closed {
+                            self.channel_handlers.remove(&channel);
+                            self.channel_options.remove(&channel);
+                        }
+                        msgs
                     }
                 } else {
                     tracing::warn!(payload = %options.payload, "no handler registered");
