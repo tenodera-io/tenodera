@@ -362,7 +362,6 @@ function EtcHostsTab({ info, su, request, onReload }: {
             {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
-        <p style={S.muted}>Comment lines (#) are preserved. One row per host line; put extra aliases after the primary hostname, space-separated.</p>
       </div>
 
       {pwPrompt && (

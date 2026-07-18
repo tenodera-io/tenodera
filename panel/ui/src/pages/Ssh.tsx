@@ -180,13 +180,12 @@ function KeysTab({ request, toast, loginUser }: { request: Req; toast: Toast; lo
       </div>
 
       <div style={S.card}>
-        <h3 style={S.cardTitle}>Add key</h3>
+        <h3 style={S.cardTitle}>Add Public Key</h3>
         <textarea style={S.textarea} rows={3} value={newKey} onChange={(e) => setNewKey(e.target.value)} placeholder="ssh-ed25519 AAAA… user@host" spellCheck={false} />
         <div style={{ marginTop: '0.6rem' }}>
           <button style={{ ...S.btnSuccess, opacity: newKey.trim() && !busy ? 1 : 0.5, cursor: newKey.trim() && !busy ? 'pointer' : 'not-allowed' }}
             disabled={!newKey.trim() || busy} onClick={addKey}>Add key</button>
         </div>
-        <p style={S.muted}>Paste a full public key — validated with ssh-keygen. Any options before the key type are preserved.</p>
       </div>
     </div>
   );

@@ -9,6 +9,15 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.4] - 2026-07-18
+
+### Changed
+- Audit log: larger, bolder column headers; the page now fills the available
+  viewport height with a sticky header row — only the table body scrolls.
+- SSH → Add key: renamed the section to "Add Public Key" and removed the
+  redundant helper caption.
+- DNS → /etc/hosts: removed the redundant helper caption.
+
 ## [0.2.3] - 2026-07-18
 
 ### Added
