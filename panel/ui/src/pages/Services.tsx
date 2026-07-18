@@ -19,6 +19,7 @@ interface Unit {
 interface UnitDetail {
   active: string;
   enabled: string;
+  details?: string;
 }
 
 interface TimerEntry {
@@ -40,6 +41,20 @@ type SortDir = 'asc' | 'desc' | null;
 type SortCol = 'active' | 'state' | null;
 
 const ACTIVE_ORDER: Record<string, number> = { active: 0, activating: 1, deactivating: 2, inactive: 3, failed: 4 };
+
+// Strip systemctl's "See … for details" / journalctl boilerplate — the full unit
+// status is now shown inline, so that hint is redundant. Returns '' when nothing
+// meaningful is left (then no top banner is shown).
+function cleanActionError(raw: string): string {
+  return raw
+    .split('\n')
+    .filter((l) => {
+      const t = l.trim();
+      return t !== '' && !/^see\b.*for details\.?$/i.test(t) && !/journalctl/i.test(t);
+    })
+    .join('\n')
+    .trim();
+}
 const STATE_ORDER: Record<string, number> = { running: 0, exited: 1, dead: 2, waiting: 3, mounted: 4 };
 
 function nextDir(current: SortDir): SortDir {
@@ -118,10 +133,14 @@ export function Services() {
               setUnits(data.data as Unit[]);
             }
           } else if (['start', 'stop', 'restart', 'enable', 'disable', 'reload'].includes(action)) {
-            if (data && !data.ok) {
-              setError(`${action}: ${data.error || 'failed'}`);
-            }
             const unit = d.unit as string;
+            if (data && !data.ok) {
+              // Reveal the service's status inline so the user can see why it failed;
+              // drop the redundant "See … status … for details" boilerplate.
+              const cleaned = cleanActionError(String(data.error || ''));
+              setError(cleaned ? `${action}: ${cleaned}` : null);
+              if (unit) setExpanded(unit);
+            }
             if (unit) {
               ch.send({ action: 'status', unit });
             }
@@ -523,6 +542,10 @@ function ServiceRow({ unit, isExpanded, detail, loading, pendingAction, password
                 <span style={styles.muted}>Loading status…</span>
               ) : null}
 
+              {detail?.details && (
+                <pre style={styles.statusLog}>{detail.details}</pre>
+              )}
+
               <div style={styles.actionButtons}>
                 <ActionBtn label="Start"   disabled={isRunning}  loading={loading === 'start'}   onClick={() => onAction('start')}   color="var(--c-green)" />
                 <ActionBtn label="Stop"    disabled={!isActive}  loading={loading === 'stop'}    onClick={() => onAction('stop')}    color="var(--c-red)" />
@@ -747,6 +770,24 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: '0.75rem',
     color: 'var(--text-2)',
     fontWeight: 600,
+  },
+  statusLog: {
+    flexBasis: '100%',
+    width: '100%',
+    boxSizing: 'border-box',
+    margin: '0.5rem 0 0',
+    padding: '0.6rem 0.75rem',
+    maxHeight: 280,
+    overflow: 'auto',
+    background: 'var(--bg-app)',
+    border: '1px solid var(--border)',
+    borderRadius: 6,
+    fontFamily: 'monospace',
+    fontSize: '0.76rem',
+    lineHeight: 1.45,
+    color: 'var(--text-2)',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-word',
   },
   actionButtons: {
     display: 'flex',

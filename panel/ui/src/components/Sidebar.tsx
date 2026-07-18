@@ -51,6 +51,7 @@ const ADMIN_ITEMS: NavItem[] = [
   { path: '/terminal', label: 'Terminal', icon: 'terminal' },
   { path: '/management', label: 'Management', icon: 'management' },
   { path: '/ssh', label: 'SSH access', icon: 'key' },
+  { path: '/security', label: 'Security', icon: 'shield' },
   { path: '/audit', label: 'Audit log', icon: 'audit' },
   { path: '/api-docs', label: 'API', icon: 'api' },
 ];
@@ -67,6 +68,7 @@ const SUBNAV: Record<string, SubItem[]> = {
   '/storage': [
     { id: 'overview', label: 'Overview' },
     { id: 'mounts', label: 'Mounts' },
+    { id: 'usage', label: 'Disk usage' },
   ],
   '/networking': [
     { id: 'overview', label: 'Overview' },

@@ -10,9 +10,10 @@ use crate::handler::ChannelHandler;
 use crate::handlers::{
     audit_query, certs, chrony, containers, cron, disk_usage, dns, file_list, file_ops,
     hardware_info, host_config, hosts, journal_query, kdump, log_files, metrics_snapshot,
-    metrics_stream, network_stats, networking, networking_snapshot, packages, ssh_manage, storage,
-    storage_manage, storage_snapshot, superuser_verify, system_info, system_pubkey,
-    system_settings, systemd_timers, systemd_units, terminal_pty, timesync, top_processes, users,
+    metrics_stream, network_stats, networking, networking_snapshot, packages, security, ssh_manage,
+    storage, storage_du, storage_manage, storage_snapshot, superuser_verify, system_info,
+    system_pubkey, system_settings, systemd_timers, systemd_units, terminal_pty, timesync,
+    top_processes, users,
 };
 
 /// Active streaming channel state.
@@ -74,11 +75,14 @@ impl Router {
         self.register(Arc::new(containers::ContainersHandler));
         self.register(Arc::new(storage::StorageStreamHandler));
         self.register(Arc::new(storage_manage::StorageManageHandler));
+        self.register(Arc::new(storage_du::StorageDuHandler));
         self.register(Arc::new(ssh_manage::SshManageHandler));
         self.register(Arc::new(superuser_verify::SuperuserVerifyHandler));
         self.register(Arc::new(networking::NetworkStreamHandler));
         self.register(Arc::new(networking::NetworkManageHandler));
         self.register(Arc::new(packages::PackagesHandler));
+        self.register(Arc::new(security::SecurityStatusHandler));
+        self.register(Arc::new(security::SecurityManageHandler));
         self.register(Arc::new(hardware_info::HardwareInfoHandler));
         self.register(Arc::new(top_processes::TopProcessesHandler));
         self.register(Arc::new(hosts::HostsManageHandler));

@@ -144,9 +144,27 @@ async fn unit_status(unit: &str) -> serde_json::Value {
         .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
         .unwrap_or_else(|_| "unknown".into());
 
+    // Full status incl. the "Active: failed (Result: …)" line and the last log
+    // lines — this is what tells the user *why* an action failed. `systemctl
+    // status` exits non-zero for failed/inactive units but still prints to stdout.
+    let details = tokio::process::Command::new("systemctl")
+        .args(["status", "--no-pager", "--lines=15", "--", unit])
+        .output()
+        .await
+        .map(|o| {
+            let mut s = String::from_utf8_lossy(&o.stdout).into_owned();
+            let err = String::from_utf8_lossy(&o.stderr);
+            if !err.trim().is_empty() {
+                s.push_str(&err);
+            }
+            s.trim_end().to_string()
+        })
+        .unwrap_or_default();
+
     serde_json::json!({
         "active": is_active,
         "enabled": is_enabled,
+        "details": details,
     })
 }
 
