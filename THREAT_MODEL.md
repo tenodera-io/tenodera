@@ -213,8 +213,9 @@ and monitor the audit log.
 These are real and not yet closed. Listing them is the point of this document.
 
 - **No external audit.** The controls above are implemented and tested, but have
-  not been independently reviewed. Reproducible builds, signed packages, and
-  checksums are on the roadmap but not yet shipped — verify releases carefully.
+  not been independently reviewed. Release artifacts *are* checksummed and signed
+  (`SHA256SUMS` + minisign — see SECURITY.md); **reproducible builds and an SBOM**
+  are still on the roadmap (see the supply-chain item below).
 - **First-connection trust (TOFU).** The agent pins the gateway on first
   contact. An active MITM present at that exact first connection could pin
   itself. Mitigate by performing first enrollment over a trusted network and/or
@@ -268,7 +269,8 @@ These are real and not yet closed. Listing them is the point of this document.
 | ⚠️ but the **package installer** ships `TENODERA_ALLOW_UNENCRYPTED=1` + bind `0.0.0.0` for first-run reachability — so a fresh package install is plain HTTP on all interfaces until hardened | **Shipped opt-out — harden before exposing** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
-| Reproducible builds, signed packages + checksums, SBOM | **Planned** |
+| Signed release checksums (`SHA256SUMS` + minisign) | **Implemented** |
+| Reproducible builds + SBOM | **Planned** |
 | Per-host session scoping / full gateway→agent authorization | **Planned** |
 | arm64 / aarch64 packages (`.deb` arm64, `.rpm` aarch64) | **Implemented** — built by release CI alongside amd64/x86_64 |
 
