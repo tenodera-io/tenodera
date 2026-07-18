@@ -264,7 +264,8 @@ These are real and not yet closed. Listing them is the point of this document.
 | RBAC (admin / read-only) — UX filter for sudo-brokered ops; the boundary for a few root subsystems | **Implemented** |
 | Per-user brokering for privileged **reads** (reads run as root) | **Planned** |
 | Per-user sudo brokering for SSH-access / Security / enrollment (today: root gated by admin role) | **Planned** |
-| TLS secure-by-default (refuses to start unencrypted) | **Implemented** |
+| TLS mandatory in **code** (gateway refuses to start unencrypted, binds `127.0.0.1`) | **Implemented** |
+| ⚠️ but the **package installer** ships `TENODERA_ALLOW_UNENCRYPTED=1` + bind `0.0.0.0` for first-run reachability — so a fresh package install is plain HTTP on all interfaces until hardened | **Shipped opt-out — harden before exposing** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
 | Reproducible builds, signed packages + checksums, SBOM | **Planned** |
