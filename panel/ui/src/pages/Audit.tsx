@@ -46,7 +46,7 @@ export function Audit() {
     : entries;
 
   return (
-    <div>
+    <div style={S.page}>
       <PageHeader
         icon="audit"
         title="Audit log"
@@ -63,8 +63,8 @@ export function Audit() {
       {loading && entries.length === 0 ? (
         <p style={S.muted}>Loading…</p>
       ) : (
-        <>
-          <div style={{ overflowX: 'auto' }}>
+        <div style={S.tableWrap}>
+          <div style={S.scroll}>
             <table style={S.table}>
               <thead>
                 <tr>
@@ -93,18 +93,22 @@ export function Audit() {
               </tbody>
             </table>
           </div>
-          <p style={S.muted}>{rows.length} of {total} entries · /var/log/tenodera_audit.log (newest first)</p>
-        </>
+          <p style={S.footer}>{rows.length} of {total} entries · /var/log/tenodera_audit.log (newest first)</p>
+        </div>
       )}
     </div>
   );
 }
 
 const S: Record<string, React.CSSProperties> = {
+  page: { height: '100%', display: 'flex', flexDirection: 'column', minHeight: 0 },
+  tableWrap: { flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 },
+  scroll: { flex: 1, overflow: 'auto', minHeight: 0, borderRadius: 8, border: '1px solid var(--border)' },
+  footer: { color: 'var(--text-2)', fontSize: '0.85rem', margin: '0.6rem 0 0' },
   muted: { color: 'var(--text-2)', fontSize: '0.85rem' },
   btn: { padding: '0.4rem 0.9rem', borderRadius: 5, border: 'none', background: 'var(--c-blue)', color: 'var(--bg-app)', cursor: 'pointer', fontSize: '0.83rem' },
   input: { padding: '0.4rem 0.6rem', borderRadius: 5, border: '1px solid var(--border)', background: 'var(--bg-surface)', color: 'var(--text-1)', fontSize: '0.85rem', outline: 'none', width: 220 },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '0.83rem', minWidth: 760 },
-  th: { textAlign: 'left', padding: '0.4rem 0.5rem', borderBottom: '1px solid var(--border)', color: 'var(--text-2)', fontWeight: 500, whiteSpace: 'nowrap' },
+  th: { position: 'sticky', top: 0, zIndex: 1, textAlign: 'left', padding: '0.6rem 0.6rem', background: 'var(--bg-panel)', borderBottom: '2px solid var(--border)', color: 'var(--text-1)', fontWeight: 700, fontSize: '0.92rem', whiteSpace: 'nowrap' },
   td: { padding: '0.4rem 0.5rem', borderBottom: '1px solid var(--border)', verticalAlign: 'top' },
 };
