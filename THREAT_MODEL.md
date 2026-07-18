@@ -236,9 +236,13 @@ These are real and not yet closed. Listing them is the point of this document.
   rights on that host; and a compromised gateway can reach those reads as root.
   This is an information-disclosure concern, not a path to state change.
   Extending per-user brokering to reads is planned.
-- **Bootstrap tokens are bearer secrets.** Anyone holding a valid, unexpired,
-  non-exhausted token can enroll an agent. Scope them tightly (short TTL,
-  `max_uses`, hostname binding) and revoke after use.
+- **Bootstrap tokens are bearer secrets, and persist on the agent.** Anyone
+  holding a valid, unexpired, non-exhausted token can enroll an agent. The token
+  is written to `/etc/tenodera/agent.cnf` by the installer and is **not** removed
+  after enrollment (the agent only needs it once — its key is pinned on first
+  connect). A leftover *multi-use* token therefore stays usable. Scope them
+  tightly (short TTL, `max_uses=1`, hostname binding), delete the line after the
+  host is enrolled, and revoke after use.
 - **Dependency supply chain.** Rust and npm dependencies are trusted transitively.
   An SBOM and reproducible builds are planned to narrow this.
 
@@ -260,12 +264,13 @@ These are real and not yet closed. Listing them is the point of this document.
 | RBAC (admin / read-only) — UX filter for sudo-brokered ops; the boundary for a few root subsystems | **Implemented** |
 | Per-user brokering for privileged **reads** (reads run as root) | **Planned** |
 | Per-user sudo brokering for SSH-access / Security / enrollment (today: root gated by admin role) | **Planned** |
-| TLS secure-by-default (refuses to start unencrypted) | **Implemented** |
+| TLS mandatory in **code** (gateway refuses to start unencrypted, binds `127.0.0.1`) | **Implemented** |
+| ⚠️ but the **package installer** ships `TENODERA_ALLOW_UNENCRYPTED=1` + bind `0.0.0.0` for first-run reachability — so a fresh package install is plain HTTP on all interfaces until hardened | **Shipped opt-out — harden before exposing** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
 | Reproducible builds, signed packages + checksums, SBOM | **Planned** |
 | Per-host session scoping / full gateway→agent authorization | **Planned** |
-| arm64 packages | **Planned** |
+| arm64 / aarch64 packages (`.deb` arm64, `.rpm` aarch64) | **Implemented** — built by release CI alongside amd64/x86_64 |
 
 ---
 

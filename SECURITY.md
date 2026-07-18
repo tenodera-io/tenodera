@@ -105,6 +105,8 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 
 **Bootstrap tokens:** single-use or TTL-bound tokens used for unattended enrollment. A token can optionally be bound to a specific hostname. Re-enroll tokens allow key rotation for already-enrolled hosts.
 
+> **The token persists on the agent.** `tenodera-agent.sh --token <value>` writes `TENODERA_BOOTSTRAP_TOKEN=…` into `/etc/tenodera/agent.cnf` and it is **not** removed after enrollment (the agent only needs it once — its Ed25519 key is pinned on first connect). Treat it as a bearer secret: prefer **single-use, short-TTL, hostname-bound** tokens so a leftover value is already spent, and delete the line once the host is enrolled. Never leave one long-lived, multi-use token sitting in every host's `agent.cnf`.
+
 ### Authorization
 
 - The gateway injects `_user` (session username) and `_role` (session role) into every channel `Open` and subsequent `Data` message before forwarding to the agent — the agent never trusts client-supplied identity
@@ -126,7 +128,7 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 
 ### File Access
 
-- **Limited mode** (no superuser password): the agent restricts all file operations (list, read, write, create, delete) to the authenticated user's home directory (`/home/<user>`); paths are resolved with `canonicalize()` before the prefix check — symlinks inside `~` that point outside are blocked
+- **Limited mode** (no superuser password): the agent restricts all file operations (list, read, write, create, delete) to a single directory — the literal path `/home/<username>/` (not all of `/home`, and not the account's real home from `passwd`). Paths are `canonicalize()`d and must start with `/home/<username>/`, so symlinks inside `~` pointing elsewhere are blocked. Because the prefix is the literal `/home/<username>`, accounts whose home is elsewhere (e.g. `root` at `/root`, or a directory-managed user under `/var/home`) do not get a usable Limited-mode file browser — they need Administrative mode
 - **Administrative mode** (superuser password active): full filesystem access via `sudo`
 - `symlink_metadata()` is used in directory listings to prevent symlink traversal attacks
 
@@ -170,8 +172,9 @@ The agent binary is installed root-owned (mode `0755`, no setuid bit) and runs a
 
 These are not handled by the software itself and remain the operator's responsibility:
 
-- **Use a reverse proxy** (nginx, Caddy) in front of the gateway for additional TLS termination, access logging, and DDoS mitigation
-- **Restrict network access** — expose port 9090 only to trusted networks or via VPN; the agent connects outbound and needs no inbound port
+- **Know the two TLS defaults.** In code, TLS is mandatory and the gateway binds to `127.0.0.1:9090`. But the **package installer ships `/etc/tenodera/tenodera.cnf` with `TENODERA_BIND_ADDR=0.0.0.0` and `TENODERA_ALLOW_UNENCRYPTED=1`** so the panel is reachable right after install — i.e. **plain HTTP on all interfaces**. Configure TLS (or a reverse proxy) and remove `TENODERA_ALLOW_UNENCRYPTED=1` before exposing the panel anywhere untrusted
+- **Use a reverse proxy** (nginx, Caddy) in front of the gateway for TLS termination, access logging, and DDoS mitigation — and when you do, set `TENODERA_BIND_ADDR=127.0.0.1` so the plain-HTTP backend is reachable only via the proxy. Leaving the shipped `0.0.0.0` bind with `TENODERA_ALLOW_UNENCRYPTED=1` exposes the unencrypted backend directly on `:9090`, bypassing the proxy's TLS, access control and logging
+- **Restrict network access** — expose the panel port only to trusted networks or via VPN, and block direct access to `9090` at the firewall when fronted by a proxy; the agent connects outbound and needs no inbound port
 - **Use strong system passwords** — authentication relies on PAM/system accounts; password strength is determined by the OS PAM configuration
 - **Rotate TLS certificates** — the installer can generate a self-signed cert for testing, but use a CA-signed certificate in production
 - **Review sudo configuration** — this is your primary access control, not a formality. Most privileged operations run as the logged-in user under `sudo`, so `/etc/sudoers` (or your FreeIPA/LDAP sudo rules) is what actually decides who may do what on each host. The `admin` role in the UI is only granted to users with unrestricted sudo, but for those operations it merely unhides actions — the host still adjudicates every one of them. Grant per-command rules where you want fine-grained control

@@ -73,7 +73,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 | Requirement | Details |
 |-------------|---------|
 | OS | Linux (Debian, Ubuntu, RHEL, Fedora, Arch — tested on Debian 12, Fedora 43) |
-| CPU | x86_64 |
+| CPU | x86_64 / amd64, or arm64 / aarch64 (packages built for both) |
 | RAM | 512 MB minimum (1 GB recommended during build) |
 | Disk | ~500 MB for build toolchain + binaries |
 | Network | Port 9090 accessible from browsers and managed hosts |
@@ -84,7 +84,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 | Requirement | Details |
 |-------------|---------|
 | OS | Linux (any distribution with systemd) |
-| CPU | x86_64 |
+| CPU | x86_64 / amd64, or arm64 / aarch64 (packages built for both) |
 | RAM | ~20 MB for agent process |
 | Network | Outbound TCP to panel host port 9090 |
 | Build deps | Rust, gcc, pkg-config (installed automatically by agent installer) |
@@ -116,7 +116,11 @@ The installer:
 
 After install, log in at `http://<host>:9090` with any PAM system user.
 
-> **Note:** The panel starts in HTTP mode by default. Configure TLS before exposing to untrusted networks — see [§4.2 TLS setup](#42-tls-setup).
+> **Note — two different defaults:**
+> - **Code default:** TLS is *mandatory*. The gateway refuses to start without a certificate, binds to `127.0.0.1:9090`, and `TENODERA_ALLOW_UNENCRYPTED` is `false`.
+> - **Package/installer default:** to make the panel reachable immediately on first install, the shipped `/etc/tenodera/tenodera.cnf` sets `TENODERA_BIND_ADDR=0.0.0.0`, `TENODERA_BIND_PORT=9090`, **and `TENODERA_ALLOW_UNENCRYPTED=1`** — i.e. plain HTTP on all interfaces.
+>
+> So **after a package install the panel is HTTP on `0.0.0.0:9090`**. Configure TLS (§4.2) or put it behind a reverse proxy bound to localhost (§4.3), and remove `TENODERA_ALLOW_UNENCRYPTED=1`, before exposing it to any untrusted network.
 
 ### 3.2 Agent (managed hosts)
 
@@ -334,11 +338,23 @@ sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/tenodera.sh
 
 ### 4.3 Reverse proxy (nginx / Caddy)
 
-When running behind a reverse proxy, set `TENODERA_EXTERNAL_URL` in `tenodera.cnf` so the gateway generates correct agent install commands:
+When running behind a reverse proxy, the proxy terminates TLS and the gateway
+should speak plain HTTP **only on loopback** so the unencrypted backend is not
+reachable directly. Set this in `tenodera.cnf`:
 
 ```bash
-TENODERA_EXTERNAL_URL=https://panel.example.com
+TENODERA_BIND_ADDR=127.0.0.1      # bind to loopback only — NOT 0.0.0.0
+TENODERA_BIND_PORT=9090
+TENODERA_ALLOW_UNENCRYPTED=1       # the proxy provides TLS
+TENODERA_EXTERNAL_URL=https://panel.example.com   # correct agent install commands
 ```
+
+> ⚠️ **Do not leave `TENODERA_BIND_ADDR=0.0.0.0` with `TENODERA_ALLOW_UNENCRYPTED=1`.**
+> The package installer ships `0.0.0.0` by default (see §3.1), so if you only add
+> the reverse proxy without changing the bind address, the plain-HTTP backend
+> stays reachable on `http://<host>:9090` on every interface — bypassing TLS,
+> the proxy's access control, and its logging. Bind to `127.0.0.1` **and** block
+> port 9090 at the firewall for good measure.
 
 **nginx example:**
 
@@ -372,12 +388,6 @@ panel.example.com {
 }
 ```
 
-With a reverse proxy handling TLS, you can run the gateway in plain HTTP mode:
-
-```bash
-TENODERA_ALLOW_UNENCRYPTED=1
-```
-
 ---
 
 ## 5. Agent Configuration
@@ -396,6 +406,15 @@ TENODERA_GATEWAY_URL=http://<panel-host>:9090
 # Generate one in the panel under Hosts → Tokens.
 # Written automatically by tenodera-agent.sh --token <value>.
 # TENODERA_BOOTSTRAP_TOKEN=<token>
+#
+# ⚠️ The token is a BEARER SECRET and is NOT removed from agent.cnf after
+# enrollment — it stays in this file. It is only needed once (the agent's
+# Ed25519 key is pinned on first connect), so:
+#   • Prefer single-use, short-TTL, hostname-bound tokens (Hosts → Tokens) —
+#     then a leftover token here is already spent and useless.
+#   • You may delete this line after the host is enrolled and shows as online.
+#   • Never reuse one long-lived multi-use token across many hosts and leave it
+#     sitting in every /etc/tenodera/agent.cnf.
 
 # Skip TLS certificate verification.
 # Uncomment ONLY when using https:// with a self-signed certificate.
@@ -438,7 +457,9 @@ Tenodera uses **PAM authentication** — the same credentials as the system. No 
 | **Admin** | Users in `sudo`, `wheel`, `admin`, or `admins` group (`admins` = FreeIPA default) | Full read/write access to all features |
 | **Read-only** | All other authenticated PAM users | Monitor only — cannot execute write operations |
 
-Role is determined at login by running `sudo -l -U <user>` on the panel host. LDAP/SSSD/FreeIPA users work transparently if PAM is configured for them.
+Role is determined at login from the user's **group membership**, checked through the NSS stack (`getpwnam_r` + `getgrouplist` + `getgrgid_r`) against the admin groups `sudo`, `wheel`, `admin`, and `admins` (`admins` = FreeIPA default). No `sudo` process is spawned. LDAP/SSSD/FreeIPA groups resolve transparently through NSS.
+
+> **This is a heuristic, not a capability check.** Membership in `wheel`/`sudo` does not guarantee unrestricted sudo, and a user with precise per-command sudo rules but *without* one of those group memberships is treated as **read-only** in the UI. The role only decides what the UI offers; the managed host still adjudicates every write via its own sudo rules (see below). If you rely on fine-grained sudoers without the standard admin groups, those users will be read-only in the panel even though the host would permit specific commands.
 
 **The managed host decides — not the panel**
 
@@ -1375,7 +1396,16 @@ See [SECURITY.md](SECURITY.md) for the full security model.
 - Certificate and TLS operations (`openssl s_client`, key generation) invoke `openssl` directly via argument arrays — no `sh -c`, no shell metacharacter injection possible
 - Temporary files in `/tmp` created by certificate handlers use 64-bit random suffixes (from `/dev/urandom`) and are created with `O_EXCL` + mode `0o600` — prevents predictable-path symlink attacks and world-readable private key exposure
 - Trust store removal (`trust_remove`) canonicalizes the supplied path via `fs::canonicalize()` before checking the allowed-prefix list — symlinks inside the trust store directory cannot redirect `rm` to arbitrary paths
-- Audit log: all logins, logouts, and privilege escalations → `/var/log/tenodera_audit.log`
+- Audit log → `/var/log/tenodera_audit.log`. Records **logins, logouts and privilege verification** *and* **every mutating action taken through the panel** — service control, package install/remove/upgrade, user & group changes, firewall/interface changes, storage mounts/fstab, cron edits, DNS/`/etc/hosts` changes, certificate operations, SSH key/`sshd_config` changes, Security-page actions (fail2ban/SELinux/AppArmor), container actions, and host add/edit/remove. Each line is `[<ISO-8601>] user=<user> action=<action> target=<target> result=ok|fail details=<...>`. Examples:
+
+  ```text
+  [2026-07-18T09:12:04Z] user=alice action=restart target=nginx.service result=ok details=
+  [2026-07-18T09:13:20Z] user=alice action=pkg.install target=tcpdump result=ok details=
+  [2026-07-18T09:15:41Z] user=alice action=host.edit target=192.168.1.5 result=ok details=web-01
+  [2026-07-18T09:16:02Z] user=bob action=ssh.add_key target=deploy result=fail details=invalid key
+  ```
+
+  Values are sanitized (control characters escaped). The file is intended to be rotated by `logrotate`.
 - systemd hardening: `NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=strict`, `ProtectHome`
 
 ---
