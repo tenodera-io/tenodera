@@ -1329,7 +1329,7 @@ Returns `200 OK` when the agent binary exists and is executable, `503 Service Un
 - Handles 50+ operation types across ~37 handler modules
 - Announces itself via `Hello/HelloAck` handshake on connect
 - Reconnects automatically with exponential backoff on disconnect
-- **Runs as root under systemd**, but drops privilege per operation: the terminal and most privileged writes drop to the authenticated user's UID/GID (`initgroups` → `setgid` → `setuid`) and then run their shell or `sudo -S` as that user, so the host's own sudo rules adjudicate them. Most privileged reads now drop the same way (journal, log files, process list, listening-port owners, container reads). A few admin subsystems (SSH access, Security, host enrollment), the baseline world-readable introspection, and a few borderline file reads (cron, kdump, cert keys) run as root gated only by the admin role — see §6 and `THREAT_MODEL.md`
+- **Runs as root under systemd**, but drops privilege per operation: the terminal and most privileged writes drop to the authenticated user's UID/GID (`initgroups` → `setgid` → `setuid`) and then run their shell or `sudo -S` as that user, so the host's own sudo rules adjudicate them. Every privileged read now drops the same way (journal, log files, process list, listening-port owners, container reads, user crontabs, kdump crash-dump content, cert listing). Only a few admin subsystems (SSH access, Security, host enrollment) and the baseline world-readable introspection run as root gated by the admin role — see §6 and `THREAT_MODEL.md`
 
 **Protocol** (`protocol/`)
 - Shared Rust library crate
