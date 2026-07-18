@@ -34,6 +34,10 @@
    - 8.14 [DNS](#814-dns)
    - 8.15 [Certificates](#815-certificates)
    - 8.16 [Management](#816-management-admin-only)
+   - 8.17 [System](#817-system)
+   - 8.18 [SSH access (admin only)](#818-ssh-access-admin-only)
+   - 8.19 [Security (admin only)](#819-security-admin-only)
+   - 8.20 [Audit log (admin only)](#820-audit-log-admin-only)
 9. [Service Management](#9-service-management)
 10. [Health & Monitoring](#10-health--monitoring)
 11. [Architecture](#11-architecture)
@@ -447,6 +451,7 @@ That means:
 - **Rights can differ per host.** The same panel login may be an admin on one machine and have no sudo at all on another. Tenodera does not override this and keeps no permission database of its own.
 - **A denial comes back as `sudo access denied`** — that is the host refusing, not a Tenodera bug. `incorrect password` means the host rejected the password itself.
 - **Reads are the exception**: dashboards, logs and system information are collected by the agent as root, so they remain visible regardless of your rights on that host.
+- **A few admin subsystems are the exception the other way**: SSH access management, the Security page (fail2ban / SELinux / AppArmor), and host enrollment / tokens run **as the agent (root), gated only by the admin role** — the host's `sudo` is not consulted for them. For these, the admin role *is* the boundary, so grant it only to operators you trust with root on every managed host.
 
 **Account presence on managed hosts**
 
@@ -581,6 +586,7 @@ Lists all loaded systemd units (services, sockets, mounts, etc.) with:
 - **Sort** by Active or State column (click column header to cycle: desc → asc → unsorted)
 - Color coding: green = active/running, red = failed, gray = inactive
 - **Actions** (admin only): Start, Stop, Restart, Enable, Disable
+- Expanding a unit shows its live `systemctl status`; if an action **fails**, the unit auto-expands so the status (and the reason it failed) is visible inline
 
 **Timers tab**
 
@@ -672,13 +678,19 @@ View and manage configured repositories:
 
 - Enable / disable repositories (admin only)
 
+**Auto-updates tab** (admin only)
+
+Manage unattended automatic updates — `unattended-upgrades` on apt, `dnf-automatic` on dnf:
+- Enable / disable; apply mode (install vs. download-only); scope (security-only vs. all)
+- Schedule, automatic reboot, and cleanup of unused packages
+
 ---
 
 ### 8.6 Storage
 
-Monitor block devices and disk I/O on the selected host.
+Monitor block devices and disk I/O, manage mounts, and see what's using space on the selected host.
 
-**Block device tree**
+**Overview tab — block device tree**
 
 Displayed as a hierarchical tree (similar to `lsblk`):
 - Device name, size, type (disk / part / lvm / raid / etc.)
@@ -692,6 +704,15 @@ Real-time area chart showing read KB/s and write KB/s:
 - Configurable polling interval: 1 s, 5 s, 10 s, 30 s, 1 min, 5 min, 10 min, 30 min
 - 90-point rolling history
 - Interval preference saved in browser `localStorage`
+
+**Mounts tab** (admin only)
+
+- Mount / unmount block devices
+- Edit `/etc/fstab` as a table (a backup is written before saving)
+
+**Disk usage tab**
+
+A "what's using space" browser that drills down **one directory level at a time** (`du -x`, staying on one filesystem): pick a starting path, see subdirectory sizes and the level's largest files sorted by size, and click a folder to go deeper. The scan runs at idle CPU/I/O priority with a 60-second cap and can be cancelled at any time, so it stays safe on very large or busy disks.
 
 ---
 
@@ -723,6 +744,12 @@ Detailed view of all network interfaces:
 - **Bring interface up / down** (via `ip link set dev <iface> up/down` or nmcli)
 - VPN connections listed separately (type, device, state)
 
+**Ports tab**
+
+Listening sockets (`ss -tulpn`) in LISTEN/UNCONN state:
+- Protocol, local address:port, process and PID
+- Filter, and **kill a process** (SIGTERM/SIGKILL) — admin only
+
 **Logs tab**
 
 Network-related log entries from the system journal.
@@ -747,7 +774,7 @@ Lists all containers from both **user namespace** (rootless) and **root namespac
 | Owner | `user` (rootless) or `root` |
 
 - Sorted by state (running first), then by owner (user before root)
-- **Actions** (admin only): Start, Stop, Remove
+- **Actions** (admin only): Start, Stop, Remove, **Exec** (open an interactive shell inside a running container, PAM-verified; auto-selects bash, else ash/sh), **Inspect** (details: image, command, status/health, ports, mounts, networks, environment)
 
 **Images tab** (admin only)
 
@@ -991,9 +1018,9 @@ Displays and edits `/etc/resolv.conf`:
 
 **`/etc/hosts` tab** (write — admin only)
 
-Displays and edits `/etc/hosts`:
-- Full file content in editable text area
-- Save writes back to the file
+Displays and edits `/etc/hosts` as a **table** of entries (IP, hostnames):
+- Add / edit / remove rows; comment lines are preserved on save
+- Save writes the rebuilt file back
 
 **Lookup tab**
 
@@ -1133,6 +1160,39 @@ The host selector dropdown (top-left, showing the current hostname) is available
 - See all online and offline hosts
 - Switch the active host — all pages then show data from the selected host
 - Open **Manage hosts…** (Management page)
+
+---
+
+### 8.17 System
+
+Host-level system settings, grouped into sub-tabs (only the tabs relevant to the host are shown):
+
+- **Clock & timezone** — current time, set timezone.
+- **Time sync** — manage whichever time daemon is active on the host: chrony (rich tracking/sources/config), or a generic status + config view for `systemd-timesyncd`, `ntpd`/NTPsec, OpenNTPD, or PTP (`ptp4l`/`phc2sys`).
+- **Hostname** — view/change the static hostname.
+- **Locale & keyboard** — system locale and console keymap.
+- **Power** — reboot or shutdown, with an optional delay or scheduled time (`shutdown -r +m`).
+
+### 8.18 SSH access (admin only)
+
+Manage SSH access without hand-editing files. Runs as the agent (root), gated by the admin role.
+
+- **Authorized keys** — pick a user (local accounts suggested; directory users such as FreeIPA/AD can be typed in), then add / edit / remove keys in that user's `authorized_keys`. Keys are validated with `ssh-keygen`; ownership and permissions on `~/.ssh` are restored after each change. Defaults to the logged-in user.
+- **Server config** — edit `sshd_config` as a table of directives (add / edit / remove; comments preserved). On save the config is validated with `sshd -t`; if invalid it is **rejected, not written**. A backup is kept as `sshd_config.tenodera.bak` and the SSH service is reloaded.
+
+### 8.19 Security (admin only)
+
+Status and basic actions for host-hardening subsystems. The page **auto-detects** which subsystems exist on the host and shows only those tabs.
+
+- **fail2ban** — jails with currently/total banned and failed counts; unban or ban an IP in a jail; reload.
+- **SELinux** — current mode with an Enforcing/Permissive toggle (runtime, optional persist to `/etc/selinux/config`); **Booleans** (filter + on/off, persistent `-P`); recent **AVC denials** (from the journal); loaded policy **Modules**; and **Relabel** (`restorecon -Rv` on a path, capped at 120s). Switching to Disabled is not offered (needs a reboot).
+- **AppArmor** — profile counts and a table of profiles with their mode; per-profile **Enforce/Complain** when `apparmor-utils` (aa-enforce/aa-complain) is installed, otherwise read-only.
+
+Actions run as the agent (root), gated by the admin role, and are recorded in the audit log.
+
+### 8.20 Audit log (admin only)
+
+A filterable table of actions taken through the panel, read from `/var/log/tenodera_audit.log` (newest first): **time, user, action, target, result, details**. Covers logins/logouts and privilege escalations plus mutating panel actions (service control, packages, users, networking, storage, cron, DNS, certificates, SSH, security, container and host actions). Intended to be rotated by `logrotate`.
 
 ---
 

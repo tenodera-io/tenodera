@@ -24,18 +24,22 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 |----------|-------------|
 | **Dashboard** | CPU, RAM, swap, disk I/O, network I/O — real-time streaming charts |
 | **Terminal** | Full PTY shell in the browser (xterm.js) |
-| **Services** | systemd unit management — start / stop / restart / enable / disable |
+| **Services** | systemd unit management — start / stop / restart / enable / disable; a failed action auto-expands the unit's `systemctl status` |
+| **System** | Clock & timezone, time sync (chrony / timesyncd / ntpd / openntpd / PTP), hostname, locale & keyboard, power (reboot / shutdown, optional delay) |
 | **Users & Groups** | User account CRUD, group management, lock/unlock, password policy |
-| **Packages** | Installed packages, search, install, update, repository management (apt, dnf, pacman) |
-| **Storage** | Block devices, mount points, partition usage, I/O charts |
-| **Networking** | Interfaces, traffic, firewall (ufw / firewalld / nftables), bridges, VLANs |
-| **Containers** | Docker / Podman — containers, images, create, logs |
+| **Packages** | Installed packages, search, install, update, repository management (apt, dnf, pacman); automatic updates (unattended-upgrades / dnf-automatic) |
+| **Storage** | Block devices, mount points, I/O charts; mount / unmount + `/etc/fstab` editor; disk-usage browser (safe `du` drill-down) |
+| **Networking** | Interfaces, traffic, firewall (ufw / firewalld / nftables), bridges, VLANs; listening ports (`ss`) with kill |
+| **Containers** | Docker / Podman — containers, images, create, logs, exec (shell into a container), inspect |
+| **SSH access** | authorized_keys per user (add / edit / remove, ssh-keygen validated); table-based `sshd_config` editor validated with `sshd -t` |
+| **Security** | Auto-detects fail2ban (jails, ban/unban, reload), SELinux (enforce/permissive, booleans, AVC denials, modules, restorecon), AppArmor (per-profile enforce/complain) |
 | **Files** | Remote file browser with sudo fallback |
 | **Logs** | journald viewer with unit/priority filters |
 | **Log Files** | Browse `/var/log` with keyword search and date/time range |
+| **Audit log** | Table of actions taken through the panel (time, user, action, target, result) |
 | **Cron Jobs** | List all crontab sources, view entries, edit raw crontab |
 | **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
-| **DNS** | `/etc/resolv.conf` and `/etc/hosts` editing, DNS lookup, systemd-resolved |
+| **DNS** | `/etc/resolv.conf` and table-based `/etc/hosts` editing, DNS lookup, systemd-resolved |
 | **Certificates** | TLS certificate scanning, trust store, self-signed generation, Let's Encrypt |
 | **Multi-host** | Manage multiple servers from one panel via reverse-WebSocket agent |
 | **Access control** | Admin (sudo/wheel users) — full access; other users — read-only |

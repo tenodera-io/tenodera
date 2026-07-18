@@ -9,6 +9,16 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Documentation
+- Brought README, DOCS, SECURITY and THREAT_MODEL up to date with the features
+  added in 0.2.1–0.2.5 (System, SSH access, Security, Audit log, disk-usage
+  browser, container exec/inspect, listening ports, auto-updates, storage mounts,
+  table-based /etc/hosts, Services status-on-failure).
+- Documented honestly that a few administrative subsystems (SSH access, the
+  Security page, host enrollment) run as the agent (root) gated only by the admin
+  role rather than the host's sudo — so the admin role must be treated as root on
+  every managed host, and this is listed as a residual risk / planned change.
+
 ## [0.2.5] - 2026-07-18
 
 ### Added

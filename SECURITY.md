@@ -114,6 +114,7 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 - **The managed host is the authority.** `require_admin()`/`_role` is a first-line filter, not the security boundary. Every state-changing operation is executed *as the logged-in user*: the agent drops to their UID/GID (`initgroups` → `setgid` → `setuid`) and then runs `sudo -S -k <command>` with their own password. The host's own rules decide what is permitted — local `/etc/sudoers`, or FreeIPA/LDAP sudo rules resolved via SSSD — per command and per host. Tenodera keeps no permission store of its own
 - **The user must exist, with the rights they intend to use, on every managed host.** A user unknown to a host is denied there (`getpwnam_r` miss), even with an admin session on the panel
 - **Reads are an exception** and still run at the agent's privilege (root); any authenticated user can read privileged system state regardless of their rights on that host — see `THREAT_MODEL.md` §6
+- **A few administrative subsystems run as the agent (root), gated only by the admin role — not by the host's `sudo`.** SSH access management (authorized_keys / `sshd_config`), the Security page actions (fail2ban, SELinux, AppArmor), and host enrollment / token management execute at the agent's privilege once `require_admin()` passes; the host's `/etc/sudoers` does **not** further adjudicate them. For these operations the admin role *is* the boundary, so grant it only to fully-trusted operators. The bulk of state-changing operations — services, packages, users & groups, networking/firewall, storage mounts, cron, DNS, certificates, time & system settings, files — still drop to the logged-in user and run under their own `sudo`, adjudicated per-command by the host
 - **Exception:** `GET /api/hosts/{id}/user-check` is a gateway-only REST endpoint; it sends a `users.manage` channel request internally (`execute_rpc`) using the session username directly — no `_user`/`_role` injection applies since the agent's `check_exists` action requires no privileges
 
 ### Terminal Security
@@ -121,6 +122,7 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 - The agent runs as root under systemd (the binary is installed root-owned, mode `0755`, **without** a setuid bit); for terminal sessions it drops to the authenticated user's UID/GID via `setuid()`/`setgid()` before spawning the shell — no root shell is ever exposed to the user
 - **Shell allowlist**: only the following shells may be spawned — `/bin/sh`, `/bin/bash`, `/bin/zsh`, `/bin/fish`, and their `/usr/bin/` equivalents; any other shell path (including the user's configured shell if not on the list) causes the terminal session to be rejected
 - The terminal requires a valid system account on the managed host; if the logged-in user does not exist on that host, the PAM/setuid drop will fail
+- **Container exec** (opening a shell inside a running Docker/Podman container) reuses the same PTY channel but first re-verifies the user's password via PAM; the shell then runs *inside the container* via `docker`/`podman exec` (auto-selecting `bash`, else `ash`/`sh`), not on the host, so the shell allowlist above does not apply to it
 
 ### File Access
 
@@ -136,10 +138,16 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 - Temporary files for certificate operations use 64-bit random suffixes and `O_EXCL` + mode `0o600` — prevents predictable-path symlink attacks and world-readable private key exposure
 - Trust store path removal canonicalizes the supplied path via `fs::canonicalize()` before checking the allowed-prefix list — symlinks cannot redirect removal to arbitrary paths
 - `getent passwd` (NSS-aware) is used for user account checks — the username is passed as a direct argument, not interpolated into a shell command
+- **SSH keys** are validated with `ssh-keygen` before being appended to a user's `authorized_keys`; ownership and mode on `~/.ssh` and `authorized_keys` are restored (`chown` uid:gid, `0700`/`0600`) after every change
+- **`sshd_config`** edits are validated with `sshd -t` against a staged copy in `/run` and rejected if invalid; the live config is backed up (`sshd_config.tenodera.bak`) before the new one is written and the daemon reloaded
+- **Security actions** validate their inputs before invoking tools via argument arrays (no shell): fail2ban jail/IP, SELinux boolean names, `restorecon` paths (absolute, existing). Hardening tools are resolved to absolute paths rather than trusting `PATH`
+- **The disk-usage scanner** validates the target path, stays on one filesystem (`du -x`), runs at idle CPU/I/O priority (`nice -n19 ionice -c3`) with a hard timeout, allows only one scan at a time, and is killed when the panel cancels the channel — bounding its impact on busy hosts
 
 ### Audit Logging
 
-All login attempts (success and failure), logouts, and privilege escalations are written to `/var/log/tenodera_audit.log` with timestamp, username, IP address, and outcome. File permissions are enforced at startup.
+Login attempts (success and failure), logouts, and privilege escalations are written to `/var/log/tenodera_audit.log` with timestamp, username, IP address, and outcome. File permissions are enforced at startup.
+
+Mutating actions taken *through the panel* are recorded there too — service control, package changes, user/group changes, firewall/networking, storage mounts, cron, DNS, certificates, time/system settings, container actions, SSH key/`sshd_config` changes, and Security-page actions (fail2ban/SELinux/AppArmor) — each with the acting user, action, target, result, and details. The log is viewable in the panel under **Admin → Audit log** and is designed to be rotated by `logrotate`.
 
 ### Systemd Hardening
 
@@ -163,7 +171,8 @@ These are not handled by the software itself and remain the operator's responsib
 - **Restrict network access** — expose port 9090 only to trusted networks or via VPN; the agent connects outbound and needs no inbound port
 - **Use strong system passwords** — authentication relies on PAM/system accounts; password strength is determined by the OS PAM configuration
 - **Rotate TLS certificates** — the installer can generate a self-signed cert for testing, but use a CA-signed certificate in production
-- **Review sudo configuration** — this is your primary access control, not a formality. Privileged operations run as the logged-in user under `sudo`, so `/etc/sudoers` (or your FreeIPA/LDAP sudo rules) is what actually decides who may do what on each host. The `admin` role in the UI is only granted to users with unrestricted sudo, but it merely unhides actions — the host still adjudicates every one of them. Grant per-command rules where you want fine-grained control
+- **Review sudo configuration** — this is your primary access control, not a formality. Most privileged operations run as the logged-in user under `sudo`, so `/etc/sudoers` (or your FreeIPA/LDAP sudo rules) is what actually decides who may do what on each host. The `admin` role in the UI is only granted to users with unrestricted sudo, but for those operations it merely unhides actions — the host still adjudicates every one of them. Grant per-command rules where you want fine-grained control
+- **Grant the admin role sparingly** — a few subsystems (SSH access management, the Security page, host enrollment) act as root gated *only* by the admin role, without a second `sudo` check on the host. For those, the role is the boundary — treat admin-role membership as equivalent to root on every managed host
 - **Audit agent enrollment** — review the pending host queue regularly; revoke bootstrap tokens after use or set single-use mode
 
 ---
