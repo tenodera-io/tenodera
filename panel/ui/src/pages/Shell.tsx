@@ -36,6 +36,7 @@ const Management   = lazy(() => import('./Management.tsx').then(m => ({ default:
 const ApiDocs      = lazy(() => import('./ApiDocs.tsx').then(m => ({ default: m.ApiDocs })));
 const Audit        = lazy(() => import('./Audit.tsx').then(m => ({ default: m.Audit })));
 const Ssh          = lazy(() => import('./Ssh.tsx').then(m => ({ default: m.Ssh })));
+const Security     = lazy(() => import('./Security.tsx').then(m => ({ default: m.Security })));
 
 interface ShellProps {
   sessionId: string;
@@ -196,6 +197,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
                       <Route path="/api-docs" element={su.suActive ? <ApiDocs /> : <Navigate to="/" />} />
                       <Route path="/audit" element={su.suActive ? <Audit /> : <Navigate to="/" />} />
                       <Route path="/ssh" element={su.suActive ? <Ssh loginUser={user} /> : <Navigate to="/" />} />
+                      <Route path="/security" element={su.suActive ? <Security /> : <Navigate to="/" />} />
                       <Route path="/files" element={<Files user={user} />} />
                       <Route path="/kdump" element={<Kdump />} />
                       <Route path="/system" element={<System />} />

@@ -3,6 +3,7 @@ import { PageHeader } from '../components/PageHeader.tsx';
 import { Tabs } from '../components/Tabs.tsx';
 import { useTabParam } from '../hooks/useTabParam.ts';
 import { StorageMounts } from './StorageMounts.tsx';
+import { StorageUsage } from './StorageUsage.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -150,7 +151,7 @@ const tooltipItemStyle: React.CSSProperties = { color: 'var(--text-1)' };
 
 export function Storage() {
   const { request } = useTransport();
-  const [tab, setTab] = useTabParam<'overview' | 'mounts'>(['overview', 'mounts'], 'overview');
+  const [tab, setTab] = useTabParam<'overview' | 'mounts' | 'usage'>(['overview', 'mounts', 'usage'], 'overview');
   const [history, setHistory] = useState<IoPoint[]>([]);
   const [blockRows, setBlockRows] = useState<FlatRow[]>([]);
   const [swap, setSwap] = useState<SwapInfo | null>(null);
@@ -259,13 +260,15 @@ export function Storage() {
       />
 
       <Tabs
-        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'mounts', label: 'Mounts' }]}
+        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'mounts', label: 'Mounts' }, { id: 'usage', label: 'Disk usage' }]}
         active={tab}
-        onChange={(t) => setTab(t as 'overview' | 'mounts')}
+        onChange={(t) => setTab(t as 'overview' | 'mounts' | 'usage')}
         style={{ marginBottom: '1rem' }}
       />
 
       {tab === 'mounts' && <StorageMounts />}
+
+      {tab === 'usage' && <StorageUsage />}
 
       {tab === 'overview' && (<>
       {/* ── I/O Charts ── */}

@@ -9,6 +9,27 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-07-18
+
+### Added
+- **Security** page (Admin) — status and basic actions for host hardening,
+  auto-detecting whichever subsystems are present on the host:
+  - *fail2ban* — jails with banned/failed counts, unban/ban an IP, reload.
+  - *SELinux* — enforcing/permissive toggle (runtime, optional persist to config);
+    plus **booleans** (filter + on/off, persistent `-P`), recent **AVC denials**,
+    loaded policy **modules**, and **restorecon** to relabel a path.
+  - *AppArmor* — profile modes with per-profile enforce/complain (when
+    apparmor-utils is present).
+- **Storage → Disk usage** — a "what's using space" browser: drill down one
+  directory level at a time (`du -x`, one filesystem), listing subdirectory sizes
+  and the level's largest files. Runs at idle I/O priority with a 60s cap and is
+  cancellable, so it stays safe on large disks.
+
+### Changed
+- Services: when a start/stop/restart/enable/etc. action fails, the service row
+  now expands automatically to show its `systemctl status` (why it failed), and
+  the redundant "See … for details" boilerplate is dropped from the error banner.
+
 ## [0.2.4] - 2026-07-18
 
 ### Changed
