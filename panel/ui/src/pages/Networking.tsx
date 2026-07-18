@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { PageHeader } from '../components/PageHeader.tsx';
+import { RestrictedNotice } from '../components/RestrictedNotice.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 import { Tabs } from '../components/Tabs.tsx';
@@ -182,6 +183,7 @@ export function Networking() {
 
   const [ports, setPorts] = useState<ListeningPort[]>([]);
   const [portsLoading, setPortsLoading] = useState(false);
+  const [portsRestricted, setPortsRestricted] = useState<string | null>(null);
   const [portFilter, setPortFilter] = useState('');
 
   /* ----- firewall rule form ----- */
@@ -402,11 +404,15 @@ export function Networking() {
   const loadPorts = useCallback(async () => {
     setPortsLoading(true);
     try {
-      const res = await sendManage({ action: 'list_ports' });
+      // Runs `ss` as the logged-in user — process/pid shown only for their own sockets.
+      // Superuser escalates via sudo to reveal every owner. `restricted` = no account.
+      const pw = su.active && su.password ? su.password : '';
+      const res = await sendManage({ action: 'list_ports', password: pw });
       setPorts((res.ports as ListeningPort[]) || []);
+      setPortsRestricted(res.restricted ? (res.reason as string) ?? 'restricted' : null);
     } catch { /* best-effort */ }
     setPortsLoading(false);
-  }, [sendManage]);
+  }, [sendManage, su]);
 
   const killPort = async (p: ListeningPort, signal: 'TERM' | 'KILL') => {
     if (!p.pid) return;
@@ -1008,6 +1014,7 @@ export function Networking() {
               <button onClick={loadPorts} style={S.btnSecondary}>↻ Refresh</button>
             </div>
           </div>
+          {portsRestricted && <RestrictedNotice reason={portsRestricted} what="the process owning each port" />}
           {portsLoading ? (
             <p style={S.muted}>Loading ports…</p>
           ) : (() => {

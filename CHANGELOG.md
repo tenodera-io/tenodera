@@ -9,7 +9,31 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-07-18
+
+### Added
+- **Per-user brokering of privileged reads.** The journal, log files under
+  `/var/log` (tail / search / date-filter), the process list, and the process
+  owning each listening socket now run **as the logged-in user** on the host —
+  their own file and group permissions decide what they may see. With the superuser
+  password active, reads escalate via `sudo` as that user, exactly like writes.
+  When your account isn't present on a host, or lacks the relevant group, a calm
+  "restricted" note is shown instead of privileged data or a red error.
+
+### Fixed
+- **Log Files:** excluded binary databases (`lastlog`, `wtmp`, `btmp`, `faillog`)
+  that were wrongly listed as text logs. On hosts with high UIDs (e.g. FreeIPA),
+  `/var/log/lastlog` is a ~200 GB sparse file; reading it as text could exhaust the
+  agent's memory (OOM). Brokered reads are now bounded — a 64 MiB output cap and a
+  30 s deadline — as defense-in-depth against any pathological file.
+- **Agent:** one-shot request channels now free their per-channel tracking
+  immediately instead of waiting for a client close that never arrives, preventing
+  a slow memory creep over long-lived sessions.
+
 ### Documentation
+- Updated SECURITY, THREAT_MODEL and DOCS to reflect that read brokering is now
+  partial (journal, log files, process list, listening-port owners done; container
+  reads and the baseline world-readable introspection still run as root).
 - Brought README, DOCS, SECURITY and THREAT_MODEL up to date with the features
   added in 0.2.1–0.2.5 (System, SSH access, Security, Audit log, disk-usage
   browser, container exec/inspect, listening ports, auto-updates, storage mounts,
@@ -232,7 +256,11 @@ Initial public release.
 - Signed `.deb`/`.rpm` packages (amd64 + arm64), SHA256SUMS + minisign signature.
 - `THREAT_MODEL.md` and a documented security model.
 
-[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.6...HEAD
+[0.2.6]: https://github.com/tenodera-io/tenodera/compare/v0.2.5...v0.2.6
+[0.2.5]: https://github.com/tenodera-io/tenodera/compare/v0.2.4...v0.2.5
+[0.2.4]: https://github.com/tenodera-io/tenodera/compare/v0.2.3...v0.2.4
+[0.2.3]: https://github.com/tenodera-io/tenodera/compare/v0.2.2...v0.2.3
 [0.2.2]: https://github.com/tenodera-io/tenodera/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/tenodera-io/tenodera/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/tenodera-io/tenodera/compare/v0.1.9...v0.2.0

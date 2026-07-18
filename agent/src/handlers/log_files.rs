@@ -1,10 +1,11 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 use tokio::io::AsyncWriteExt;
 
 use crate::handler::ChannelHandler;
+use crate::util::{is_valid_username, lookup_user};
 
 pub struct LogFilesHandler;
 
@@ -24,16 +25,18 @@ impl ChannelHandler for LogFilesHandler {
     async fn data(&self, channel: &str, data: &serde_json::Value) -> Vec<Message> {
         let action = data.get("action").and_then(|a| a.as_str()).unwrap_or("");
         let password = data.get("password").and_then(|p| p.as_str()).unwrap_or("");
+        // Reads under /var/log are privileged: run AS the logged-in user (their fs
+        // permissions decide which logs they can read/list), no sudo. Superuser mode
+        // escalates via `sudo` as that user. The gateway injects `_user` on every
+        // message on this channel.
+        let user = data.get("_user").and_then(|u| u.as_str()).unwrap_or("");
 
         let result = match action {
-            "list" | "refresh" => {
-                let files = list_log_files("/var/log", password).await;
-                serde_json::json!({ "files": files })
-            }
+            "list" | "refresh" => list_log_files("/var/log", user, password).await,
             "tail" => {
                 let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
                 let lines = data.get("lines").and_then(|n| n.as_u64()).unwrap_or(100);
-                tail_log(path, lines, password).await
+                tail_log(path, lines, user, password).await
             }
             "search" => {
                 let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
@@ -45,7 +48,7 @@ impl ChannelHandler for LogFilesHandler {
                 let date_to = data.get("date_to").and_then(|d| d.as_str());
                 let no_limit = date_from.is_some() || date_to.is_some();
                 search_log(
-                    path, query, lines, before, after, date_from, date_to, no_limit, password,
+                    path, query, lines, before, after, date_from, date_to, no_limit, user, password,
                 )
                 .await
             }
@@ -54,7 +57,7 @@ impl ChannelHandler for LogFilesHandler {
                 let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
                 let date_from = data.get("date_from").and_then(|d| d.as_str());
                 let date_to = data.get("date_to").and_then(|d| d.as_str());
-                filter_by_date(path, date_from, date_to, password).await
+                filter_by_date(path, date_from, date_to, user, password).await
             }
             _ => serde_json::json!({ "ok": false, "error": format!("unknown action: {action}") }),
         };
@@ -66,131 +69,170 @@ impl ChannelHandler for LogFilesHandler {
     }
 }
 
-// ── Privilege helper ────────────────────────────────────────────────────────
+// ── Per-user command brokering ──────────────────────────────────────────────
 
-/// Run a command, using sudo when a password is provided and we are not root.
-async fn run_cmd(password: &str, args: &[&str]) -> Result<String, String> {
-    let am_root = unsafe { libc::geteuid() } == 0;
-    let use_sudo = !am_root && !password.is_empty();
+/// Outcome of a brokered command: the user has no account here, it ran (inspect the
+/// `Output`), or it could not be spawned.
+enum Brokered {
+    NoAccount,
+    Ran(std::process::Output),
+    Failed(String),
+}
 
-    let (program, full_args): (&str, Vec<&str>) = if use_sudo {
-        let mut sa = vec!["-S"];
-        sa.extend_from_slice(args);
-        ("sudo", sa)
-    } else {
-        let first = args.first().copied().unwrap_or("true");
-        let rest: Vec<&str> = args.iter().skip(1).copied().collect();
-        (first, rest)
+/// Run `args` brokered to `user`. No password → drop to the user
+/// (initgroups→setgid→setuid) and exec directly, so the kernel enforces *their* file
+/// permissions. Password → drop to the user then exec `sudo -S <args>` (host sudoers
+/// decides), feeding the password on stdin. A user unknown to this host → `NoAccount`.
+async fn broker_output(user: &str, password: &str, args: &[&str]) -> Brokered {
+    if !is_valid_username(user) {
+        return Brokered::Failed("no session user".into());
+    }
+    let Some((uid, gid, _home, _shell)) = lookup_user(user) else {
+        return Brokered::NoAccount;
     };
-
-    let child = tokio::process::Command::new(program)
-        .args(&full_args)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
+    let ucstr = match std::ffi::CString::new(user) {
         Ok(c) => c,
-        Err(e) => return Err(e.to_string()),
+        Err(_) => return Brokered::Failed("invalid username".into()),
     };
 
-    if use_sudo {
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-            drop(stdin);
-        }
+    let use_sudo = !password.is_empty();
+    let (program, rest): (&str, Vec<&str>) = if use_sudo {
+        let mut v = vec!["-S"];
+        v.extend_from_slice(args);
+        ("sudo", v)
     } else {
-        // Close stdin immediately for non-sudo commands
-        drop(child.stdin.take());
+        match args.split_first() {
+            Some((first, r)) => (*first, r.to_vec()),
+            None => return Brokered::Failed("no command".into()),
+        }
+    };
+
+    let mut cmd = tokio::process::Command::new(program);
+    cmd.args(&rest)
+        .stdin(if use_sudo {
+            std::process::Stdio::piped()
+        } else {
+            std::process::Stdio::null()
+        })
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    // Drop to the user before exec (gid before uid; initgroups for supplementary
+    // groups). When escalating, `sudo` is setuid-root and re-elevates per sudoers.
+    unsafe {
+        cmd.pre_exec(move || {
+            if libc::initgroups(ucstr.as_ptr(), gid) != 0
+                || libc::setgid(gid) != 0
+                || libc::setuid(uid) != 0
+            {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
     }
 
-    match child.wait_with_output().await {
-        Ok(out) if out.status.success() => Ok(String::from_utf8_lossy(&out.stdout).to_string()),
-        Ok(out) => {
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let clean = stderr
-                .lines()
-                .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            if clean.is_empty() {
-                Err("command failed".into())
-            } else {
-                Err(clean)
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return Brokered::Failed(e.to_string()),
+    };
+    if use_sudo && let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
+        drop(stdin);
+    }
+
+    // Bound BOTH the output we buffer AND the wall-clock time. A read command pointed
+    // at a pathological file (e.g. a ~200 GB sparse `lastlog`, or a multi-GB text log)
+    // would otherwise either stream gigabytes into memory (OOM) or spend minutes
+    // scanning input before producing any output (hang). We read at most OUT_CAP bytes,
+    // draining both pipes concurrently to avoid a full-pipe deadlock, under a hard
+    // deadline; whatever is still running is killed.
+    const OUT_CAP: u64 = 64 << 20; // 64 MiB
+    const ERR_CAP: u64 = 256 << 10; // 256 KiB
+    const DEADLINE: std::time::Duration = std::time::Duration::from_secs(30);
+    use tokio::io::AsyncReadExt;
+    let out_pipe = child.stdout.take();
+    let err_pipe = child.stderr.take();
+    let drain = async move {
+        let out_fut = async move {
+            let mut buf = Vec::new();
+            if let Some(p) = out_pipe {
+                let _ = p.take(OUT_CAP).read_to_end(&mut buf).await;
+            }
+            buf
+        };
+        let err_fut = async move {
+            let mut buf = Vec::new();
+            if let Some(p) = err_pipe {
+                let _ = p.take(ERR_CAP).read_to_end(&mut buf).await;
+            }
+            buf
+        };
+        tokio::join!(out_fut, err_fut)
+    };
+
+    // If the command takes too long to even produce its (capped) output, give up.
+    let (stdout, stderr) = match tokio::time::timeout(DEADLINE, drain).await {
+        Ok(pair) => pair,
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            return Brokered::Failed("read timed out (file too large or unreadable)".into());
+        }
+    };
+
+    // Output drained (or hit the cap). Reap; if the child is still writing past the
+    // cap, give it a short grace period then kill it so `wait` can't block.
+    let status = match tokio::time::timeout(std::time::Duration::from_secs(5), child.wait()).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(e)) => return Brokered::Failed(e.to_string()),
+        Err(_) => {
+            let _ = child.start_kill();
+            match child.wait().await {
+                Ok(s) => s,
+                Err(e) => return Brokered::Failed(e.to_string()),
             }
         }
-        Err(e) => Err(e.to_string()),
+    };
+
+    Brokered::Ran(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+/// Filter sudo prompt noise from stderr and trim.
+fn clean_stderr(stderr: &[u8]) -> String {
+    String::from_utf8_lossy(stderr)
+        .lines()
+        .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        .trim()
+        .to_string()
+}
+
+/// A brokered "restricted: no-account" response carrying an empty payload of `shape`.
+fn no_account(extra: serde_json::Value) -> serde_json::Value {
+    let mut v = serde_json::json!({ "restricted": true, "reason": "no-account" });
+    if let (Some(obj), Some(ex)) = (v.as_object_mut(), extra.as_object()) {
+        for (k, val) in ex {
+            obj.insert(k.clone(), val.clone());
+        }
     }
+    v
 }
 
 // ── List log files recursively ──────────────────────────────────────────────
 
-async fn list_log_files(base: &str, password: &str) -> Vec<serde_json::Value> {
-    let am_root = unsafe { libc::geteuid() } == 0;
-    let use_sudo = !am_root && !password.is_empty();
-
-    if use_sudo {
-        // Use sudo find to discover log files in directories we cannot read
-        return list_log_files_sudo(base, password).await;
-    }
-
-    // Direct filesystem access (root agent or no password)
-    list_log_files_direct(base).await
-}
-
-/// List log files using direct filesystem access.
-async fn list_log_files_direct(base: &str) -> Vec<serde_json::Value> {
-    let mut files = Vec::new();
-    let mut dirs_to_scan: Vec<(PathBuf, u32)> = vec![(PathBuf::from(base), 0)];
-
-    while let Some((dir, depth)) = dirs_to_scan.pop() {
-        if depth > 4 {
-            continue;
-        }
-        let mut entries = match tokio::fs::read_dir(&dir).await {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let path = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-            let meta = match entry.metadata().await {
-                Ok(m) => m,
-                Err(_) => continue,
-            };
-            if meta.is_dir() {
-                dirs_to_scan.push((path, depth + 1));
-            } else if is_log_file(&name) {
-                let modified = meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                files.push(serde_json::json!({
-                    "path": path.to_string_lossy(),
-                    "name": name,
-                    "size_bytes": meta.len(),
-                    "modified": modified,
-                }));
-            }
-        }
-    }
-
-    files.sort_by(|a, b| {
-        let na = a.get("path").and_then(|v| v.as_str()).unwrap_or("");
-        let nb = b.get("path").and_then(|v| v.as_str()).unwrap_or("");
-        na.cmp(nb)
-    });
-    files
-}
-
-/// List log files using sudo find — discovers files in restricted directories.
-async fn list_log_files_sudo(base: &str, password: &str) -> Vec<serde_json::Value> {
-    // Use find to list all files recursively (maxdepth 5 = base + 4 levels)
-    // Output: path\tsize\tmodified_epoch for each file
-    let output = run_cmd(
+/// List log files under `base`, brokered to the user: `find` runs as them, so only
+/// directories/files they can read appear (superuser sees everything via sudo). A
+/// user with no account here → restricted.
+async fn list_log_files(base: &str, user: &str, password: &str) -> serde_json::Value {
+    // find exits non-zero when some dirs are unreadable but still prints the rest —
+    // that partial output is exactly what we want (the files the user CAN see).
+    let output = match broker_output(
+        user,
         password,
         &[
             "find",
@@ -203,11 +245,11 @@ async fn list_log_files_sudo(base: &str, password: &str) -> Vec<serde_json::Valu
             "%p\\t%s\\t%T@\\n",
         ],
     )
-    .await;
-
-    let output = match output {
-        Ok(o) => o,
-        Err(_) => return Vec::new(),
+    .await
+    {
+        Brokered::NoAccount => return no_account(serde_json::json!({ "files": [] })),
+        Brokered::Failed(e) => return serde_json::json!({ "files": [], "error": e }),
+        Brokered::Ran(out) => String::from_utf8_lossy(&out.stdout).to_string(),
     };
 
     let mut files = Vec::new();
@@ -246,7 +288,7 @@ async fn list_log_files_sudo(base: &str, password: &str) -> Vec<serde_json::Valu
         let nb = b.get("path").and_then(|v| v.as_str()).unwrap_or("");
         na.cmp(nb)
     });
-    files
+    serde_json::json!({ "files": files })
 }
 
 fn is_log_file(name: &str) -> bool {
@@ -264,10 +306,10 @@ fn is_log_file(name: &str) -> bool {
         || name == "kern.log"
         || name == "auth.log"
         || name == "daemon.log"
-        || name == "lastlog"
-        || name == "wtmp"
-        || name == "btmp"
-        || name == "faillog"
+        // NOTE: lastlog/wtmp/btmp/faillog are deliberately EXCLUDED — they are binary
+        // databases (indexed by UID), not text logs. With high UIDs (e.g. FreeIPA's
+        // ~716M) lastlog becomes a ~200 GB sparse file; tail/cat/grep on it scans and
+        // buffers gigabytes → OOM. Use `last`/`lastb`/`lastlog` tooling instead.
         || name == "mail.log"
         || name == "mail.err"
         || name == "cron.log"
@@ -279,80 +321,46 @@ fn is_log_file(name: &str) -> bool {
 
 // ── Path validation ─────────────────────────────────────────────────────────
 
-fn validate_log_path(path: &str) -> Result<PathBuf, String> {
-    let p = Path::new(path);
-    if !p.is_absolute() || path.contains("..") {
+/// Validate a user-supplied log path: absolute, under /var/log, no traversal. We do
+/// NOT canonicalize as root — the command runs AS the user, so the kernel is the real
+/// gate; a symlink can only ever reach files that user (or their sudo) may already
+/// read. Returns the validated path string.
+fn validate_log_path(path: &str) -> Result<String, String> {
+    if path.is_empty() || !Path::new(path).is_absolute() || path.contains("..") {
         return Err("invalid path".into());
     }
-    if !path.starts_with("/var/log") {
+    if path != "/var/log" && !path.starts_with("/var/log/") {
         return Err("path must be under /var/log".into());
     }
-    // Resolve symlinks and verify the real path is still under /var/log.
-    // When running as root, canonicalize directly. When non-root, this may
-    // fail on restricted directories — defer to validate_log_path_sudo.
-    let canonical = p
-        .canonicalize()
-        .map_err(|_| "path does not exist or is not accessible".to_string())?;
-    if !canonical.starts_with("/var/log") {
-        return Err("path resolves outside /var/log".into());
-    }
-    Ok(canonical)
+    Ok(path.to_string())
 }
 
-/// Validate a log path using sudo realpath — for non-root agent with
-/// administrative access, where the directory may not be readable by the
-/// agent user but is accessible via sudo.
-async fn validate_log_path_sudo(path: &str, password: &str) -> Result<PathBuf, String> {
-    let p = Path::new(path);
-    if !p.is_absolute() || path.contains("..") {
-        return Err("invalid path".into());
+/// Friendly error message from a failed brokered read (e.g. "Permission denied").
+fn read_error(out: &std::process::Output) -> String {
+    let e = clean_stderr(&out.stderr);
+    if e.is_empty() {
+        "command failed".into()
+    } else {
+        e
     }
-    if !path.starts_with("/var/log") {
-        return Err("path must be under /var/log".into());
-    }
-    // Try direct canonicalize first (works for world-readable paths)
-    if let Ok(canonical) = p.canonicalize() {
-        if canonical.starts_with("/var/log") {
-            return Ok(canonical);
-        }
-        return Err("path resolves outside /var/log".into());
-    }
-    // Fall back to sudo realpath for restricted directories
-    let output = run_cmd(password, &["realpath", "--", path])
-        .await
-        .map_err(|_| "path does not exist or is not accessible".to_string())?;
-    let resolved = output.trim();
-    if resolved.is_empty() {
-        return Err("path does not exist or is not accessible".into());
-    }
-    if !resolved.starts_with("/var/log") {
-        return Err("path resolves outside /var/log".into());
-    }
-    Ok(PathBuf::from(resolved))
 }
 
 // ── Tail: read last N lines ─────────────────────────────────────────────────
 
-async fn tail_log(path: &str, lines: u64, password: &str) -> serde_json::Value {
-    let log_path = if !password.is_empty() {
-        match validate_log_path_sudo(path, password).await {
-            Ok(p) => p,
-            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
-        }
-    } else {
-        match validate_log_path(path) {
-            Ok(p) => p,
-            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
-        }
+async fn tail_log(path: &str, lines: u64, user: &str, password: &str) -> serde_json::Value {
+    let path = match validate_log_path(path) {
+        Ok(p) => p,
+        Err(e) => return serde_json::json!({ "ok": false, "error": e }),
     };
-
     let count = lines.min(10000).to_string();
-    let path_str = log_path.to_str().unwrap_or("");
 
-    let output = run_cmd(password, &["tail", "-n", &count, path_str]).await;
-
-    match output {
-        Ok(content) => {
+    match broker_output(user, password, &["tail", "-n", &count, "--", &path]).await {
+        Brokered::NoAccount => {
+            no_account(serde_json::json!({ "ok": false, "error": "no account on this host" }))
+        }
+        Brokered::Failed(e) => serde_json::json!({ "ok": false, "error": e }),
+        Brokered::Ran(out) if out.status.success() => {
+            let content = String::from_utf8_lossy(&out.stdout);
             let result_lines: Vec<&str> = content.lines().collect();
             serde_json::json!({
                 "ok": true,
@@ -361,7 +369,7 @@ async fn tail_log(path: &str, lines: u64, password: &str) -> serde_json::Value {
                 "lines": result_lines,
             })
         }
-        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+        Brokered::Ran(out) => serde_json::json!({ "ok": false, "error": read_error(&out) }),
     }
 }
 
@@ -377,18 +385,12 @@ async fn search_log(
     date_from: Option<&str>,
     date_to: Option<&str>,
     no_limit: bool,
+    user: &str,
     password: &str,
 ) -> serde_json::Value {
-    let log_path = if !password.is_empty() {
-        match validate_log_path_sudo(path, password).await {
-            Ok(p) => p,
-            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
-        }
-    } else {
-        match validate_log_path(path) {
-            Ok(p) => p,
-            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
-        }
+    let path = match validate_log_path(path) {
+        Ok(p) => p,
+        Err(e) => return serde_json::json!({ "ok": false, "error": e }),
     };
 
     if query.is_empty() {
@@ -400,38 +402,30 @@ async fn search_log(
     let after = after.min(50);
     let max_lines = if no_limit { 0 } else { max_lines.min(10000) };
 
-    let path_str = log_path.to_str().unwrap_or("");
-
-    // Build grep args
+    // Build grep args (`--` ends options so a query starting with '-' is safe).
     let mut args: Vec<String> = vec!["grep".into(), "-n".into(), "-i".into()];
-
     if before > 0 || after > 0 {
         args.push(format!("-B{before}"));
         args.push(format!("-A{after}"));
     }
-
     if max_lines > 0 {
         args.push(format!("-m{max_lines}"));
     }
-
     args.push("-F".into());
+    args.push("--".into());
     args.push(query.into());
-    args.push(path_str.into());
+    args.push(path.clone());
 
     let str_args: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
 
-    // grep returns exit code 1 when no matches — treat as empty result, not error
-    let am_root = unsafe { libc::geteuid() } == 0;
-    let use_sudo = !am_root && !password.is_empty();
-
-    let output = if use_sudo {
-        run_cmd_raw(password, &str_args).await
-    } else {
-        run_cmd_raw_direct(&str_args).await
-    };
-
-    match output {
-        Ok(content) => {
+    match broker_output(user, password, &str_args).await {
+        Brokered::NoAccount => {
+            no_account(serde_json::json!({ "ok": false, "error": "no account on this host" }))
+        }
+        Brokered::Failed(e) => serde_json::json!({ "ok": false, "error": e }),
+        // grep: exit 0 = match, 1 = no match (both fine), 2+ = real error.
+        Brokered::Ran(out) if out.status.success() || out.status.code() == Some(1) => {
+            let content = String::from_utf8_lossy(&out.stdout);
             let matches = parse_grep_output(&content, date_from, date_to);
             let match_count = matches.len();
             serde_json::json!({
@@ -442,85 +436,7 @@ async fn search_log(
                 "matches": matches,
             })
         }
-        Err(e) => serde_json::json!({ "ok": false, "error": e }),
-    }
-}
-
-/// Run command and return stdout even on non-zero exit (for grep exit=1 = no match).
-async fn run_cmd_raw(password: &str, args: &[&str]) -> Result<String, String> {
-    let mut sa: Vec<&str> = vec!["-S"];
-    sa.extend_from_slice(args);
-
-    let child = tokio::process::Command::new("sudo")
-        .args(&sa)
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn();
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(e) => return Err(e.to_string()),
-    };
-
-    if let Some(mut stdin) = child.stdin.take() {
-        let _ = stdin.write_all(format!("{password}\n").as_bytes()).await;
-        drop(stdin);
-    }
-
-    match child.wait_with_output().await {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            // grep exit 1 = no matches — return empty stdout, not error
-            if !out.status.success() && stdout.is_empty() {
-                let stderr = String::from_utf8_lossy(&out.stderr);
-                let clean = stderr
-                    .lines()
-                    .filter(|l| !l.contains("[sudo]") && !l.contains("password for"))
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                if clean.is_empty() || out.status.code() == Some(1) {
-                    // grep exit 1 = no matches
-                    Ok(String::new())
-                } else {
-                    Err(clean)
-                }
-            } else {
-                Ok(stdout)
-            }
-        }
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-/// Run command directly (root/no-sudo) and return stdout even on non-zero exit.
-async fn run_cmd_raw_direct(args: &[&str]) -> Result<String, String> {
-    let first = args.first().copied().unwrap_or("true");
-    let rest: Vec<&str> = args.iter().skip(1).copied().collect();
-
-    let output = tokio::process::Command::new(first)
-        .args(&rest)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await;
-
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout).to_string();
-            if !out.status.success() && stdout.is_empty() {
-                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-                if stderr.trim().is_empty() || out.status.code() == Some(1) {
-                    Ok(String::new())
-                } else {
-                    Err(stderr.trim().to_string())
-                }
-            } else {
-                Ok(stdout)
-            }
-        }
-        Err(e) => Err(e.to_string()),
+        Brokered::Ran(out) => serde_json::json!({ "ok": false, "error": read_error(&out) }),
     }
 }
 
@@ -530,18 +446,12 @@ async fn filter_by_date(
     path: &str,
     date_from: Option<&str>,
     date_to: Option<&str>,
+    user: &str,
     password: &str,
 ) -> serde_json::Value {
-    let log_path = if !password.is_empty() {
-        match validate_log_path_sudo(path, password).await {
-            Ok(p) => p,
-            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
-        }
-    } else {
-        match validate_log_path(path) {
-            Ok(p) => p,
-            Err(e) => return serde_json::json!({ "ok": false, "error": e }),
-        }
+    let path = match validate_log_path(path) {
+        Ok(p) => p,
+        Err(e) => return serde_json::json!({ "ok": false, "error": e }),
     };
 
     let from_ts = date_from.and_then(|d| parse_filter_date(d, true));
@@ -551,50 +461,57 @@ async fn filter_by_date(
         return serde_json::json!({ "ok": false, "error": "no date range specified" });
     }
 
-    let path_str = log_path.to_str().unwrap_or("");
-    let output = run_cmd(password, &["cat", path_str]).await;
+    let content = match broker_output(user, password, &["cat", "--", &path]).await {
+        Brokered::NoAccount => {
+            return no_account(
+                serde_json::json!({ "ok": false, "error": "no account on this host" }),
+            );
+        }
+        Brokered::Failed(e) => return serde_json::json!({ "ok": false, "error": e }),
+        Brokered::Ran(out) if out.status.success() => {
+            String::from_utf8_lossy(&out.stdout).to_string()
+        }
+        Brokered::Ran(out) => return serde_json::json!({ "ok": false, "error": read_error(&out) }),
+    };
 
-    match output {
-        Ok(content) => {
-            let mut filtered: Vec<serde_json::Value> = Vec::new();
+    {
+        let mut filtered: Vec<serde_json::Value> = Vec::new();
 
-            for (i, line) in content.lines().enumerate() {
-                let line_num = (i + 1) as u64;
-                if let Some(ts) = extract_timestamp(line) {
-                    if let Some(from) = from_ts
-                        && ts < from
-                    {
-                        continue;
-                    }
-                    if let Some(to) = to_ts
-                        && ts > to
-                    {
-                        continue;
-                    }
+        for (i, line) in content.lines().enumerate() {
+            let line_num = (i + 1) as u64;
+            if let Some(ts) = extract_timestamp(line) {
+                if let Some(from) = from_ts
+                    && ts < from
+                {
+                    continue;
+                }
+                if let Some(to) = to_ts
+                    && ts > to
+                {
+                    continue;
+                }
+                filtered.push(serde_json::json!({
+                    "num": line_num,
+                    "text": line,
+                }));
+            } else {
+                // Lines without timestamps: include if adjacent to included lines
+                // (continuation lines, stack traces, etc.)
+                if !filtered.is_empty() {
                     filtered.push(serde_json::json!({
                         "num": line_num,
                         "text": line,
                     }));
-                } else {
-                    // Lines without timestamps: include if adjacent to included lines
-                    // (continuation lines, stack traces, etc.)
-                    if !filtered.is_empty() {
-                        filtered.push(serde_json::json!({
-                            "num": line_num,
-                            "text": line,
-                        }));
-                    }
                 }
             }
-
-            serde_json::json!({
-                "ok": true,
-                "path": path,
-                "total_lines": filtered.len(),
-                "lines": filtered,
-            })
         }
-        Err(e) => serde_json::json!({ "ok": false, "error": e }),
+
+        serde_json::json!({
+            "ok": true,
+            "path": path,
+            "total_lines": filtered.len(),
+            "lines": filtered,
+        })
     }
 }
 

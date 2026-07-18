@@ -131,8 +131,11 @@ The **managed host is the authority**. There is no Tenodera-side permission stor
   gateway injects it so the UI can hide destructive actions. A user without sudo
   is downgraded to read-only rather than rejected. Bypassing this filter gains an
   attacker nothing: the host still refuses the command.
-- **Reads are deliberately not brokered** and run at the agent's privilege — see
-  the residual risk in §6.
+- **Privileged reads are being brokered per-user, incrementally.** Several now run
+  *as the logged-in user* — the journal, log files, the process list, and the
+  process owning each listening socket — with an optional `sudo` escalation, so the
+  host decides what they may see, exactly as for writes. The remaining reads still
+  run at the agent's privilege — see §6.
 - **A few write subsystems are an exception where the role *is* the boundary.**
   SSH access management, the Security page (fail2ban / SELinux / AppArmor), and
   host enrollment run as the agent (root) after only the `require_admin` role
@@ -229,14 +232,22 @@ These are real and not yet closed. Listing them is the point of this document.
   too freely yields root-equivalent control of them. Treat admin-role membership
   as root on every managed host. Moving these behind per-user `sudo` is on the
   roadmap.
-- **Reads are not per-user brokered.** Read-oriented system-introspection
-  handlers (e.g. storage, kdump, systemd timers, network stats, system info, log
-  and journal access) deliberately still run at the agent's privilege (root)
-  without per-operator brokering. Consequences: any authenticated panel user can
-  read privileged system state on any host they can reach, regardless of their
-  rights on that host; and a compromised gateway can reach those reads as root.
-  This is an information-disclosure concern, not a path to state change.
-  Extending per-user brokering to reads is planned.
+- **Read brokering is partial.** Several privileged reads now run *as the
+  logged-in user*: the journal (`journalctl`), log files under `/var/log`
+  (tail / search / date-filter), the process list (`ps`, honouring `hidepid`), and
+  the process owning each listening socket (`ss -p`). Without a password these run
+  under the user's own file and group permissions; with the superuser password they
+  escalate via `sudo` as that user, so the host adjudicates. A user with no account
+  on a host — or lacking the relevant group — sees a "restricted" placeholder
+  instead of privileged data. **The remaining reads still run at the agent's
+  privilege (root):** container listing / inspect / logs, and the baseline,
+  world-readable introspection (metrics, disk usage, network stats, hardware and
+  system info, DNS, packages, systemd timers) which is deliberately left as root
+  because it exposes nothing sensitive. For the not-yet-brokered privileged reads,
+  any authenticated panel user can still read that state regardless of their rights
+  on the host — an information-disclosure concern, not a path to state change.
+  Extending brokering to the container reads (and a few borderline file reads) is
+  the remaining work.
 - **Bootstrap tokens are bearer secrets, and persist on the agent.** Anyone
   holding a valid, unexpired, non-exhausted token can enroll an agent. The token
   is written to `/etc/tenodera/agent.cnf` by the installer and is **not** removed
@@ -263,7 +274,8 @@ These are real and not yet closed. Listing them is the point of this document.
 | Host-enforced authorization for privileged writes (local sudoers, or FreeIPA/LDAP sudo rules via SSSD) | **Implemented** |
 | Per-user sudo brokering for privileged operations (most write handlers) | **Implemented** |
 | RBAC (admin / read-only) — UX filter for sudo-brokered ops; the boundary for a few root subsystems | **Implemented** |
-| Per-user brokering for privileged **reads** (reads run as root) | **Planned** |
+| Per-user brokering for privileged **reads** — journal, log files, process list, listening-port owners (run as the user, `sudo` escalation) | **Partial** |
+| Per-user brokering for the remaining privileged reads (containers; baseline introspection stays root by design) | **Planned** |
 | Per-user sudo brokering for SSH-access / Security / enrollment (today: root gated by admin role) | **Planned** |
 | TLS mandatory in **code** (gateway refuses to start unencrypted, binds `127.0.0.1`) | **Implemented** |
 | ⚠️ but the **package installer** ships `TENODERA_ALLOW_UNENCRYPTED=1` + bind `0.0.0.0` for first-run reachability — so a fresh package install is plain HTTP on all interfaces until hardened | **Shipped opt-out — harden before exposing** |

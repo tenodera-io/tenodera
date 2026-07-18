@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { PageHeader } from '../components/PageHeader.tsx';
+import { RestrictedNotice } from '../components/RestrictedNotice.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip,
   AreaChart, Area, XAxis, YAxis, CartesianGrid,
@@ -113,6 +115,7 @@ const INTERVAL_STORAGE_KEY = 'dashboard_interval';
 
 export function Dashboard() {
   const { request } = useTransport();
+  const su = useSuperuser();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [snapshot, setSnapshot] = useState<SnapshotMetrics | null>(null);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
@@ -120,6 +123,7 @@ export function Dashboard() {
   const [netIfaces, setNetIfaces] = useState<NetInterface[]>([]);
   const [hwInfo, setHwInfo] = useState<HardwareInfo | null>(null);
   const [topProcs, setTopProcs] = useState<TopProcess[]>([]);
+  const [procsRestricted, setProcsRestricted] = useState<string | null>(null);
   const [procSort, setProcSort] = useState<'cpu' | 'mem'>('cpu');
   const [intervalMs, setIntervalMs] = useState<number>(() => {
     const saved = sessionStorage.getItem(INTERVAL_STORAGE_KEY);
@@ -205,10 +209,14 @@ export function Dashboard() {
     };
 
     const fetchProcs = () => {
-      request('top.processes').then((results) => {
+      // Runs as the logged-in user on the host (hidepid decides visibility); superuser
+      // escalates via sudo. `restricted` = no account on this host.
+      const opts = su.active && su.password ? { password: su.password } : {};
+      request('top.processes', opts).then((results) => {
         if (!mountedRef.current) return;
-        const data = results[0] as { processes: TopProcess[] } | undefined;
-        if (data?.processes) setTopProcs(data.processes);
+        const data = results[0] as { processes?: TopProcess[]; restricted?: boolean; reason?: string } | undefined;
+        setTopProcs(data?.processes ?? []);
+        setProcsRestricted(data?.restricted ? data.reason ?? 'restricted' : null);
       }).catch(() => {});
     };
 
@@ -234,7 +242,7 @@ export function Dashboard() {
       clearTimeout(kickTimer);
       clearInterval(timer);
     };
-  }, [request, intervalMs, refreshTick]);
+  }, [request, intervalMs, refreshTick, su]);
 
   /* memory breakdown for pie */
   const memTotal = snapshot?.memory?.memtotal ?? 0;
@@ -688,6 +696,8 @@ export function Dashboard() {
                 ))}
               </div>
             </>
+          ) : procsRestricted ? (
+            <RestrictedNotice reason={procsRestricted} what="the process list" />
           ) : (
             <p style={styles.muted}>Loading…</p>
           )}

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { PageHeader } from '../components/PageHeader.tsx';
+import { RestrictedNotice } from '../components/RestrictedNotice.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
 import { useSuperuser } from '../api/SuperuserContext.tsx';
 import type { Message } from '../api/transport.ts';
@@ -35,6 +36,7 @@ export function LogFiles() {
   // File list
   const [files, setFiles] = useState<LogFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(true);
+  const [filesRestricted, setFilesRestricted] = useState<string | null>(null);
   const [fileFilter, setFileFilter] = useState('');
 
   // Selected file
@@ -102,7 +104,10 @@ export function LogFiles() {
           case 'list':
           case 'refresh': {
             const files = d.data.files as LogFile[] | undefined;
-            if (files) setFiles(files);
+            setFiles(files ?? []);
+            // Reads run as the logged-in user; only logs they can read are listed.
+            // `restricted` = no account on this host (enable superuser to escalate).
+            setFilesRestricted(d.data.restricted ? (d.data.reason as string) ?? 'restricted' : null);
             setFilesLoading(false);
             break;
           }
@@ -290,6 +295,7 @@ export function LogFiles() {
             onChange={(e) => setFileFilter(e.target.value)}
             style={{ ...S.filterInput, borderColor: fileFilter ? 'var(--c-blue)' : 'var(--c-green)' }}
           />
+          {filesRestricted && <RestrictedNotice reason={filesRestricted} what="log files" />}
           <div style={S.fileList}>
             {filesLoading ? (
               <p style={S.muted}>Loading...</p>

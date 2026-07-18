@@ -880,7 +880,7 @@ Query the systemd journal on the selected host.
 - **Line count**: configurable number of entries to fetch (default: 100)
 - Each entry shows: timestamp, unit name, priority, message text
 - **Refresh**: re-fetch with current filters
-- Superuser password enables access to protected journal entries
+- The journal is read **as you** on the host: without the superuser password you see what your own account may (i.e. membership in the `adm` / `systemd-journal` group); with the superuser password active it escalates via `sudo` so you see the full journal. If your account isn't on the host, or lacks those groups, a "restricted" note is shown instead of an error
 
 ---
 
@@ -892,7 +892,7 @@ Browse and search plain-text log files in `/var/log` on the selected host.
 
 - Lists all files in `/var/log` recursively
 - Shows filename, full path, size, last-modified time
-- Filter list by filename
+- The listing and every read (tail / search / date-filter) run **as you** on the host: without the superuser password you see only the logs your own account may read; with it active, reads escalate via `sudo`. Binary databases (`lastlog`, `wtmp`, `btmp`, `faillog`) are intentionally excluded — use `last` / `lastb` for those
 - Files owned by root that are not world-readable require the superuser password to be active
 
 **Tail view**
@@ -1329,7 +1329,7 @@ Returns `200 OK` when the agent binary exists and is executable, `503 Service Un
 - Handles 50+ operation types across ~37 handler modules
 - Announces itself via `Hello/HelloAck` handshake on connect
 - Reconnects automatically with exponential backoff on disconnect
-- **Runs as root under systemd**, but drops privilege per operation: the terminal and most privileged writes drop to the authenticated user's UID/GID (`initgroups` → `setgid` → `setuid`) and then run their shell or `sudo -S` as that user, so the host's own sudo rules adjudicate them. A few admin subsystems (SSH access, Security, host enrollment) and all read-only introspection run as root gated only by the admin role — see §6 and `THREAT_MODEL.md`
+- **Runs as root under systemd**, but drops privilege per operation: the terminal and most privileged writes drop to the authenticated user's UID/GID (`initgroups` → `setgid` → `setuid`) and then run their shell or `sudo -S` as that user, so the host's own sudo rules adjudicate them. Several privileged reads now drop the same way (journal, log files, process list, listening-port owners). A few admin subsystems (SSH access, Security, host enrollment), container introspection, and the baseline world-readable introspection run as root gated only by the admin role — see §6 and `THREAT_MODEL.md`
 
 **Protocol** (`protocol/`)
 - Shared Rust library crate
