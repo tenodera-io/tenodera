@@ -54,6 +54,7 @@ function sourceLabel(src: CronSource): string {
 
 export function Cron() {
   const [sources, setSources] = useState<CronSource[]>([]);
+  const [othersHidden, setOthersHidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<CronSource | null>(null);
@@ -69,14 +70,17 @@ export function Cron() {
   const load = useCallback(() => {
     setLoading(true);
     setError('');
-    request('cron.list', {})
+    // Your own crontab is read as you; the superuser password reveals every user's.
+    const opts = su.active && su.password ? { password: su.password } : {};
+    request('cron.list', opts)
       .then((results) => {
-        const data = results[0] as { sources?: CronSource[] } | undefined;
+        const data = results[0] as { sources?: CronSource[]; others_hidden?: boolean } | undefined;
         setSources(data?.sources ?? []);
+        setOthersHidden(!!data?.others_hidden);
       })
       .catch((e) => setError(String(e)))
       .finally(() => setLoading(false));
-  }, [request]);
+  }, [request, su.active, su.password]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -127,6 +131,11 @@ export function Cron() {
       />
 
       {loading && <div style={S.msg}>Loading...</div>}
+      {!loading && othersHidden && (
+        <div style={{ ...S.msg, color: 'var(--text-2)', fontSize: '0.85rem' }}>
+          Showing system cron files and your own crontab. Enable superuser (padlock) to see every user's crontab.
+        </div>
+      )}
       {error && <div style={{ ...S.msg, color: 'var(--c-red)' }}>{error}</div>}
       {!loading && !error && sources.length === 0 && (
         <div style={S.msg}>No cron jobs found.</div>

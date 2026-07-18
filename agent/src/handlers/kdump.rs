@@ -2,6 +2,7 @@ use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
+use crate::util::{UserReadOutcome, is_valid_username, run_cmd_as_user, sudo_as_user};
 
 pub struct KdumpInfoHandler;
 
@@ -11,18 +12,45 @@ impl ChannelHandler for KdumpInfoHandler {
         "kdump.info"
     }
 
-    async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
-        let status = collect_kdump_status().await;
-        let dumps = list_crash_dumps().await;
-        let config = read_kdump_config().await;
-        let crashkernel = read_crashkernel_param().await;
+    // One-shot. With no `action` → full status/dumps info. With `action` (read_dump /
+    // read_dmesg + path) → that dump's content. Dump CONTENT is kernel memory, so it is
+    // brokered: read AS the logged-in user (or via `sudo` in superuser mode). The dump
+    // listing itself (existence / filenames) stays at agent privilege — low-sensitivity
+    // metadata. Handling actions here (not in `data()`) keeps every request one-shot.
+    async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
+        let user = options
+            .extra
+            .get("_user")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let password = options
+            .extra
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let action = options.extra.get("action").and_then(|a| a.as_str());
+        let path = options
+            .extra
+            .get("path")
+            .and_then(|p| p.as_str())
+            .unwrap_or("");
 
-        let info = serde_json::json!({
-            "status": status,
-            "crashkernel": crashkernel,
-            "config": config,
-            "dumps": dumps,
-        });
+        let data = match action {
+            Some("read_dump") => read_dump_details(path, user, password).await,
+            Some("read_dmesg") => read_dmesg_log(path, user, password).await,
+            _ => {
+                let status = collect_kdump_status().await;
+                let dumps = list_crash_dumps().await;
+                let config = read_kdump_config().await;
+                let crashkernel = read_crashkernel_param().await;
+                serde_json::json!({
+                    "status": status,
+                    "crashkernel": crashkernel,
+                    "config": config,
+                    "dumps": dumps,
+                })
+            }
+        };
 
         vec![
             Message::Ready {
@@ -30,7 +58,7 @@ impl ChannelHandler for KdumpInfoHandler {
             },
             Message::Data {
                 channel: channel.into(),
-                data: info,
+                data,
             },
             Message::Close {
                 channel: channel.into(),
@@ -38,26 +66,27 @@ impl ChannelHandler for KdumpInfoHandler {
             },
         ]
     }
+}
 
-    async fn data(&self, channel: &str, data: &serde_json::Value) -> Vec<Message> {
-        let action = data.get("action").and_then(|a| a.as_str()).unwrap_or("");
-
-        let result = match action {
-            "read_dump" => {
-                let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
-                read_dump_details(path).await
+/// Read up to 64 KiB of a dump file brokered to `user`: `head -c` AS the user (their
+/// own permissions decide), or via `sudo` as them in superuser mode. `None` = can't
+/// read (no access / no such file).
+async fn kdump_read_capped(user: &str, password: &str, path: &str) -> Option<String> {
+    let args = ["head", "-c", "65536", "--", path];
+    if !password.is_empty() {
+        let res = sudo_as_user(user, password, &args).await;
+        res.get("output")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    } else if is_valid_username(user) {
+        match run_cmd_as_user(user, &args).await {
+            UserReadOutcome::Ran(out) if out.status.success() => {
+                Some(String::from_utf8_lossy(&out.stdout).to_string())
             }
-            "read_dmesg" => {
-                let path = data.get("path").and_then(|p| p.as_str()).unwrap_or("");
-                read_dmesg_log(path).await
-            }
-            _ => serde_json::json!({ "ok": false, "error": format!("unknown action: {action}") }),
-        };
-
-        vec![Message::Data {
-            channel: channel.into(),
-            data: serde_json::json!({ "type": "response", "action": action, "data": result }),
-        }]
+            _ => None,
+        }
+    } else {
+        None
     }
 }
 
@@ -268,97 +297,109 @@ fn file_timestamp(meta: &std::fs::Metadata) -> String {
         .unwrap_or_default()
 }
 
-async fn read_dump_details(path: &str) -> serde_json::Value {
+async fn read_dump_details(path: &str, user: &str, password: &str) -> serde_json::Value {
     if !is_valid_dump_path(path) {
         return serde_json::json!({ "ok": false, "error": "invalid path" });
     }
 
-    match tokio::fs::metadata(path).await {
-        Ok(meta) => {
-            let size = meta.len();
-            if path.contains("vmcore") {
-                serde_json::json!({
-                    "ok": true,
-                    "path": path,
-                    "size_bytes": size,
-                    "type": "vmcore",
-                    "note": "Use 'crash' tool for full analysis",
-                })
-            } else {
-                let max_read = 65536;
-                match tokio::fs::read(path).await {
-                    Ok(data) => {
-                        let content = if data.len() > max_read {
-                            let slice = &data[..max_read];
-                            format!(
-                                "{}\n\n[... truncated at 64KB, total {} bytes ...]",
-                                String::from_utf8_lossy(slice),
-                                data.len()
-                            )
-                        } else {
-                            String::from_utf8_lossy(&data).to_string()
-                        };
-                        serde_json::json!({
-                            "ok": true,
-                            "path": path,
-                            "size_bytes": size,
-                            "type": "text",
-                            "content": content,
-                        })
-                    }
-                    Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
-                }
-            }
-        }
-        Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+    let size = tokio::fs::metadata(path)
+        .await
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    // A raw vmcore is a binary kernel-memory image — don't stream it back.
+    if path.contains("vmcore") {
+        return serde_json::json!({
+            "ok": true,
+            "path": path,
+            "size_bytes": size,
+            "type": "vmcore",
+            "note": "Use 'crash' tool for full analysis",
+        });
+    }
+
+    // Text dump content is kernel-memory-derived → read AS the user (or sudo).
+    match kdump_read_capped(user, password, path).await {
+        Some(content) => serde_json::json!({
+            "ok": true,
+            "path": path,
+            "size_bytes": size,
+            "type": "text",
+            "content": content,
+        }),
+        None => serde_json::json!({
+            "ok": false,
+            "restricted": true,
+            "reason": "insufficient-perms",
+            "error": "cannot read this crash dump — enable superuser mode",
+        }),
     }
 }
 
-async fn read_dmesg_log(dir_path: &str) -> serde_json::Value {
+async fn read_dmesg_log(dir_path: &str, user: &str, password: &str) -> serde_json::Value {
     if !is_valid_dump_path(dir_path) {
         return serde_json::json!({ "ok": false, "error": "invalid path" });
     }
+    let dir = dir_path.trim_end_matches('/');
 
-    let dir = std::path::Path::new(dir_path);
-    let candidates = ["dmesg.txt", "dmesg.log", "vmcore-dmesg.txt"];
-
-    for name in &candidates {
-        let path = dir.join(name);
-        if let Ok(content) = tokio::fs::read_to_string(&path).await {
-            let truncated = if content.len() > 65536 {
-                format!("{}\n\n[... truncated at 64KB ...]", &content[..65536])
-            } else {
-                content
-            };
-            return serde_json::json!({
-                "ok": true,
-                "path": path.to_string_lossy(),
-                "content": truncated,
-            });
+    // Crash dmesg can contain kernel memory → read AS the user (or sudo). Try the
+    // well-known fixed names first, then discover any `*dmesg*` file the dir actually
+    // holds — Debian kdump-tools names it `dmesg.<timestamp>`, not `dmesg.txt`.
+    let mut candidates: Vec<String> = ["dmesg.txt", "dmesg.log", "vmcore-dmesg.txt"]
+        .iter()
+        .map(|n| format!("{dir}/{n}"))
+        .collect();
+    for found in kdump_find_dmesg(user, password, dir).await {
+        if !candidates.contains(&found) {
+            candidates.push(found);
         }
     }
 
-    if let Ok(mut entries) = tokio::fs::read_dir(dir).await {
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let name = entry.file_name().to_string_lossy().to_string();
-            if (name.ends_with(".txt") || name.ends_with(".log") || name.contains("dmesg"))
-                && let Ok(content) = tokio::fs::read_to_string(entry.path()).await
-            {
-                let truncated = if content.len() > 65536 {
-                    format!("{}\n\n[... truncated at 64KB ...]", &content[..65536])
-                } else {
-                    content
-                };
-                return serde_json::json!({
-                    "ok": true,
-                    "path": entry.path().to_string_lossy(),
-                    "content": truncated,
-                });
+    for path in &candidates {
+        if let Some(content) = kdump_read_capped(user, password, path).await
+            && !content.is_empty()
+        {
+            return serde_json::json!({ "ok": true, "path": path, "content": content });
+        }
+    }
+
+    serde_json::json!({ "ok": false, "error": "no readable dmesg log in dump directory (enable superuser mode if you lack access)" })
+}
+
+/// Discover `*dmesg*` files in a dump dir, brokered to the user (or sudo). Used
+/// because dmesg filenames vary by distro (e.g. Debian's `dmesg.<timestamp>`).
+async fn kdump_find_dmesg(user: &str, password: &str, dir: &str) -> Vec<String> {
+    let args = [
+        "find",
+        dir,
+        "-maxdepth",
+        "1",
+        "-type",
+        "f",
+        "-iname",
+        "*dmesg*",
+    ];
+    let out = if !password.is_empty() {
+        sudo_as_user(user, password, &args)
+            .await
+            .get("output")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else if is_valid_username(user) {
+        match run_cmd_as_user(user, &args).await {
+            UserReadOutcome::Ran(o) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout).to_string()
             }
+            _ => String::new(),
         }
-    }
-
-    serde_json::json!({ "ok": false, "error": "no dmesg log found in dump directory" })
+    } else {
+        String::new()
+    };
+    out.lines()
+        .filter(|l| !l.is_empty())
+        .map(|l| l.to_string())
+        .collect()
 }
 
 fn is_valid_dump_path(path: &str) -> bool {

@@ -9,6 +9,29 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-07-19
+
+### Added
+- **Per-user read brokering completed** for the remaining privileged reads, so
+  every read that exposes non-world-readable state now runs as the logged-in user
+  (superuser escalates via `sudo`), matching writes:
+  - **cron** — you see the system cron files plus *your own* crontab; superuser
+    reveals every user's crontab (others' live under root-only `/var/spool/cron`).
+  - **kdump** — crash-dump content (`read_dmesg` / `read_dump`) is read as you, so a
+    kernel-memory dump is only shown to someone who may read it.
+  - **certs** — the certificate listing is parsed as you, so a cert file in a
+    root-only directory is only listed for users who can actually read it.
+
+### Fixed
+- **kdump** dump-content requests were silently dropped after the 0.2.6 channel
+  fix (the info channel closed before the follow-up `data()` arrived); they now run
+  as one-shot requests and work again.
+
+### Documentation
+- SECURITY / THREAT_MODEL / DOCS: read brokering is now complete for all privileged
+  reads; only the baseline world-readable introspection remains at agent privilege
+  by design.
+
 ## [0.2.7] - 2026-07-18
 
 ### Added
@@ -273,7 +296,8 @@ Initial public release.
 - Signed `.deb`/`.rpm` packages (amd64 + arm64), SHA256SUMS + minisign signature.
 - `THREAT_MODEL.md` and a documented security model.
 
-[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.7...HEAD
+[Unreleased]: https://github.com/tenodera-io/tenodera/compare/v0.2.8...HEAD
+[0.2.8]: https://github.com/tenodera-io/tenodera/compare/v0.2.7...v0.2.8
 [0.2.7]: https://github.com/tenodera-io/tenodera/compare/v0.2.6...v0.2.7
 [0.2.6]: https://github.com/tenodera-io/tenodera/compare/v0.2.5...v0.2.6
 [0.2.5]: https://github.com/tenodera-io/tenodera/compare/v0.2.4...v0.2.5

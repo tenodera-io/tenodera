@@ -1,5 +1,8 @@
 use crate::handler::ChannelHandler;
-use crate::util::{require_admin, sudo_stdin_write_as_user};
+use crate::util::{
+    UserReadOutcome, is_valid_username, require_admin, run_cmd_as_user, sudo_as_user,
+    sudo_stdin_write_as_user,
+};
 use serde::Serialize;
 use serde_json::{Value, json};
 use tenodera_protocol::channel::ChannelOpenOptions;
@@ -16,8 +19,21 @@ impl ChannelHandler for CronListHandler {
         "cron.list"
     }
 
-    async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
-        let data = list_cron_jobs().await;
+    async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
+        // System cron files are world-readable (baseline); user crontabs are private,
+        // so they are brokered: without the superuser password we show only the
+        // logged-in user's own crontab; with it we escalate via `sudo` as that user.
+        let user = options
+            .extra
+            .get("_user")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let password = options
+            .extra
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let data = list_cron_jobs(user, password).await;
         vec![
             Message::Ready {
                 channel: channel.into(),
@@ -131,7 +147,7 @@ struct CronEntry {
 
 // ── Main logic ────────────────────────────────────────────────────────────────
 
-async fn list_cron_jobs() -> Value {
+async fn list_cron_jobs(user: &str, password: &str) -> Value {
     let mut sources: Vec<CronSource> = Vec::new();
 
     // /etc/crontab
@@ -173,62 +189,61 @@ async fn list_cron_jobs() -> Value {
         }
     }
 
-    // User crontabs — list from /var/spool/cron/crontabs/ (needs root)
-    let crontab_users = get_crontab_users().await;
-    for username in crontab_users {
-        let out = tokio::process::Command::new("sudo")
-            .args(["-n", "crontab", "-u", &username, "-l"])
-            .output()
-            .await;
-        if let Ok(out) = out
+    // User crontabs — private (others' live under root-only /var/spool/cron).
+    if !password.is_empty() {
+        // Superuser: enumerate + read every user's crontab via `sudo` AS the user, so
+        // the host's sudoers decides whether they may.
+        for username in get_crontab_users(user, password).await {
+            let res = sudo_as_user(user, password, &["crontab", "-u", &username, "-l"]).await;
+            if let Some(content) = res.get("output").and_then(|v| v.as_str()) {
+                push_user_crontab(&mut sources, &username, content);
+            }
+        }
+    } else if is_valid_username(user) {
+        // No password: only the logged-in user's OWN crontab, run AS them.
+        if let UserReadOutcome::Ran(out) = run_cmd_as_user(user, &["crontab", "-l"]).await
             && out.status.success()
         {
             let content = String::from_utf8_lossy(&out.stdout).to_string();
-            if !content.trim().is_empty() && !content.trim_start().starts_with("no crontab") {
-                let entries = parse_user_crontab(&content, &username);
-                sources.push(CronSource {
-                    source: format!("crontab:{username}"),
-                    path: String::new(),
-                    source_type: "user_crontab".into(),
-                    user: Some(username),
-                    content,
-                    entries,
-                });
-            }
+            push_user_crontab(&mut sources, user, &content);
         }
     }
 
-    json!({ "sources": sources })
+    // Signals the UI to hint "enable superuser to see all users' crontabs".
+    json!({ "sources": sources, "others_hidden": password.is_empty() })
 }
 
-async fn get_crontab_users() -> Vec<String> {
-    // Try direct read first (works if we're root)
-    if let Ok(mut dir) = fs::read_dir("/var/spool/cron/crontabs").await {
-        let mut users = Vec::new();
-        while let Ok(Some(entry)) = dir.next_entry().await {
-            users.push(entry.file_name().to_string_lossy().to_string());
-        }
-        if !users.is_empty() {
+/// Parse and append a user's crontab as a source (skipping empty / "no crontab").
+fn push_user_crontab(sources: &mut Vec<CronSource>, username: &str, content: &str) {
+    if content.trim().is_empty() || content.trim_start().starts_with("no crontab") {
+        return;
+    }
+    let entries = parse_user_crontab(content, username);
+    sources.push(CronSource {
+        source: format!("crontab:{username}"),
+        path: String::new(),
+        source_type: "user_crontab".into(),
+        user: Some(username.to_string()),
+        content: content.to_string(),
+        entries,
+    });
+}
+
+/// Enumerate users with a crontab via `sudo ls` AS the user (superuser mode only).
+async fn get_crontab_users(user: &str, password: &str) -> Vec<String> {
+    let res = sudo_as_user(user, password, &["ls", "/var/spool/cron/crontabs"]).await;
+    match res.get("output").and_then(|v| v.as_str()) {
+        Some(out) => {
+            let mut users: Vec<String> = out
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|l| l.to_string())
+                .collect();
             users.sort();
-            return users;
+            users
         }
+        None => Vec::new(),
     }
-    // Fallback: sudo ls
-    if let Ok(out) = tokio::process::Command::new("sudo")
-        .args(["-n", "ls", "/var/spool/cron/crontabs"])
-        .output()
-        .await
-        && out.status.success()
-    {
-        let mut users: Vec<String> = String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| l.to_string())
-            .collect();
-        users.sort();
-        return users;
-    }
-    Vec::new()
 }
 
 // ── Crontab parsers ───────────────────────────────────────────────────────────

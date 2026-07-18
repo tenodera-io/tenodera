@@ -84,11 +84,13 @@ function CertsTab({ su, request }: TabProps) {
   const reload = useCallback(async () => {
     setLoading(true);
     try {
-      const [data] = await request('certs.list', {});
+      // Certs are parsed as you; superuser reveals certs in root-only directories.
+      const opts = su.active && su.password ? { password: su.password } : {};
+      const [data] = await request('certs.list', opts);
       setCerts((data as { certs: CertEntry[] }).certs ?? []);
     } catch { /* ignore */ }
     finally { setLoading(false); }
-  }, [request]);
+  }, [request, su.active, su.password]);
 
   useEffect(() => { reload(); }, [reload]);
 

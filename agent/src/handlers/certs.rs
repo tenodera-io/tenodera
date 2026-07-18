@@ -5,7 +5,10 @@ use std::path::Path;
 use tokio::fs;
 
 use crate::handler::ChannelHandler;
-use crate::util::{require_admin, run_cmd, sudo_as_user, sudo_stdin_write_as_user, which};
+use crate::util::{
+    UserReadOutcome, is_valid_username, require_admin, run_cmd, run_cmd_as_user, sudo_as_user,
+    sudo_stdin_write_as_user, which,
+};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -33,8 +36,21 @@ impl ChannelHandler for CertsListHandler {
         "certs.list"
     }
 
-    async fn open(&self, channel: &str, _options: &ChannelOpenOptions) -> Vec<Message> {
-        let data = scan_all_certs().await;
+    async fn open(&self, channel: &str, options: &ChannelOpenOptions) -> Vec<Message> {
+        // Certificates are public, but the FILES may sit in root-only dirs — so the
+        // listing is brokered: parse each cert AS the logged-in user (or via `sudo` in
+        // superuser mode), so a user only sees certs they may actually read.
+        let user = options
+            .extra
+            .get("_user")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let password = options
+            .extra
+            .get("password")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let data = scan_all_certs(user, password).await;
         vec![
             Message::Ready {
                 channel: channel.into(),
@@ -227,7 +243,14 @@ const CERT_DIRS: &[(&str, &str)] = &[
     ("/etc/httpd/conf/ssl", "apache"),
 ];
 
-async fn scan_dir_recursive(dir: &str, skip_subdirs: &[&str], source: &str, out: &mut Vec<Value>) {
+async fn scan_dir_recursive(
+    dir: &str,
+    skip_subdirs: &[&str],
+    source: &str,
+    out: &mut Vec<Value>,
+    user: &str,
+    password: &str,
+) {
     let p = Path::new(dir);
     if !p.exists() {
         return;
@@ -249,7 +272,8 @@ async fn scan_dir_recursive(dir: &str, skip_subdirs: &[&str], source: &str, out:
             } else {
                 let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
                 if matches!(ext, "pem" | "crt" | "cer")
-                    && let Some(info) = parse_cert(&path.to_string_lossy(), source).await
+                    && let Some(info) =
+                        parse_cert(&path.to_string_lossy(), source, user, password).await
                 {
                     out.push(info);
                 }
@@ -258,7 +282,7 @@ async fn scan_dir_recursive(dir: &str, skip_subdirs: &[&str], source: &str, out:
     }
 }
 
-async fn scan_all_certs() -> Value {
+async fn scan_all_certs(user: &str, password: &str) -> Value {
     if !which("openssl").await {
         return json!({ "error": "openssl not found", "certs": [] });
     }
@@ -273,7 +297,8 @@ async fn scan_all_certs() -> Value {
         while let Ok(Some(entry)) = rd.next_entry().await {
             let cert_path = entry.path().join("fullchain.pem");
             if cert_path.exists()
-                && let Some(info) = parse_cert(&cert_path.to_string_lossy(), "letsencrypt").await
+                && let Some(info) =
+                    parse_cert(&cert_path.to_string_lossy(), "letsencrypt", user, password).await
             {
                 certs.push(info);
             }
@@ -281,7 +306,7 @@ async fn scan_all_certs() -> Value {
     }
 
     // /etc/ssl/ — recursive, skip /etc/ssl/certs/ (system bundle)
-    scan_dir_recursive("/etc/ssl", &["certs"], "ssl", &mut certs).await;
+    scan_dir_recursive("/etc/ssl", &["certs"], "ssl", &mut certs, user, password).await;
 
     // Flat cert directories
     for (dir, source) in CERT_DIRS {
@@ -304,7 +329,9 @@ async fn scan_all_certs() -> Value {
                 {
                     continue;
                 }
-                if let Some(info) = parse_cert(&path.to_string_lossy(), source).await {
+                if let Some(info) =
+                    parse_cert(&path.to_string_lossy(), source, user, password).await
+                {
                     certs.push(info);
                 }
             }
@@ -327,8 +354,8 @@ async fn scan_all_certs() -> Value {
     json!({ "certs": certs })
 }
 
-async fn parse_cert(path: &str, source: &str) -> Option<Value> {
-    let out = run_cmd(&[
+async fn parse_cert(path: &str, source: &str, user: &str, password: &str) -> Option<Value> {
+    let args = [
         "openssl",
         "x509",
         "-in",
@@ -342,8 +369,30 @@ async fn parse_cert(path: &str, source: &str) -> Option<Value> {
         "subjectAltName",
         "-ext",
         "basicConstraints",
-    ])
-    .await;
+    ];
+
+    // Import temp files (user == "") are parsed as root. The cert LISTING is brokered
+    // to the logged-in user (or `sudo` in superuser mode), so a cert file in a
+    // root-only directory is only shown to someone who may actually read it.
+    let out = if user.is_empty() {
+        run_cmd(&args).await
+    } else if !password.is_empty() {
+        sudo_as_user(user, password, &args)
+            .await
+            .get("output")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    } else if is_valid_username(user) {
+        match run_cmd_as_user(user, &args).await {
+            UserReadOutcome::Ran(o) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout).to_string()
+            }
+            _ => String::new(),
+        }
+    } else {
+        String::new()
+    };
 
     if out.contains("unable to load") || out.starts_with("error:") || out.is_empty() {
         return None;
@@ -677,7 +726,7 @@ async fn parse_pem_input(data: &Value) -> Value {
         return json!({ "error": "failed to write temp file" });
     }
 
-    let result = parse_cert(&tmp, "import").await;
+    let result = parse_cert(&tmp, "import", "", "").await;
     let _ = fs::remove_file(&tmp).await;
 
     match result {
@@ -1040,7 +1089,7 @@ async fn cert_check(data: &Value) -> Value {
         .unwrap_or_default();
 
     // Parse cert info while files still exist
-    let cert_info = parse_cert(&cert_tmp, "import").await;
+    let cert_info = parse_cert(&cert_tmp, "import", "", "").await;
 
     let _ = fs::remove_file(&cert_tmp).await;
     let _ = fs::remove_file(&key_tmp).await;

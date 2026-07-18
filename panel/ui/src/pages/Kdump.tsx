@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { PageHeader } from '../components/PageHeader.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 
 /* ── types ─────────────────────────────────────────────── */
 
@@ -47,7 +48,8 @@ interface KdumpInfo {
 /* ── component ─────────────────────────────────────────── */
 
 export function Kdump() {
-  const { request, openChannel } = useTransport();
+  const { request } = useTransport();
+  const su = useSuperuser();
   const [info, setInfo] = useState<KdumpInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -76,26 +78,21 @@ export function Kdump() {
       if (dmesgContent[dumpPath] || dmesgLoading[dumpPath]) return;
       setDmesgLoading((p) => ({ ...p, [dumpPath]: true }));
 
-      const ch = openChannel('kdump.info');
-      ch.onMessage((msg) => {
-        if (msg.type === 'ready') {
-          ch.send({ action: 'read_dmesg', path: dumpPath });
-        } else if (msg.type === 'data' && 'data' in msg) {
-          const resp = msg.data as { data?: { ok?: boolean; content?: string; error?: string } };
-          if (resp.data?.ok && resp.data.content) {
-            setDmesgContent((p) => ({ ...p, [dumpPath]: resp.data!.content! }));
-          } else {
-            setDmesgContent((p) => ({
-              ...p,
-              [dumpPath]: resp.data?.error || 'No dmesg log found',
-            }));
-          }
-          setDmesgLoading((p) => ({ ...p, [dumpPath]: false }));
-          ch.close();
-        }
-      });
+      // Crash-dump content is brokered: read as you, or via sudo in superuser mode.
+      const opts: Record<string, unknown> = { action: 'read_dmesg', path: dumpPath };
+      if (su.active && su.password) opts.password = su.password;
+      request('kdump.info', opts)
+        .then((results) => {
+          const resp = results[0] as { ok?: boolean; content?: string; error?: string } | undefined;
+          setDmesgContent((p) => ({
+            ...p,
+            [dumpPath]: resp?.ok && resp.content ? resp.content : (resp?.error || 'No dmesg log found'),
+          }));
+        })
+        .catch((e) => setDmesgContent((p) => ({ ...p, [dumpPath]: String(e) })))
+        .finally(() => setDmesgLoading((p) => ({ ...p, [dumpPath]: false })));
     },
-    [openChannel, dmesgContent, dmesgLoading],
+    [request, su, dmesgContent, dmesgLoading],
   );
 
   if (loading) return <p>Loading kdump information...</p>;
