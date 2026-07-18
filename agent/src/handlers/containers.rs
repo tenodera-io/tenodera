@@ -2,7 +2,7 @@ use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::util::sudo_as_user;
+use crate::util::{UserReadOutcome, run_cmd_as_user, sudo_as_user};
 
 pub struct ContainersHandler;
 
@@ -58,12 +58,12 @@ impl ChannelHandler for ContainersHandler {
         };
 
         let result = match action {
-            "list_containers" => list_containers_merged(rt, password).await,
-            "list_images" => list_images_merged(rt, password).await,
+            "list_containers" => list_containers_merged(rt, user, password).await,
+            "list_images" => list_images_merged(rt, user, password).await,
             "inspect" => {
                 let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
-                inspect_container(rt, id, owner, password).await
+                inspect_container(rt, id, owner, user, password).await
             }
             "start" => {
                 let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -101,18 +101,18 @@ impl ChannelHandler for ContainersHandler {
                 let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let tail = data.get("tail").and_then(|v| v.as_u64()).unwrap_or(100);
                 let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
-                container_logs(rt, id, tail, owner, password).await
+                container_logs(rt, id, tail, owner, user, password).await
             }
             "service_status" => service_status(rt).await,
             "service_start" => service_action_sudo(rt, "start", user, password).await,
             "service_stop" => service_action_sudo(rt, "stop", user, password).await,
             "service_restart" => service_action_sudo(rt, "restart", user, password).await,
-            "stats_all" => stats_all(rt, password).await,
-            "volumes_list" => volumes_list(rt, password).await,
+            "stats_all" => stats_all(rt, user, password).await,
+            "volumes_list" => volumes_list(rt, user, password).await,
             "volume_inspect" => {
                 let name = data.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
-                volume_inspect(rt, name, owner, password).await
+                volume_inspect(rt, name, owner, user, password).await
             }
             "volume_create" => volume_create(rt, data, user, password).await,
             "volume_remove" => {
@@ -121,11 +121,11 @@ impl ChannelHandler for ContainersHandler {
                 volume_remove(rt, name, owner, user, password).await
             }
             "volume_prune" => volume_prune(rt, user, password).await,
-            "networks_list" => networks_list(rt, password).await,
+            "networks_list" => networks_list(rt, user, password).await,
             "network_inspect" => {
                 let id = data.get("id").and_then(|v| v.as_str()).unwrap_or("");
                 let owner = data.get("owner").and_then(|v| v.as_str()).unwrap_or("user");
-                network_inspect(rt, id, owner, password).await
+                network_inspect(rt, id, owner, user, password).await
             }
             "network_create" => network_create(rt, data, user, password).await,
             "network_connect" => {
@@ -257,8 +257,13 @@ async fn get_info(rt: &str) -> serde_json::Value {
 
 /// List containers: run as user, then as root (via sudo) if password
 /// is provided. Merge results, deduplicate by ID, tag each with "owner".
-async fn list_containers_merged(rt: &str, password: &str) -> serde_json::Value {
-    let user_list = run_cmd_parsed(rt, &["ps", "-a", "--format", "{{json .}}", "--no-trunc"]).await;
+async fn list_containers_merged(rt: &str, user: &str, password: &str) -> serde_json::Value {
+    let user_list = run_user_parsed(
+        user,
+        rt,
+        &["ps", "-a", "--format", "{{json .}}", "--no-trunc"],
+    )
+    .await;
     let mut seen = std::collections::HashSet::new();
     let mut merged: Vec<serde_json::Value> = Vec::new();
 
@@ -299,8 +304,13 @@ async fn list_containers_merged(rt: &str, password: &str) -> serde_json::Value {
 }
 
 /// List images: same dual-query approach.
-async fn list_images_merged(rt: &str, password: &str) -> serde_json::Value {
-    let user_list = run_cmd_parsed(rt, &["images", "--format", "{{json .}}", "--no-trunc"]).await;
+async fn list_images_merged(rt: &str, user: &str, password: &str) -> serde_json::Value {
+    let user_list = run_user_parsed(
+        user,
+        rt,
+        &["images", "--format", "{{json .}}", "--no-trunc"],
+    )
+    .await;
     let mut seen = std::collections::HashSet::new();
     let mut merged: Vec<serde_json::Value> = Vec::new();
 
@@ -455,7 +465,13 @@ async fn remove_image(
     }
 }
 
-async fn inspect_container(rt: &str, id: &str, owner: &str, password: &str) -> serde_json::Value {
+async fn inspect_container(
+    rt: &str,
+    id: &str,
+    owner: &str,
+    user: &str,
+    password: &str,
+) -> serde_json::Value {
     if id.is_empty() {
         return serde_json::json!({ "error": "no container id" });
     }
@@ -465,7 +481,7 @@ async fn inspect_container(rt: &str, id: &str, owner: &str, password: &str) -> s
     if owner == "root" && !password.is_empty() {
         run_sudo_cmd(password, rt, &["inspect", "--", id]).await
     } else {
-        run_cmd(rt, &["inspect", "--", id]).await
+        run_user_json(user, rt, &["inspect", "--", id]).await
     }
 }
 
@@ -474,6 +490,7 @@ async fn container_logs(
     id: &str,
     tail: u64,
     owner: &str,
+    user: &str,
     password: &str,
 ) -> serde_json::Value {
     if id.is_empty() {
@@ -507,26 +524,21 @@ async fn container_logs(
         };
     }
 
-    let output = tokio::process::Command::new(rt)
-        .args(["logs", "--tail", &tail_str, "--timestamps", "--", id])
-        .output()
-        .await;
-
-    match output {
-        Ok(out) => {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            let stderr = String::from_utf8_lossy(&out.stderr);
-            let combined = if stderr.is_empty() {
-                stdout.to_string()
-            } else if stdout.is_empty() {
-                stderr.to_string()
-            } else {
-                format!("{stdout}\n{stderr}")
-            };
-            serde_json::json!({ "logs": combined, "id": id })
-        }
-        Err(e) => serde_json::json!({ "error": e.to_string() }),
-    }
+    // User container — read logs AS the user.
+    let (stdout, stderr) = run_user_raw(
+        user,
+        rt,
+        &["logs", "--tail", &tail_str, "--timestamps", "--", id],
+    )
+    .await;
+    let combined = if stderr.is_empty() {
+        stdout
+    } else if stdout.is_empty() {
+        stderr
+    } else {
+        format!("{stdout}\n{stderr}")
+    };
+    serde_json::json!({ "logs": combined, "id": id })
 }
 
 async fn pull_image(rt: &str, image: &str, user: &str, password: &str) -> serde_json::Value {
@@ -923,13 +935,47 @@ async fn run_sudo_cmd_parsed(password: &str, rt: &str, args: &[&str]) -> Vec<ser
     }
 }
 
-/// Run a user-level command and parse JSON output into a Vec.
-async fn run_cmd_parsed(rt: &str, args: &[&str]) -> Vec<serde_json::Value> {
-    let output = tokio::process::Command::new(rt).args(args).output().await;
+// ── Per-user READ brokering ───────────────────────────────
+// Container reads run AS the logged-in user (no sudo), so the host decides access:
+// a user in the `docker` group (or with a rootless podman socket) sees their
+// resources; one without sees nothing. The superuser password still escalates via
+// the `run_sudo_*` helpers to reveal root's resources (the "root" owner tier).
 
-    match output {
-        Ok(out) if out.status.success() => parse_json_array(&out.stdout),
+/// Run a runtime read AS `user` and parse a JSON array (empty if denied/none).
+async fn run_user_parsed(user: &str, rt: &str, args: &[&str]) -> Vec<serde_json::Value> {
+    let mut full = vec![rt];
+    full.extend_from_slice(args);
+    match run_cmd_as_user(user, &full).await {
+        UserReadOutcome::Ran(out) if out.status.success() => parse_json_array(&out.stdout),
         _ => vec![],
+    }
+}
+
+/// Run a runtime read AS `user` and parse JSON (object/array), or an `{error}`.
+async fn run_user_json(user: &str, rt: &str, args: &[&str]) -> serde_json::Value {
+    let mut full = vec![rt];
+    full.extend_from_slice(args);
+    match run_cmd_as_user(user, &full).await {
+        UserReadOutcome::Ran(out) if out.status.success() => parse_json_output(&out.stdout),
+        UserReadOutcome::Ran(out) => {
+            serde_json::json!({ "error": String::from_utf8_lossy(&out.stderr).trim() })
+        }
+        UserReadOutcome::NoAccount => serde_json::json!({ "error": "no account on this host" }),
+        UserReadOutcome::SpawnFailed(e) => serde_json::json!({ "error": e }),
+    }
+}
+
+/// Run a runtime read AS `user` and return raw (stdout, stderr).
+async fn run_user_raw(user: &str, rt: &str, args: &[&str]) -> (String, String) {
+    let mut full = vec![rt];
+    full.extend_from_slice(args);
+    match run_cmd_as_user(user, &full).await {
+        UserReadOutcome::Ran(out) => (
+            String::from_utf8_lossy(&out.stdout).to_string(),
+            String::from_utf8_lossy(&out.stderr).to_string(),
+        ),
+        UserReadOutcome::NoAccount => (String::new(), "no account on this host".into()),
+        UserReadOutcome::SpawnFailed(e) => (String::new(), e),
     }
 }
 
@@ -1048,20 +1094,20 @@ fn is_valid_restart_policy(policy: &str) -> bool {
 
 // ── Stats ──────────────────────────────────────────────────
 
-async fn stats_all(rt: &str, password: &str) -> serde_json::Value {
+async fn stats_all(rt: &str, user: &str, password: &str) -> serde_json::Value {
     let args = ["stats", "--no-stream", "--format", "{{json .}}"];
     let items = if !password.is_empty() {
         run_sudo_cmd_parsed(password, rt, &args).await
     } else {
-        run_cmd_parsed(rt, &args).await
+        run_user_parsed(user, rt, &args).await
     };
     serde_json::Value::Array(items)
 }
 
 // ── Volumes ────────────────────────────────────────────────
 
-async fn volumes_list(rt: &str, password: &str) -> serde_json::Value {
-    let user_vols = run_cmd_parsed(rt, &["volume", "ls", "--format", "{{json .}}"]).await;
+async fn volumes_list(rt: &str, user: &str, password: &str) -> serde_json::Value {
+    let user_vols = run_user_parsed(user, rt, &["volume", "ls", "--format", "{{json .}}"]).await;
     let mut seen = std::collections::HashSet::new();
     let mut merged: Vec<serde_json::Value> = Vec::new();
 
@@ -1136,8 +1182,8 @@ async fn volume_prune(rt: &str, user: &str, password: &str) -> serde_json::Value
 
 // ── Networks ───────────────────────────────────────────────
 
-async fn networks_list(rt: &str, password: &str) -> serde_json::Value {
-    let user_nets = run_cmd_parsed(rt, &["network", "ls", "--format", "{{json .}}"]).await;
+async fn networks_list(rt: &str, user: &str, password: &str) -> serde_json::Value {
+    let user_nets = run_user_parsed(user, rt, &["network", "ls", "--format", "{{json .}}"]).await;
     let mut seen = std::collections::HashSet::new();
     let mut merged: Vec<serde_json::Value> = Vec::new();
 
@@ -1233,7 +1279,13 @@ async fn system_prune(rt: &str, user: &str, password: &str) -> serde_json::Value
 
 // ── Network inspect / create / connect ────────────────────
 
-async fn network_inspect(rt: &str, id: &str, owner: &str, password: &str) -> serde_json::Value {
+async fn network_inspect(
+    rt: &str,
+    id: &str,
+    owner: &str,
+    user: &str,
+    password: &str,
+) -> serde_json::Value {
     if id.is_empty() {
         return serde_json::json!({ "error": "no network id" });
     }
@@ -1243,7 +1295,7 @@ async fn network_inspect(rt: &str, id: &str, owner: &str, password: &str) -> ser
     if owner == "root" && !password.is_empty() {
         run_sudo_cmd(password, rt, &["network", "inspect", "--", id]).await
     } else {
-        run_cmd(rt, &["network", "inspect", "--", id]).await
+        run_user_json(user, rt, &["network", "inspect", "--", id]).await
     }
 }
 
@@ -1383,7 +1435,13 @@ async fn network_prune(rt: &str, user: &str, password: &str) -> serde_json::Valu
 
 // ── Volume inspect / create ────────────────────────────────
 
-async fn volume_inspect(rt: &str, name: &str, owner: &str, password: &str) -> serde_json::Value {
+async fn volume_inspect(
+    rt: &str,
+    name: &str,
+    owner: &str,
+    user: &str,
+    password: &str,
+) -> serde_json::Value {
     if name.is_empty() {
         return serde_json::json!({ "error": "no volume name" });
     }
@@ -1393,7 +1451,7 @@ async fn volume_inspect(rt: &str, name: &str, owner: &str, password: &str) -> se
     if owner == "root" && !password.is_empty() {
         run_sudo_cmd(password, rt, &["volume", "inspect", "--", name]).await
     } else {
-        run_cmd(rt, &["volume", "inspect", "--", name]).await
+        run_user_json(user, rt, &["volume", "inspect", "--", name]).await
     }
 }
 
