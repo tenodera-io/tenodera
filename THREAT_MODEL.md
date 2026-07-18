@@ -133,6 +133,12 @@ The **managed host is the authority**. There is no Tenodera-side permission stor
   attacker nothing: the host still refuses the command.
 - **Reads are deliberately not brokered** and run at the agent's privilege — see
   the residual risk in §6.
+- **A few write subsystems are an exception where the role *is* the boundary.**
+  SSH access management, the Security page (fail2ban / SELinux / AppArmor), and
+  host enrollment run as the agent (root) after only the `require_admin` role
+  check — the host's `sudo` is not consulted for them. For these the injected role
+  is load-bearing rather than a mere filter, so gateway compromise (§5) or a too-
+  freely-granted admin role reaches them as root. See the residual risk in §6.
 
 ### Transport
 
@@ -213,8 +219,16 @@ These are real and not yet closed. Listing them is the point of this document.
   contact. An active MITM present at that exact first connection could pin
   itself. Mitigate by performing first enrollment over a trusted network and/or
   using bootstrap tokens delivered out-of-band.
-- **Reads are not per-user brokered.** Every state-changing operation now runs as
-  the operator, so the host authorizes it. Read-oriented system-introspection
+- **A few write subsystems run as root gated only by role.** Most state-changing
+  operations run as the operator under `sudo`, so the host authorizes them — but
+  SSH access management, the Security page (fail2ban/SELinux/AppArmor), and host
+  enrollment/token management run at the agent's privilege (root) after only the
+  `require_admin` check. For these the injected `_role` is the boundary: forging
+  it (only possible by compromising the gateway, §5) or granting the admin role
+  too freely yields root-equivalent control of them. Treat admin-role membership
+  as root on every managed host. Moving these behind per-user `sudo` is on the
+  roadmap.
+- **Reads are not per-user brokered.** Read-oriented system-introspection
   handlers (e.g. storage, kdump, systemd timers, network stats, system info, log
   and journal access) deliberately still run at the agent's privilege (root)
   without per-operator brokering. Consequences: any authenticated panel user can
@@ -242,9 +256,10 @@ These are real and not yet closed. Listing them is the point of this document.
 | PAM helper isolated subprocess, setuid `4750` | **Implemented** |
 | Agent installed without setuid bit (`0755`) | **Implemented** |
 | Host-enforced authorization for privileged writes (local sudoers, or FreeIPA/LDAP sudo rules via SSSD) | **Implemented** |
-| Per-user sudo brokering for privileged operations | **Implemented** |
-| RBAC (admin / read-only) — UX filter only, host is authoritative | **Implemented** |
+| Per-user sudo brokering for privileged operations (most write handlers) | **Implemented** |
+| RBAC (admin / read-only) — UX filter for sudo-brokered ops; the boundary for a few root subsystems | **Implemented** |
 | Per-user brokering for privileged **reads** (reads run as root) | **Planned** |
+| Per-user sudo brokering for SSH-access / Security / enrollment (today: root gated by admin role) | **Planned** |
 | TLS secure-by-default (refuses to start unencrypted) | **Implemented** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
