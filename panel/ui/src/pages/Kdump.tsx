@@ -202,7 +202,7 @@ export function Kdump() {
           )}
           {cfgMsg && <pre style={{ ...S.pre, marginTop: '0.5rem', whiteSpace: 'pre-wrap', color: cfgMsg.startsWith('✓') ? 'var(--c-green)' : cfgMsg.startsWith('⚠') ? 'var(--c-yellow)' : 'var(--c-red)' }}>{cfgMsg}</pre>}
           <p style={{ color: 'var(--text-2)', fontSize: '0.78rem', marginTop: '0.4rem' }}>
-            Editing writes <code>/etc/default/kdump-tools</code>, runs <code>kdump-config test</code>, and restarts the service on success.
+            Editing writes <code>{config.path}</code>, validates, and reloads/restarts kdump on success.
           </p>
         </div>
       )}

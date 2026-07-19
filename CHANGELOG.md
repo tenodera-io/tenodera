@@ -10,11 +10,12 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Added
-- **Kdump → editable settings table** — the kdump-tools configuration is now shown as a
-  parsed key/value table (instead of a raw file dump), and (Debian kdump-tools) each
-  setting can be edited or a new one added. A change is written to
-  `/etc/default/kdump-tools`, validated with `kdump-config test`, and the service is
-  restarted only if the test passes. Admin + superuser gated, audit-logged.
+- **Kdump → editable settings table** — the kdump configuration is now shown as a
+  parsed key/value table (instead of a raw file dump), and each setting can be edited
+  or a new one added. Works on both **Debian kdump-tools** (`/etc/default/kdump-tools`,
+  `KEY=value`; validated with `kdump-config test`, restarts the service only if it
+  passes) and **Fedora/RHEL kdump** (`/etc/kdump.conf`, `key value`; applied with
+  `kdumpctl reload`). Admin + superuser gated, audit-logged (`kdump.set_config`).
 - **Certificates → View & Edit PEM** — the cert detail view has a *View PEM* button
   that shows the certificate's full PEM (read as the logged-in user; superuser reveals
   certs in root-only directories, via a `read_pem` action on `certs.list`). With
