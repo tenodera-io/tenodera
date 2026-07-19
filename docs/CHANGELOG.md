@@ -10,6 +10,12 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Added
+- **Command palette (`Ctrl`/`Cmd`+`K`)** — a quick-jump palette to reach any page
+  or sub-tab: press the shortcut or click **Search** in the top bar, type to filter
+  (e.g. `ports`, `updates`, `trust`), then `↑`/`↓` + `Enter` to navigate (`Esc`
+  closes). Entries are built from the shared nav, so they stay in sync with the
+  sidebar; admin pages appear only when superuser mode is active. Navigation-only
+  for now — UI-only, no agent/gateway changes.
 - **Kdump → editable settings table** — the kdump configuration is now shown as a
   parsed key/value table (instead of a raw file dump), and each setting can be edited
   or a new one added. Works on both **Debian kdump-tools** (`/etc/default/kdump-tools`,

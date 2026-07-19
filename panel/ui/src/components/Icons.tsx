@@ -7,9 +7,16 @@ export type IconName =
   | 'packages' | 'users' | 'cron' | 'dns' | 'certificates'
   | 'logs' | 'logFiles' | 'files' | 'kdump'
   | 'terminal' | 'management' | 'api'
-  | 'monitor' | 'globe' | 'settings' | 'power' | 'system' | 'audit' | 'key' | 'shield' | 'chevronDown';
+  | 'monitor' | 'globe' | 'settings' | 'power' | 'system' | 'audit' | 'key' | 'shield' | 'chevronDown'
+  | 'search';
 
 const PATHS: Record<IconName, React.ReactNode> = {
+  search: (
+    <>
+      <circle cx="11" cy="11" r="8" />
+      <path d="m21 21-4.3-4.3" />
+    </>
+  ),
   dashboard: (
     <>
       <rect width="7" height="9" x="3" y="3" rx="1" />
