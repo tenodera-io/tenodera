@@ -686,6 +686,7 @@ Lists available package updates:
 - Package name, current installed version, available version
 - **Update all** — runs the full system upgrade (`apt upgrade`, `dnf upgrade`, `pacman -Syu`)
 - Live output streamed to the UI during update
+- **Cache cleanup** (admin only) — free disk from cached / orphaned packages: *Clean cache* (`apt clean` / `dnf clean all` / `pacman -Sc`), *Autoclean* (apt), *Autoremove* (`apt` / `dnf autoremove`)
 
 **Repositories tab** (admin only)
 
@@ -1003,10 +1004,15 @@ Monitor kernel crash dump configuration on the selected host.
 - Current `crashkernel=` boot parameter value
 - Whether it is configured (present in boot config)
 
-**Config file**
+**Configuration**
 
-- Path to the kdump config file
-- Full file content displayed
+- The kdump configuration is shown as an editable **key/value table** — parsed from
+  Debian `/etc/default/kdump-tools` (`KEY=value`) or Fedora/RHEL `/etc/kdump.conf`
+  (`key value`).
+- With **Administrative access**, each setting can be edited or a new one added
+  (admin only). The change is written to the config file and applied: on Debian it is
+  validated with `kdump-config test` and the service is restarted only if the test
+  passes; on Fedora/RHEL it is applied with `kdumpctl reload`.
 
 **Crash dumps browser**
 
@@ -1078,7 +1084,8 @@ Scans common certificate locations and lists installed certificates:
 | Is CA | Whether this is a CA certificate |
 | Source | File path where the certificate was found |
 
-- Click a certificate to view full details
+- Click a certificate to view full details, then **View PEM** to see its full PEM (read as you; Administrative access reveals certs in root-only directories)
+- **Edit PEM** (admin only): with Administrative access the PEM becomes editable and can be saved back — the new content is validated as an X.509 certificate before the file is overwritten
 - **Import certificate** (admin only): paste PEM-encoded certificate and private key → validated before saving
 - **Remove certificate** (admin only): requires superuser password
 
