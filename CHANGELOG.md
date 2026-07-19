@@ -9,6 +9,12 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Added
+- **Packages → cache cleanup** — buttons to free disk from cached / orphaned
+  packages: *Clean cache* (`apt-get clean` / `dnf clean all` / `pacman -Sc`),
+  *Autoclean* (apt only), and *Autoremove* (`apt-get`/`dnf autoremove`). Superuser-
+  gated, run as the user via sudo, audit-logged (`pkg.cleanup`).
+
 ## [0.2.8] - 2026-07-19
 
 ### Added

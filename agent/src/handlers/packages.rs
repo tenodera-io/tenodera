@@ -86,6 +86,15 @@ impl ChannelHandler for PackagesHandler {
                 r
             }
 
+            // ── Cache / cleanup ──
+            "cleanup" => {
+                let kind = data.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                let r = cleanup_packages(user, password, kind).await;
+                let ok = r.get("error").is_none();
+                crate::audit::log(user, "pkg.cleanup", kind, ok, "");
+                r
+            }
+
             // ── Repository management ──
             "list_repos" => list_repos().await,
             "add_repo" => {
@@ -784,6 +793,31 @@ async fn update_system(user: &str, password: &str) -> serde_json::Value {
             "-y".into(),
         ],
         PkgBackend::None => return serde_json::json!({ "error": "no package manager" }),
+    };
+
+    pkg_sudo(user, password, &args).await
+}
+
+/// Free disk from cached / orphaned packages. `kind`: "clean" (clear the download
+/// cache), "autoclean" (apt only — drop only obsolete cache), "autoremove" (remove
+/// automatically-installed packages no longer needed). Runs as the user via sudo.
+async fn cleanup_packages(user: &str, password: &str, kind: &str) -> serde_json::Value {
+    let backend = detect_backend().await;
+    let args: Vec<String> = match (backend, kind) {
+        (PkgBackend::Apt, "clean") => vec!["apt-get".into(), "clean".into()],
+        (PkgBackend::Apt, "autoclean") => vec!["apt-get".into(), "autoclean".into()],
+        (PkgBackend::Apt, "autoremove") => {
+            vec!["apt-get".into(), "autoremove".into(), "-y".into()]
+        }
+        (PkgBackend::Dnf, "clean") => vec!["dnf".into(), "clean".into(), "all".into()],
+        (PkgBackend::Dnf, "autoremove") => vec!["dnf".into(), "autoremove".into(), "-y".into()],
+        (PkgBackend::Pacman, "clean") => vec!["pacman".into(), "-Sc".into(), "--noconfirm".into()],
+        (PkgBackend::None, _) => return serde_json::json!({ "error": "no package manager" }),
+        _ => {
+            return serde_json::json!({
+                "error": format!("cleanup '{kind}' is not supported for this package manager")
+            });
+        }
     };
 
     pkg_sudo(user, password, &args).await
