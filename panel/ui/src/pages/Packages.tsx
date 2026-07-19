@@ -349,6 +349,20 @@ export function Packages() {
     }
   };
 
+  const cleanup = async (kind: string) => {
+    setUpdating(true); setUpdateOutput(''); setActionError('');
+    try {
+      const res = await sudoAction({ action: 'cleanup', kind });
+      if (res.cancelled) { setUpdating(false); return; }
+      if (res.error) { setActionError(String(res.error)); }
+      else { setUpdateOutput(String(res.output || `Cleanup (${kind}) done`)); }
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Cleanup failed');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const refreshRepos = async () => {
     setActionMsg(''); setActionError('');
     try {
@@ -588,6 +602,20 @@ export function Packages() {
                 </button>
               )}
               <span style={S.count}>{updateCount} update{updateCount !== 1 ? 's' : ''} available</span>
+              {(backend === 'apt' || backend === 'dnf' || backend === 'pacman') && (
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: '0.4rem' }}>
+                  <button onClick={() => cleanup('clean')} style={S.btn} disabled={updating}
+                    title="Clear the package download cache">🧹 Clean cache</button>
+                  {backend === 'apt' && (
+                    <button onClick={() => cleanup('autoclean')} style={S.btn} disabled={updating}
+                      title="Remove only obsolete cached packages">Autoclean</button>
+                  )}
+                  {(backend === 'apt' || backend === 'dnf') && (
+                    <button onClick={() => cleanup('autoremove')} style={S.btn} disabled={updating}
+                      title="Remove auto-installed packages no longer needed">🗑️ Autoremove</button>
+                  )}
+                </span>
+              )}
             </div>
             {updating && (
               <>
