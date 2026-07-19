@@ -14,6 +14,7 @@ interface Props {
   onSuperuserClick: () => void;
   onLogout: () => void;
   onToggleNav: () => void;
+  onOpenPalette: () => void;
 }
 
 interface GatewayHealth {
@@ -33,9 +34,10 @@ function fmtUptime(secs: number): string {
 
 export function TopBar({
   hostname, activeHost, remoteStatus, connState,
-  suActive, user, localIp, onSuperuserClick, onLogout, onToggleNav,
+  suActive, user, localIp, onSuperuserClick, onLogout, onToggleNav, onOpenPalette,
 }: Props) {
   const role = useRole();
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
   const { theme, setTheme } = useTheme();
   const [helpOpen, setHelpOpen] = React.useState(false);
   const [sessionOpen, setSessionOpen] = React.useState(false);
@@ -102,6 +104,17 @@ export function TopBar({
         )}
       </div>
       <div style={S.topRight}>
+        {activeHost && (
+          <button
+            className="top-btn"
+            onClick={onOpenPalette}
+            title="Command palette"
+            style={{ ...S.topBtn, display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+          >
+            🔍 <span style={S.searchLabel}>Search</span>
+            <kbd style={S.kbd}>{isMac ? '⌘K' : 'Ctrl K'}</kbd>
+          </button>
+        )}
         <button
           onClick={onSuperuserClick}
           style={{
@@ -210,6 +223,12 @@ const S: Record<string, React.CSSProperties> = {
     border: '1px solid var(--border-1)', background: 'transparent',
     color: 'var(--text-2)', cursor: 'pointer', fontSize: '0.8rem', whiteSpace: 'nowrap',
     transition: 'background 0.15s ease, color 0.15s ease, border-color 0.15s ease',
+  },
+  searchLabel: { color: 'var(--text-2)' },
+  kbd: {
+    fontSize: '0.66rem', color: 'var(--text-3)',
+    border: '1px solid var(--border-1)', borderRadius: 4,
+    padding: '0.05rem 0.32rem', background: 'var(--bg-app)',
   },
   dropdownWrap: { position: 'relative' },
   dropdown: {

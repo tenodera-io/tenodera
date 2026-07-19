@@ -12,6 +12,7 @@ import { useSuperuser } from '../hooks/useSuperuser.ts';
 import { TopBar } from '../components/TopBar.tsx';
 import { Sidebar } from '../components/Sidebar.tsx';
 import { SuperuserModal } from '../components/SuperuserModal.tsx';
+import { CommandPalette } from '../components/CommandPalette.tsx';
 import { ErrorBoundary } from '../components/ErrorBoundary.tsx';
 import { Hosts } from './Hosts.tsx';
 import type { UserRole } from '../api/auth.ts';
@@ -52,6 +53,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
   const [localIp, setLocalIp] = useState<string>(() => preferredLocalIp());
   const [hostManageOpen, setHostManageOpen] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const navigate = useNavigate();
 
   const { hosts, activeHost, hostStatuses, remoteStatus, userExistsMap, loadHosts, switchHost } = useHosts(connected);
@@ -101,6 +103,18 @@ export function Shell({ user, role, onLogout }: ShellProps) {
     navigate('/login');
   };
 
+  // Global Ctrl/Cmd+K toggles the command palette.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   const suCtx = useMemo(() => ({ active: su.suActive, password: su.suPassword }), [su.suActive, su.suPassword]);
 
   return (
@@ -120,6 +134,7 @@ export function Shell({ user, role, onLogout }: ShellProps) {
           onSuperuserClick={su.handleSuperuserClick}
           onLogout={handleLogout}
           onToggleNav={() => setNavOpen((v) => !v)}
+          onOpenPalette={() => setPaletteOpen(true)}
         />
 
         {activeHost && userExistsMap[activeHost.id] === false && (
@@ -149,6 +164,12 @@ export function Shell({ user, role, onLogout }: ShellProps) {
             onClose={su.closeSuPrompt}
           />
         )}
+
+        <CommandPalette
+          open={paletteOpen && !!activeHost}
+          onClose={() => setPaletteOpen(false)}
+          suActive={su.suActive}
+        />
 
         <div className="app-body">
           <div

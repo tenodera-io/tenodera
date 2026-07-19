@@ -2,7 +2,8 @@ import { useNavigate, NavLink, useLocation, useSearchParams } from 'react-router
 import { useContext } from 'react';
 import React from 'react';
 import { SuperuserContext } from '../api/SuperuserContext.tsx';
-import { Icon, type IconName } from './Icons.tsx';
+import { Icon } from './Icons.tsx';
+import { NAV_SECTIONS, ADMIN_ITEMS, SUBNAV, type NavItem } from '../nav.ts';
 import type { HostEntry, HostStatus } from '../hooks/useHosts.ts';
 import type { ConnectionState } from '../api/transport.ts';
 
@@ -16,115 +17,6 @@ interface Props {
   onOpenManageHosts: () => void;
   onClose: () => void;
 }
-
-interface NavItem { path: string; label: string; icon: IconName; }
-
-const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
-  {
-    label: 'System',
-    items: [
-      { path: '/', label: 'Dashboard', icon: 'dashboard' },
-      { path: '/services', label: 'Services', icon: 'services' },
-      { path: '/containers', label: 'Containers', icon: 'containers' },
-      { path: '/storage', label: 'Storage', icon: 'storage' },
-      { path: '/networking', label: 'Networking', icon: 'networking' },
-      { path: '/packages', label: 'Packages', icon: 'packages' },
-      { path: '/users', label: 'Users', icon: 'users' },
-      { path: '/cron', label: 'Cron Jobs', icon: 'cron' },
-      { path: '/dns', label: 'DNS', icon: 'dns' },
-      { path: '/certificates', label: 'Certificates', icon: 'certificates' },
-      { path: '/system', label: 'System', icon: 'system' },
-    ],
-  },
-  {
-    label: 'Tools',
-    items: [
-      { path: '/logs', label: 'Logs', icon: 'logs' },
-      { path: '/log-files', label: 'Log Files', icon: 'logFiles' },
-      { path: '/files', label: 'Files', icon: 'files' },
-      { path: '/kdump', label: 'Kernel Dump', icon: 'kdump' },
-    ],
-  },
-];
-
-const ADMIN_ITEMS: NavItem[] = [
-  { path: '/terminal', label: 'Terminal', icon: 'terminal' },
-  { path: '/management', label: 'Management', icon: 'management' },
-  { path: '/ssh', label: 'SSH access', icon: 'key' },
-  { path: '/security', label: 'Security', icon: 'shield' },
-  { path: '/audit', label: 'Audit log', icon: 'audit' },
-  { path: '/api-docs', label: 'API', icon: 'api' },
-];
-
-interface SubItem { id: string; label: string; }
-
-// Sub-tabs mirrored into the sidebar. The first entry is the default tab
-// (represented by the absence of ?tab= — see useTabParam).
-const SUBNAV: Record<string, SubItem[]> = {
-  '/services': [
-    { id: 'services', label: 'Services' },
-    { id: 'timers', label: 'Timers' },
-  ],
-  '/storage': [
-    { id: 'overview', label: 'Overview' },
-    { id: 'mounts', label: 'Mounts' },
-    { id: 'usage', label: 'Disk usage' },
-  ],
-  '/networking': [
-    { id: 'overview', label: 'Overview' },
-    { id: 'firewall', label: 'Firewall' },
-    { id: 'interfaces', label: 'Interfaces' },
-    { id: 'ports', label: 'Ports' },
-    { id: 'logs', label: 'Logs' },
-  ],
-  '/containers': [
-    { id: 'containers', label: 'Containers' },
-    { id: 'images', label: 'Images' },
-    { id: 'volumes', label: 'Volumes' },
-    { id: 'networks', label: 'Networks' },
-    { id: 'create', label: '+ New Container' },
-  ],
-  '/packages': [
-    { id: 'installed', label: 'Installed' },
-    { id: 'search', label: 'Search' },
-    { id: 'updates', label: 'Updates' },
-    { id: 'repos', label: 'Repositories' },
-    { id: 'autoupdate', label: 'Auto-updates' },
-  ],
-  '/users': [
-    { id: 'users', label: 'Users' },
-    { id: 'groups', label: 'Groups' },
-    { id: 'create', label: 'Create Account' },
-  ],
-  '/dns': [
-    { id: 'resolver', label: 'Resolver' },
-    { id: 'hosts', label: '/etc/hosts' },
-    { id: 'lookup', label: 'Lookup' },
-    { id: 'resolved', label: 'systemd-resolved' },
-  ],
-  '/certificates': [
-    { id: 'certs', label: 'Certificates' },
-    { id: 'trust', label: 'Trust Store' },
-    { id: 'letsencrypt', label: "Let's Encrypt" },
-    { id: 'selfsigned', label: 'Self-Signed' },
-  ],
-  '/management': [
-    { id: 'hosts', label: 'Hosts' },
-    { id: 'pending', label: 'Pending' },
-    { id: 'tokens', label: 'Tokens' },
-  ],
-  '/ssh': [
-    { id: 'keys', label: 'Authorized keys' },
-    { id: 'sshd', label: 'Server config' },
-  ],
-  // The time-sync sub-tab is conditional per host (only when the daemon has a
-  // management tab). System.tsx redirects ?tab=timesync back to Settings and
-  // cleans the URL on hosts where it isn't available.
-  '/system': [
-    { id: 'settings', label: 'Settings' },
-    { id: 'timesync', label: 'Time sync' },
-  ],
-};
 
 function NavRow({
   item, admin, onClose, currentPath, currentTab, onNavigateSub,
