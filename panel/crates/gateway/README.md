@@ -107,6 +107,78 @@ invalidated (logout or reaper), the WebSocket is terminated with a close frame.
 - Hardened systemd service (`NoNewPrivileges=yes`, etc.)
 - Structured audit logging with file permission enforcement
 
+## Protocol (`tenodera-protocol`)
+
+The gateway speaks the channel-multiplexed JSON protocol defined by the
+`tenodera-protocol` **library crate** (`protocol/`, no binary) — the same format
+on both hops it bridges: WebSocket (browser ↔ gateway) and stdin/stdout
+(gateway ↔ agent).
+
+### Message types
+
+| Variant | Direction | Description |
+|---------|-----------|-------------|
+| `Open` | Client → Agent | Open a new channel (payload type + options) |
+| `Ready` | Agent → Client | Channel is ready |
+| `Data` | Bidirectional | Payload data (`serde_json::Value`) |
+| `Control` | Bidirectional | Control signal on a channel |
+| `Close` | Bidirectional | Channel close (`problem: None` = clean) |
+| `Ping` / `Pong` | Bidirectional | Heartbeat |
+| `AuthResult` | Agent → Client | Authentication result (used internally) |
+
+### Wire format
+
+Each message is a single newline-terminated JSON object with a `type`
+discriminator:
+
+```json
+{"type":"open","channel":"ch1","payload":"system.info"}
+{"type":"ready","channel":"ch1"}
+{"type":"data","channel":"ch1","data":{"hostname":"server1"}}
+{"type":"close","channel":"ch1"}
+```
+
+The `Open` message `#[serde(flatten)]`s `ChannelOpenOptions`, which itself
+flattens an `extra: Map`, so fields like `host`, `path`, `unit`, `lines` appear
+at the top level alongside `type`, `channel`, and `payload`.
+
+Protocol modules: `message.rs` (the `Message` frame enum), `channel.rs`
+(`ChannelOpenOptions`, `ChannelState`, `SuperuserMode`), `auth.rs` (Ed25519 TOFU
+handshake types). The concrete payload types (`system.info`, `journal.query`,
+…) are registered per-handler in the agent — see the agent's handler registry
+for the current set.
+
+## systemd Service
+
+The gateway runs as `tenodera.service` (`panel/systemd/tenodera.service`,
+installed to `/etc/systemd/system/` by `make install` / the package). It loads
+`/etc/tenodera/tenodera.cnf` via `EnvironmentFile=`, so config changes take
+effect on `sudo systemctl restart tenodera`; follow logs with
+`journalctl -u tenodera -f`. TLS and bind-address settings are documented in
+[DOCS.md](../../../DOCS.md); the application-level controls are in
+[SECURITY.md](../../../SECURITY.md).
+
+### Hardening directives
+
+| Directive | Description |
+|-----------|-------------|
+| `ProtectSystem=strict` | Entire filesystem read-only except explicit write paths |
+| `ReadWritePaths=/etc /var/log /home /var/mail` | Allow writes for user management, config, logs, and home dirs |
+| `PrivateTmp=yes` | Isolated `/tmp` namespace |
+| `NoNewPrivileges=yes` | Prevent privilege escalation via setuid/setgid |
+| `ProtectKernelTunables=yes` | Block writes to `/proc/sys` and `/sys` |
+| `ProtectKernelModules=yes` | Prevent kernel module loading |
+| `ProtectControlGroups=yes` | Block writes to `/sys/fs/cgroup` |
+| `RestrictNamespaces=yes` | Prevent namespace creation |
+| `LockPersonality=yes` | Block execution domain changes |
+| `MemoryDenyWriteExecute=yes` | Prevent W+X memory mappings |
+| `RestrictSUIDSGID=no` | Required for `useradd`/`groupadd` lock file management |
+
+**Note:** `ReadWritePaths` includes `/etc` because the agent (spawned as a child
+of the gateway on the panel host) writes to `/etc/passwd`, `/etc/shadow`,
+`/etc/group`, `/etc/gshadow`, and lock files like `/etc/.pwd.lock` for user and
+group management; `/home` is needed to create home directories for new users.
+
 ## Dependencies
 
 - `axum 0.8` -- HTTP/WebSocket framework
