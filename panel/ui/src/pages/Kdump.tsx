@@ -25,6 +25,8 @@ interface CrashKernel {
 interface KdumpConfig {
   path: string | null;
   content: string | null;
+  settings?: { key: string; value: string }[];
+  editable?: boolean;
 }
 
 interface CrashDump {
@@ -56,6 +58,30 @@ export function Kdump() {
   const [expandedDump, setExpandedDump] = useState<string | null>(null);
   const [dmesgContent, setDmesgContent] = useState<Record<string, string>>({});
   const [dmesgLoading, setDmesgLoading] = useState<Record<string, boolean>>({});
+  const [editKey, setEditKey] = useState<string | null>(null);
+  const [editVal, setEditVal] = useState('');
+  const [newKey, setNewKey] = useState('');
+  const [newVal, setNewVal] = useState('');
+  const [savingCfg, setSavingCfg] = useState(false);
+  const [cfgMsg, setCfgMsg] = useState('');
+
+  const saveSetting = async (key: string, value: string) => {
+    if (!key.trim()) return;
+    setSavingCfg(true); setCfgMsg('');
+    try {
+      const [r] = await request('kdump.info', {
+        action: 'set_config', key: key.trim(), value, password: su.password,
+      });
+      const res = r as { ok?: boolean; error?: string; test_ok?: boolean; test_output?: string; restarted?: boolean };
+      if (!res?.ok) { setCfgMsg('✗ ' + (res?.error || 'Save failed')); }
+      else if (!res.test_ok) { setCfgMsg(`⚠ Saved ${key}, but \`kdump-config test\` failed — service NOT restarted:\n${res.test_output || ''}`); }
+      else { setCfgMsg(`✓ Saved ${key}${res.restarted ? ' — service restarted' : ''}`); }
+      setEditKey(null); setNewKey(''); setNewVal('');
+      fetchInfo();
+    } catch (e) {
+      setCfgMsg('✗ ' + (e instanceof Error ? e.message : 'Save failed'));
+    } finally { setSavingCfg(false); }
+  };
 
   const fetchInfo = useCallback(() => {
     setLoading(true);
@@ -135,7 +161,49 @@ export function Kdump() {
       {config.content && (
         <div style={S.card}>
           <h3 style={S.cardTitle}>Configuration ({config.path})</h3>
-          <pre style={S.pre}>{config.content}</pre>
+          {(config.settings && config.settings.length > 0) ? (
+            <table style={S.table}>
+              <thead>
+                <tr><th style={S.th}>Setting</th><th style={S.th}>Value</th>{config.editable && <th style={S.th}></th>}</tr>
+              </thead>
+              <tbody>
+                {config.settings.map((s) => (
+                  <tr key={s.key}>
+                    <td style={{ ...S.td, fontFamily: 'monospace', fontWeight: 600 }}>{s.key}</td>
+                    <td style={{ ...S.td, fontFamily: 'monospace' }}>
+                      {editKey === s.key
+                        ? <input value={editVal} onChange={(e) => setEditVal(e.target.value)} style={S.cfgInput} />
+                        : (s.value || <span style={{ color: 'var(--text-2)' }}>—</span>)}
+                    </td>
+                    {config.editable && (
+                      <td style={{ ...S.td, whiteSpace: 'nowrap' }}>
+                        {!su.active ? <span style={{ color: 'var(--text-2)', fontSize: '0.78rem' }}>superuser to edit</span>
+                          : editKey === s.key
+                            ? <>
+                                <button style={S.btnSmall} disabled={savingCfg} onClick={() => saveSetting(s.key, editVal)}>Save</button>
+                                <button style={S.btnSmall} onClick={() => setEditKey(null)}>Cancel</button>
+                              </>
+                            : <button style={S.btnSmall} onClick={() => { setEditKey(s.key); setEditVal(s.value); setCfgMsg(''); }}>Edit</button>}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+                {config.editable && su.active && (
+                  <tr>
+                    <td style={S.td}><input placeholder="NEW_KEY" value={newKey} onChange={(e) => setNewKey(e.target.value.toUpperCase())} style={S.cfgInput} /></td>
+                    <td style={S.td}><input placeholder="value" value={newVal} onChange={(e) => setNewVal(e.target.value)} style={S.cfgInput} /></td>
+                    <td style={S.td}><button style={S.btnSmall} disabled={savingCfg || !newKey.trim()} onClick={() => saveSetting(newKey, newVal)}>Add</button></td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <pre style={S.pre}>{config.content}</pre>
+          )}
+          {cfgMsg && <pre style={{ ...S.pre, marginTop: '0.5rem', whiteSpace: 'pre-wrap', color: cfgMsg.startsWith('✓') ? 'var(--c-green)' : cfgMsg.startsWith('⚠') ? 'var(--c-yellow)' : 'var(--c-red)' }}>{cfgMsg}</pre>}
+          <p style={{ color: 'var(--text-2)', fontSize: '0.78rem', marginTop: '0.4rem' }}>
+            Editing writes <code>/etc/default/kdump-tools</code>, runs <code>kdump-config test</code>, and restarts the service on success.
+          </p>
         </div>
       )}
 
@@ -261,6 +329,18 @@ const S: Record<string, React.CSSProperties> = {
     color: 'var(--bg-app)',
     cursor: 'pointer',
     fontSize: '0.85rem',
+    marginRight: '0.3rem',
+  },
+  cfgInput: {
+    padding: '0.3rem 0.4rem',
+    borderRadius: '4px',
+    border: '1px solid var(--c-blue)',
+    background: 'var(--bg-panel)',
+    color: 'var(--text-1)',
+    fontFamily: 'monospace',
+    fontSize: '0.82rem',
+    width: '100%',
+    boxSizing: 'border-box' as const,
   },
   card: {
     background: 'var(--bg-panel)',
