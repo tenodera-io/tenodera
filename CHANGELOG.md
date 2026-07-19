@@ -10,9 +10,18 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Added
-- **Certificates → View PEM** — the cert detail view now has a *View PEM* button that
-  shows the certificate's full PEM. Read as the logged-in user (superuser reveals
-  certs in root-only directories), via a `read_pem` action on `certs.list`.
+- **Kdump → editable settings table** — the kdump configuration is now shown as a
+  parsed key/value table (instead of a raw file dump), and each setting can be edited
+  or a new one added. Works on both **Debian kdump-tools** (`/etc/default/kdump-tools`,
+  `KEY=value`; validated with `kdump-config test`, restarts the service only if it
+  passes) and **Fedora/RHEL kdump** (`/etc/kdump.conf`, `key value`; applied with
+  `kdumpctl reload`). Admin + superuser gated, audit-logged (`kdump.set_config`).
+- **Certificates → View & Edit PEM** — the cert detail view has a *View PEM* button
+  that shows the certificate's full PEM (read as the logged-in user; superuser reveals
+  certs in root-only directories, via a `read_pem` action on `certs.list`). With
+  Administrative access the PEM becomes editable and can be saved back (`save_pem`):
+  the new content is validated as an X.509 cert before overwriting the file (sudo),
+  admin-gated, audit-logged (`cert.save_pem`).
 - **Packages → cache cleanup** — buttons to free disk from cached / orphaned
   packages: *Clean cache* (`apt-get clean` / `dnf clean all` / `pacman -Sc`),
   *Autoclean* (apt only), and *Autoremove* (`apt-get`/`dnf autoremove`). Superuser-

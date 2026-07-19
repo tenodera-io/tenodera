@@ -2,7 +2,10 @@ use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
 use crate::handler::ChannelHandler;
-use crate::util::{UserReadOutcome, is_valid_username, run_cmd_as_user, sudo_as_user};
+use crate::util::{
+    UserReadOutcome, is_valid_username, require_admin, run_cmd_as_user, sudo_as_user,
+    sudo_stdin_write_as_user,
+};
 
 pub struct KdumpInfoHandler;
 
@@ -38,6 +41,13 @@ impl ChannelHandler for KdumpInfoHandler {
         let data = match action {
             Some("read_dump") => read_dump_details(path, user, password).await,
             Some("read_dmesg") => read_dmesg_log(path, user, password).await,
+            // Write: change a kdump-tools setting (admin + superuser).
+            Some("set_config") => {
+                match require_admin(&serde_json::Value::Object(options.extra.clone())) {
+                    Some(err) => err,
+                    None => kdump_set_config(&options.extra, user, password).await,
+                }
+            }
             _ => {
                 let status = collect_kdump_status().await;
                 let dumps = list_crash_dumps().await;
@@ -168,26 +178,192 @@ async fn read_crashkernel_param() -> serde_json::Value {
     })
 }
 
-async fn read_kdump_config() -> serde_json::Value {
-    let paths = [
-        "/etc/default/kdump-tools",
-        "/etc/kdump.conf",
-        "/etc/kdump/kdump.conf",
-    ];
+/// The editable kdump config on this host: (path, conf_format, service).
+/// - Debian `kdump-tools`: `/etc/default/kdump-tools`, shell `KEY=value`.
+/// - Fedora/RHEL `kdump`: `/etc/kdump.conf`, space-separated `key value`.
+async fn kdump_config_target() -> Option<(&'static str, bool, &'static str)> {
+    if tokio::fs::metadata("/etc/default/kdump-tools")
+        .await
+        .is_ok()
+    {
+        Some(("/etc/default/kdump-tools", false, "kdump-tools"))
+    } else if tokio::fs::metadata("/etc/kdump.conf").await.is_ok() {
+        Some(("/etc/kdump.conf", true, "kdump"))
+    } else {
+        None
+    }
+}
 
-    for path in &paths {
-        if let Ok(content) = tokio::fs::read_to_string(path).await {
-            return serde_json::json!({
-                "path": path,
-                "content": content,
-            });
+async fn read_kdump_config() -> serde_json::Value {
+    if let Some((path, conf_format, _)) = kdump_config_target().await
+        && let Ok(content) = tokio::fs::read_to_string(path).await
+    {
+        return serde_json::json!({
+            "path": path,
+            "content": content,
+            "settings": parse_kdump_settings(&content, conf_format),
+            "editable": true,
+        });
+    }
+    // Legacy read-only fallback (older RHEL layout).
+    if let Ok(content) = tokio::fs::read_to_string("/etc/kdump/kdump.conf").await {
+        return serde_json::json!({
+            "path": "/etc/kdump/kdump.conf",
+            "content": content,
+            "settings": parse_kdump_settings(&content, true),
+            "editable": false,
+        });
+    }
+    serde_json::json!({ "path": null, "content": null, "settings": [], "editable": false })
+}
+
+/// Parse config lines into a settings list. `conf_format` = space-separated
+/// `key value` (Fedora `/etc/kdump.conf`); otherwise shell `KEY=value` (Debian).
+fn parse_kdump_settings(content: &str, conf_format: bool) -> Vec<serde_json::Value> {
+    let mut out = Vec::new();
+    for line in content.lines() {
+        let t = line.trim();
+        if t.is_empty() || t.starts_with('#') {
+            continue;
+        }
+        let (key, value) = if conf_format {
+            match t.split_once(char::is_whitespace) {
+                Some((k, v)) => (k.trim(), v.trim()),
+                None => (t, ""),
+            }
+        } else {
+            match t.split_once('=') {
+                Some((k, v)) => (k.trim(), v.trim().trim_matches('"')),
+                None => continue,
+            }
+        };
+        if is_kdump_key(key) {
+            out.push(serde_json::json!({ "key": key, "value": value }));
         }
     }
+    out
+}
 
+fn is_kdump_key(key: &str) -> bool {
+    !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Set one kdump-tools setting: upsert `KEY=value` in /etc/default/kdump-tools (written
+/// via sudo as the user), validate with `kdump-config test`, and restart the service if
+/// the test passes. Admin-gated in the dispatcher; superuser password required.
+async fn kdump_set_config(
+    extra: &serde_json::Map<String, serde_json::Value>,
+    user: &str,
+    password: &str,
+) -> serde_json::Value {
+    let key = extra.get("key").and_then(|v| v.as_str()).unwrap_or("");
+    let value = extra.get("value").and_then(|v| v.as_str()).unwrap_or("");
+
+    if !is_kdump_key(key) {
+        return serde_json::json!({ "ok": false, "error": "invalid setting key" });
+    }
+    if value.contains('\n') {
+        return serde_json::json!({ "ok": false, "error": "invalid value (newline)" });
+    }
+    if password.is_empty() {
+        return serde_json::json!({ "ok": false, "error": "superuser password required" });
+    }
+
+    let Some((path, conf_format, service)) = kdump_config_target().await else {
+        return serde_json::json!({ "ok": false, "error": "no editable kdump config found on this host" });
+    };
+    let current = tokio::fs::read_to_string(path).await.unwrap_or_default();
+    if current.is_empty() {
+        return serde_json::json!({ "ok": false, "error": "kdump config not found" });
+    }
+
+    let new_content = upsert_setting(&current, key, value, conf_format);
+    let w = sudo_stdin_write_as_user(user, password, &["tee", path], &new_content).await;
+    if w.get("ok").is_none() {
+        return serde_json::json!({
+            "ok": false,
+            "error": w.get("error").and_then(|v| v.as_str()).unwrap_or("write failed")
+        });
+    }
+
+    // Validate + apply, per distro.
+    let (test_ok, test_output, restarted) = if conf_format {
+        // Fedora/RHEL: `kdumpctl reload` applies the config and reloads the crash
+        // kernel (fast). There is no strict config validator like Debian's.
+        let r = sudo_as_user(user, password, &["kdumpctl", "reload"]).await;
+        let ok = r.get("ok").is_some();
+        let out = r
+            .get("output")
+            .or_else(|| r.get("error"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        (ok, out, ok)
+    } else {
+        // Debian: `kdump-config test` validates; restart only if it passes.
+        let test = sudo_as_user(user, password, &["kdump-config", "test"]).await;
+        let ok = test.get("ok").is_some();
+        let out = test
+            .get("output")
+            .or_else(|| test.get("error"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let mut restarted = false;
+        if ok {
+            let r = sudo_as_user(user, password, &["systemctl", "restart", service]).await;
+            restarted = r.get("ok").is_some();
+        }
+        (ok, out, restarted)
+    };
+
+    crate::audit::log(user, "kdump.set_config", key, test_ok, "");
     serde_json::json!({
-        "path": null,
-        "content": null,
+        "ok": true,
+        "key": key,
+        "value": value,
+        "test_ok": test_ok,
+        "test_output": test_output,
+        "restarted": restarted,
     })
+}
+
+/// Replace an existing `KEY=…` line (preserving position) or append the setting.
+fn upsert_setting(content: &str, key: &str, value: &str, conf_format: bool) -> String {
+    let fmt = |k: &str, v: &str| {
+        if conf_format {
+            format!("{k} {v}")
+        } else {
+            format!("{k}={v}")
+        }
+    };
+    let mut found = false;
+    let mut lines: Vec<String> = content
+        .lines()
+        .map(|line| {
+            let t = line.trim_start();
+            let this_key = if t.starts_with('#') {
+                None
+            } else if conf_format {
+                t.split_whitespace().next()
+            } else {
+                t.split_once('=').map(|(k, _)| k.trim())
+            };
+            if this_key == Some(key) {
+                found = true;
+                return fmt(key, value);
+            }
+            line.to_string()
+        })
+        .collect();
+    if !found {
+        lines.push(fmt(key, value));
+    }
+    let mut s = lines.join("\n");
+    if content.ends_with('\n') {
+        s.push('\n');
+    }
+    s
 }
 
 async fn list_crash_dumps() -> serde_json::Value {
