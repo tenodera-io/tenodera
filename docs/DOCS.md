@@ -181,7 +181,7 @@ sudo systemctl enable --now tenodera-agent
 ```
 
 **Verifying the download.** Each release includes `SHA256SUMS` and a
-`SHA256SUMS.minisig` signature (Ed25519, via [minisign](https://jedisct1.github.io/minisign/)). The public key is in [SECURITY.md](SECURITY.md):
+`SHA256SUMS.minisig` signature (Ed25519, via [minisign](https://jedisct1.github.io/minisign/)). The public key is in [SECURITY.md](../.github/SECURITY.md):
 
 ```bash
 minisign -Vm SHA256SUMS -P <public-key>
@@ -1386,7 +1386,7 @@ packaging/               RPM spec files (tenodera.spec, tenodera-agent.spec)
 
 ## 12. Security
 
-See [SECURITY.md](SECURITY.md) for the full security model.
+See [SECURITY.md](../.github/SECURITY.md) for the full security model.
 
 **Summary:**
 

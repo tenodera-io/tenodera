@@ -5,8 +5,8 @@ test, and submit changes.
 
 ## Ground rules
 
-- Be respectful — see the [Code of Conduct](CODE_OF_CONDUCT.md).
-- Security issues are **not** reported as public issues — see [SECURITY.md](SECURITY.md).
+- Be respectful — see the [Code of Conduct](.github/CODE_OF_CONDUCT.md).
+- Security issues are **not** reported as public issues — see [SECURITY.md](.github/SECURITY.md).
 - By contributing, you agree your work is licensed under the project's
   [MIT license](LICENSE).
 
@@ -37,7 +37,7 @@ cd panel/ui && npm ci && npm run build
 ```
 
 See [AGENTS.md](AGENTS.md) for the full command reference and architecture notes,
-and [DOCS.md](DOCS.md) for configuration and TLS.
+and [DOCS.md](docs/DOCS.md) for configuration and TLS.
 
 ## Before you open a PR
 
@@ -63,7 +63,7 @@ Clippy runs with **default lints, no config files** — keep it warning-clean.
 1. Branch off `main`.
 2. Keep changes focused; match the surrounding code's style and comment density.
 3. Add or update tests for behavioural changes.
-4. Update docs (`README.md`, `DOCS.md`) and `CHANGELOG.md` (`Unreleased` section)
+4. Update docs (`README.md`, `docs/DOCS.md`) and `docs/CHANGELOG.md` (`Unreleased` section)
    when your change is user-visible.
 5. Fill in the PR template checklist.
 

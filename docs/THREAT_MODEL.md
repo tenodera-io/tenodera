@@ -2,7 +2,7 @@
 
 This document describes what Tenodera defends against, what it deliberately
 does not, and — importantly — which mitigations are **implemented today** versus
-**planned**. It is meant to be read alongside [SECURITY.md](SECURITY.md), which
+**planned**. It is meant to be read alongside [SECURITY.md](../.github/SECURITY.md), which
 covers the concrete security controls in more detail.
 
 Tenodera is a young project. It has **not** had an external security audit. The
@@ -290,4 +290,4 @@ These are real and not yet closed. Listing them is the point of this document.
 ## Reporting a vulnerability
 
 Please report security issues privately rather than in public issues. See
-[SECURITY.md](SECURITY.md) for the disclosure process and contact.
+[SECURITY.md](../.github/SECURITY.md) for the disclosure process and contact.

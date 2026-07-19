@@ -9,6 +9,6 @@ Closes #
       the affected crate(s)
 - [ ] `npm run build` passes (if the UI changed)
 - [ ] Tests added or updated for behavioural changes
-- [ ] Docs updated (`README.md` / `DOCS.md`) where user-visible
-- [ ] `CHANGELOG.md` `Unreleased` section updated (if user-visible)
+- [ ] Docs updated (`README.md` / `docs/DOCS.md`) where user-visible
+- [ ] `docs/CHANGELOG.md` `Unreleased` section updated (if user-visible)
 - [ ] No secrets, credentials, or personal data in the diff
