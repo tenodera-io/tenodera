@@ -60,6 +60,8 @@ function CertsTab({ su, request }: TabProps) {
   const [certs, setCerts] = useState<CertEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<CertEntry | null>(null);
+  const [pemView, setPemView] = useState<string | null>(null);
+  const [pemLoading, setPemLoading] = useState(false);
   const [msg, setMsg] = useState('');
 
   // Import form
@@ -95,6 +97,20 @@ function CertsTab({ su, request }: TabProps) {
   useEffect(() => { reload(); }, [reload]);
 
   // ── trust remove ──────────────────────────────────────────────────────────────
+
+  const loadPem = async (path: string) => {
+    setPemLoading(true); setPemView(null);
+    try {
+      // Read as you; superuser reveals certs in root-only directories.
+      const opts: Record<string, unknown> = { action: 'read_pem', path };
+      if (su.active && su.password) opts.password = su.password;
+      const [r] = await request('certs.list', opts);
+      const res = r as { ok?: boolean; pem?: string; error?: string };
+      setPemView(res?.ok && res.pem ? res.pem : (res?.error || 'Cannot read certificate'));
+    } catch (e) {
+      setPemView(e instanceof Error ? e.message : 'Failed to read certificate');
+    } finally { setPemLoading(false); }
+  };
 
   const execRemove = async (path: string, password: string) => {
     try {
@@ -381,7 +397,15 @@ function CertsTab({ su, request }: TabProps) {
               </div>
             </div>
           )}
-          <button style={{ ...S.cancelBtn, marginTop: '0.75rem' }} onClick={() => setSelected(null)}>Close</button>
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+            <button style={S.btn} onClick={() => loadPem(selected.path)} disabled={pemLoading}>
+              {pemLoading ? 'Loading…' : '📄 View PEM'}
+            </button>
+            <button style={S.cancelBtn} onClick={() => { setSelected(null); setPemView(null); }}>Close</button>
+          </div>
+          {pemView && (
+            <pre style={{ marginTop: '0.75rem', maxHeight: 320, overflow: 'auto', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.6rem', fontSize: '0.78rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{pemView}</pre>
+          )}
         </div>
       )}
 

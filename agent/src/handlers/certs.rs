@@ -50,7 +50,19 @@ impl ChannelHandler for CertsListHandler {
             .get("password")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let data = scan_all_certs(user, password).await;
+        // With `action: read_pem` + `path` → return that cert's full PEM (brokered as
+        // the user); otherwise the full listing.
+        let data = match options.extra.get("action").and_then(|a| a.as_str()) {
+            Some("read_pem") => {
+                let path = options
+                    .extra
+                    .get("path")
+                    .and_then(|p| p.as_str())
+                    .unwrap_or("");
+                read_cert_pem(path, user, password).await
+            }
+            _ => scan_all_certs(user, password).await,
+        };
         vec![
             Message::Ready {
                 channel: channel.into(),
@@ -279,6 +291,47 @@ async fn scan_dir_recursive(
                 }
             }
         }
+    }
+}
+
+/// Read a certificate file's full PEM, brokered to the user (or `sudo` in superuser
+/// mode). Certs are small, so cap the read at 256 KiB. Path must be an absolute
+/// `.pem`/`.crt`/`.cer` with no traversal; the kernel enforces actual read access.
+async fn read_cert_pem(path: &str, user: &str, password: &str) -> Value {
+    if path.is_empty() || path.contains("..") || !std::path::Path::new(path).is_absolute() {
+        return json!({ "ok": false, "error": "invalid path" });
+    }
+    if !["pem", "crt", "cer"].iter().any(|e| path.ends_with(e)) {
+        return json!({ "ok": false, "error": "not a certificate file" });
+    }
+
+    let args = ["cat", "--", path];
+    let out = if !password.is_empty() {
+        sudo_as_user(user, password, &args)
+            .await
+            .get("output")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+    } else if is_valid_username(user) {
+        match run_cmd_as_user(user, &args).await {
+            UserReadOutcome::Ran(o) if o.status.success() => {
+                Some(String::from_utf8_lossy(&o.stdout).to_string())
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    match out {
+        Some(pem) if !pem.trim().is_empty() => {
+            json!({ "ok": true, "path": path, "pem": pem.chars().take(262144).collect::<String>() })
+        }
+        _ => json!({
+            "ok": false,
+            "restricted": true,
+            "error": "cannot read this certificate — enable superuser mode if you lack access"
+        }),
     }
 }
 

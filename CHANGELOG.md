@@ -10,6 +10,9 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Added
+- **Certificates → View PEM** — the cert detail view now has a *View PEM* button that
+  shows the certificate's full PEM. Read as the logged-in user (superuser reveals
+  certs in root-only directories), via a `read_pem` action on `certs.list`.
 - **Packages → cache cleanup** — buttons to free disk from cached / orphaned
   packages: *Clean cache* (`apt-get clean` / `dnf clean all` / `pacman -Sc`),
   *Autoclean* (apt only), and *Autoremove* (`apt-get`/`dnf autoremove`). Superuser-
