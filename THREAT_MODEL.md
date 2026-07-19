@@ -131,11 +131,12 @@ The **managed host is the authority**. There is no Tenodera-side permission stor
   gateway injects it so the UI can hide destructive actions. A user without sudo
   is downgraded to read-only rather than rejected. Bypassing this filter gains an
   attacker nothing: the host still refuses the command.
-- **Privileged reads are being brokered per-user, incrementally.** Several now run
-  *as the logged-in user* — the journal, log files, the process list, and the
-  process owning each listening socket — with an optional `sudo` escalation, so the
-  host decides what they may see, exactly as for writes. The remaining reads still
-  run at the agent's privilege — see §6.
+- **Privileged reads are brokered per-user.** Every read that exposes
+  non-world-readable state runs *as the logged-in user* — the journal, log files,
+  the process list, listening-port owners, container reads, user crontabs, kdump
+  crash-dump content, and the certificate listing — with an optional `sudo`
+  escalation, so the host decides what they may see, exactly as for writes. Only the
+  world-readable baseline introspection stays at the agent's privilege — see §6.
 - **A few write subsystems are an exception where the role *is* the boundary.**
   SSH access management, the Security page (fail2ban / SELinux / AppArmor), and
   host enrollment run as the agent (root) after only the `require_admin` role

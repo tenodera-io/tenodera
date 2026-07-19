@@ -27,7 +27,7 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 | **Services** | systemd unit management — start / stop / restart / enable / disable; a failed action auto-expands the unit's `systemctl status` |
 | **System** | Clock & timezone, time sync (chrony / timesyncd / ntpd / openntpd / PTP), hostname, locale & keyboard, power (reboot / shutdown, optional delay) |
 | **Users & Groups** | User account CRUD, group management, lock/unlock, password policy |
-| **Packages** | Installed packages, search, install, update, repository management (apt, dnf, pacman); automatic updates (unattended-upgrades / dnf-automatic) |
+| **Packages** | Installed packages, search, install, update, cache cleanup, repository management (apt, dnf, pacman); automatic updates (unattended-upgrades / dnf-automatic) |
 | **Storage** | Block devices, mount points, I/O charts; mount / unmount + `/etc/fstab` editor; disk-usage browser (safe `du` drill-down) |
 | **Networking** | Interfaces, traffic, firewall (ufw / firewalld / nftables), bridges, VLANs; listening ports (`ss`) with kill |
 | **Containers** | Docker / Podman — containers, images, create, logs, exec (shell into a container), inspect |
@@ -38,9 +38,9 @@ Each agent connects outbound to the gateway over a persistent WebSocket.
 | **Log Files** | Browse `/var/log` with keyword search and date/time range |
 | **Audit log** | Table of actions taken through the panel (time, user, action, target, result) |
 | **Cron Jobs** | List all crontab sources, view entries, edit raw crontab |
-| **Kernel Dump** | kdump status, crash kernel config, crash dump browser |
+| **Kernel Dump** | kdump status, editable crash kernel config table, crash dump browser |
 | **DNS** | `/etc/resolv.conf` and table-based `/etc/hosts` editing, DNS lookup, systemd-resolved |
-| **Certificates** | TLS certificate scanning, trust store, self-signed generation, Let's Encrypt |
+| **Certificates** | TLS certificate scanning, view/edit PEM, trust store, self-signed generation, Let's Encrypt |
 | **Multi-host** | Manage multiple servers from one panel via reverse-WebSocket agent |
 | **Access control** | Admin (sudo/wheel users) — full access; other users — read-only |
 
