@@ -61,6 +61,15 @@ impl ChannelHandler for CertsListHandler {
                     .unwrap_or("");
                 read_cert_pem(path, user, password).await
             }
+            // Editing an existing cert file (admin + superuser). Handled here (not in a
+            // data() handler) so a one-shot `request` reaches it.
+            Some("save_pem") => {
+                let d = Value::Object(options.extra.clone());
+                match require_admin(&d) {
+                    Some(err) => err,
+                    None => save_pem(&d, user, password).await,
+                }
+            }
             _ => scan_all_certs(user, password).await,
         };
         vec![
@@ -332,6 +341,46 @@ async fn read_cert_pem(path: &str, user: &str, password: &str) -> Value {
             "restricted": true,
             "error": "cannot read this certificate — enable superuser mode if you lack access"
         }),
+    }
+}
+
+/// Overwrite an existing certificate file with edited PEM. Path validated (absolute
+/// .pem/.crt/.cer, no traversal); the new content must parse as an X.509 cert (checked
+/// via openssl on a temp file) so a bad edit can't silently corrupt the file. Written
+/// via sudo as the user. Admin-gated + superuser password by the certs.manage handler.
+async fn save_pem(data: &Value, user: &str, password: &str) -> Value {
+    let path = data.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    let pem = data.get("pem").and_then(|v| v.as_str()).unwrap_or("");
+
+    if path.is_empty()
+        || path.contains("..")
+        || !Path::new(path).is_absolute()
+        || !["pem", "crt", "cer"].iter().any(|e| path.ends_with(e))
+    {
+        return json!({ "error": "invalid certificate path" });
+    }
+    if !pem.contains("-----BEGIN CERTIFICATE-----") {
+        return json!({ "error": "content is not a PEM certificate" });
+    }
+
+    // Validate it parses as a cert before overwriting the real file.
+    let tmp = tmp_path("edit", "pem");
+    if fs::write(&tmp, pem).await.is_err() {
+        return json!({ "error": "could not stage certificate for validation" });
+    }
+    let valid = parse_cert(&tmp, "edit", "", "").await.is_some();
+    let _ = fs::remove_file(&tmp).await;
+    if !valid {
+        return json!({ "error": "not a valid certificate (openssl could not parse it)" });
+    }
+
+    let w = sudo_stdin_write_as_user(user, password, &["tee", path], pem).await;
+    let ok = w.get("error").is_none();
+    crate::audit::log(user, "cert.save_pem", path, ok, "");
+    if ok {
+        json!({ "ok": true, "path": path })
+    } else {
+        w
     }
 }
 

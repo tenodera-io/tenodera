@@ -62,6 +62,8 @@ function CertsTab({ su, request }: TabProps) {
   const [selected, setSelected] = useState<CertEntry | null>(null);
   const [pemView, setPemView] = useState<string | null>(null);
   const [pemLoading, setPemLoading] = useState(false);
+  const [pemSaving, setPemSaving] = useState(false);
+  const [pemMsg, setPemMsg] = useState('');
   const [msg, setMsg] = useState('');
 
   // Import form
@@ -98,8 +100,22 @@ function CertsTab({ su, request }: TabProps) {
 
   // ── trust remove ──────────────────────────────────────────────────────────────
 
+  const savePem = async () => {
+    if (!selected || !pemView) return;
+    setPemSaving(true); setPemMsg('');
+    try {
+      const [r] = await request('certs.list', {
+        action: 'save_pem', path: selected.path, pem: pemView, password: su.password,
+      });
+      const res = r as { ok?: boolean; error?: string };
+      if (res?.ok) { setPemMsg('✓ Saved'); reload(); }
+      else setPemMsg('✗ ' + (res?.error || 'Save failed'));
+    } catch (e) { setPemMsg('✗ ' + (e instanceof Error ? e.message : 'Save failed')); }
+    finally { setPemSaving(false); }
+  };
+
   const loadPem = async (path: string) => {
-    setPemLoading(true); setPemView(null);
+    setPemLoading(true); setPemView(null); setPemMsg('');
     try {
       // Read as you; superuser reveals certs in root-only directories.
       const opts: Record<string, unknown> = { action: 'read_pem', path };
@@ -403,9 +419,18 @@ function CertsTab({ su, request }: TabProps) {
             </button>
             <button style={S.cancelBtn} onClick={() => { setSelected(null); setPemView(null); }}>Close</button>
           </div>
-          {pemView && (
+          {pemView && (pemView.includes('BEGIN CERTIFICATE') ? (
+            <div style={{ marginTop: '0.75rem' }}>
+              <textarea value={pemView} onChange={(e) => setPemView(e.target.value)} spellCheck={false}
+                style={{ width: '100%', boxSizing: 'border-box', minHeight: 220, fontFamily: 'monospace', fontSize: '0.78rem', background: 'var(--bg-panel)', color: 'var(--text-1)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.6rem' }} />
+              {su.active
+                ? <button style={{ ...S.btnAccent, marginTop: '0.4rem' }} disabled={pemSaving} onClick={savePem}>{pemSaving ? 'Saving…' : '💾 Save changes'}</button>
+                : <div style={{ color: 'var(--text-2)', fontSize: '0.78rem', marginTop: '0.4rem' }}>Enable superuser (Administrative access) to save edits.</div>}
+              {pemMsg && <div style={{ marginTop: '0.4rem', fontSize: '0.82rem', color: pemMsg.startsWith('✓') ? 'var(--c-green)' : 'var(--c-red)' }}>{pemMsg}</div>}
+            </div>
+          ) : (
             <pre style={{ marginTop: '0.75rem', maxHeight: 320, overflow: 'auto', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 6, padding: '0.6rem', fontSize: '0.78rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{pemView}</pre>
-          )}
+          ))}
         </div>
       )}
 
