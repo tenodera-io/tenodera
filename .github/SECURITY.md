@@ -2,7 +2,7 @@
 
 For the design-level view — trust boundaries, the outbound-only trade-off,
 gateway blast radius, and what is implemented versus planned — see
-[THREAT_MODEL.md](THREAT_MODEL.md). This document covers the concrete controls.
+[THREAT_MODEL.md](../docs/THREAT_MODEL.md). This document covers the concrete controls.
 
 ## Reporting a Vulnerability
 
@@ -109,7 +109,7 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 
 ### Authorization
 
-Tenodera keeps **no permission store of its own — the managed host is the authority.** The full model — why it works this way, which operations drop to the logged-in user, and the exceptions — lives in [THREAT_MODEL.md](THREAT_MODEL.md) §4 (mitigations) and §6 (residual risk). This section states only the concrete gateway/agent mechanism that enforces it:
+Tenodera keeps **no permission store of its own — the managed host is the authority.** The full model — why it works this way, which operations drop to the logged-in user, and the exceptions — lives in [THREAT_MODEL.md](../docs/THREAT_MODEL.md) §4 (mitigations) and §6 (residual risk). This section states only the concrete gateway/agent mechanism that enforces it:
 
 - The gateway injects `_user` (session username) and `_role` (session role) into every channel `Open` and subsequent `Data` message before forwarding to the agent — the agent never trusts client-supplied identity
 - Admin-only operations (firewall changes, user management, package install, host restart, etc.) are gated by `require_admin()` on the agent side, which checks the gateway-injected `_role`. A missing `_role` is treated as unauthorized — any message that bypasses gateway injection is denied by default

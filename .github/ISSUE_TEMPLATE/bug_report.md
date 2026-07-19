@@ -6,7 +6,7 @@ labels: bug
 assignees: ''
 ---
 
-**Do not report security vulnerabilities here** — see [SECURITY.md](../../SECURITY.md).
+**Do not report security vulnerabilities here** — see [SECURITY.md](../SECURITY.md).
 
 ### Description
 A clear description of what went wrong.

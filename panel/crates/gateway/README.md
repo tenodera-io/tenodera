@@ -155,8 +155,8 @@ installed to `/etc/systemd/system/` by `make install` / the package). It loads
 `/etc/tenodera/tenodera.cnf` via `EnvironmentFile=`, so config changes take
 effect on `sudo systemctl restart tenodera`; follow logs with
 `journalctl -u tenodera -f`. TLS and bind-address settings are documented in
-[DOCS.md](../../../DOCS.md); the application-level controls are in
-[SECURITY.md](../../../SECURITY.md).
+[DOCS.md](../../../docs/DOCS.md); the application-level controls are in
+[SECURITY.md](../../../.github/SECURITY.md).
 
 ### Hardening directives
 

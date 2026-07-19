@@ -185,7 +185,7 @@ jobs:
           if [ -z "$MINISIGN_SECRET_KEY" ]; then
             echo "::error::MINISIGN_SECRET_KEY secret is not set — cannot sign the release."
             echo "::error::Generate a key with 'minisign -G', add the secret key as the"
-            echo "::error::MINISIGN_SECRET_KEY repository secret, and put the public key in SECURITY.md."
+            echo "::error::MINISIGN_SECRET_KEY repository secret, and put the public key in .github/SECURITY.md."
             exit 1
           fi
           printf '%s\n' "$MINISIGN_SECRET_KEY" > minisign.key
@@ -254,12 +254,12 @@ jobs:
 
             All artifacts are checksummed in `SHA256SUMS`, which is signed with
             [minisign](https://jedisct1.github.io/minisign/). The public key is in
-            [SECURITY.md](https://github.com/${{ github.repository }}/blob/main/SECURITY.md).
+            [SECURITY.md](https://github.com/${{ github.repository }}/blob/main/.github/SECURITY.md).
             ```bash
-            minisign -Vm SHA256SUMS -P <public-key-from-SECURITY.md>
+            minisign -Vm SHA256SUMS -P <public-key-from-.github/SECURITY.md>
             sha256sum -c SHA256SUMS
             ```
 
             See [README](https://github.com/${{ github.repository }}/blob/main/README.md)
-            for full setup instructions and [THREAT_MODEL.md](https://github.com/${{ github.repository }}/blob/main/THREAT_MODEL.md)
+            for full setup instructions and [THREAT_MODEL.md](https://github.com/${{ github.repository }}/blob/main/docs/THREAT_MODEL.md)
             for the security model.
