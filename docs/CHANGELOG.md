@@ -9,6 +9,8 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.2.11] - 2026-07-19
+
 ### Added
 - **Command palette (`Ctrl`/`Cmd`+`K`)** — a quick-jump palette to reach any page
   or sub-tab: press the shortcut or click **Search** in the top bar, type to filter
@@ -16,24 +18,30 @@ Each tagged release also has auto-generated notes on the
   closes). Entries are built from the shared nav, so they stay in sync with the
   sidebar; admin pages appear only when superuser mode is active. Navigation-only
   for now — UI-only, no agent/gateway changes.
+
+### Documentation
+- Repository docs reorganised: the root now holds only `README.md`,
+  `CONTRIBUTING.md` and `LICENSE`; community-health files moved to `.github/`
+  (`SECURITY.md`, `CODE_OF_CONDUCT.md`) and the manual, threat model and this
+  changelog to `docs/`. `SECURITY.md` was de-duplicated against `THREAT_MODEL.md`
+  (which is now the single source for the authorization model), and the `protocol`
+  and `systemd` READMEs were folded into the gateway README.
+
+## [0.2.10] - 2026-07-19
+
+### Added
 - **Kdump → editable settings table** — the kdump configuration is now shown as a
   parsed key/value table (instead of a raw file dump), and each setting can be edited
   or a new one added. Works on both **Debian kdump-tools** (`/etc/default/kdump-tools`,
   `KEY=value`; validated with `kdump-config test`, restarts the service only if it
   passes) and **Fedora/RHEL kdump** (`/etc/kdump.conf`, `key value`; applied with
   `kdumpctl reload`). Admin + superuser gated, audit-logged (`kdump.set_config`).
-- **Certificates → View & Edit PEM** — the cert detail view has a *View PEM* button
-  that shows the certificate's full PEM (read as the logged-in user; superuser reveals
-  certs in root-only directories, via a `read_pem` action on `certs.list`). With
-  Administrative access the PEM becomes editable and can be saved back (`save_pem`):
-  the new content is validated as an X.509 cert before overwriting the file (sudo),
+- **Certificates → Edit PEM** — with Administrative access the PEM shown in the cert
+  detail view becomes editable and can be saved back (`save_pem`): the new content is
+  validated as an X.509 certificate before the file is overwritten (sudo),
   admin-gated, audit-logged (`cert.save_pem`).
-- **Packages → cache cleanup** — buttons to free disk from cached / orphaned
-  packages: *Clean cache* (`apt-get clean` / `dnf clean all` / `pacman -Sc`),
-  *Autoclean* (apt only), and *Autoremove* (`apt-get`/`dnf autoremove`). Superuser-
-  gated, run as the user via sudo, audit-logged (`pkg.cleanup`).
 
-## [0.2.8] - 2026-07-19
+## [0.2.9] - 2026-07-19
 
 ### Added
 - **Per-user read brokering completed** for the remaining privileged reads, so
@@ -45,6 +53,13 @@ Each tagged release also has auto-generated notes on the
     kernel-memory dump is only shown to someone who may read it.
   - **certs** — the certificate listing is parsed as you, so a cert file in a
     root-only directory is only listed for users who can actually read it.
+- **Certificates → View PEM** — the cert detail view has a *View PEM* button that
+  shows the certificate's full PEM (read as the logged-in user; superuser reveals
+  certs in root-only directories, via a `read_pem` action on `certs.list`).
+- **Packages → cache cleanup** — buttons to free disk from cached / orphaned
+  packages: *Clean cache* (`apt-get clean` / `dnf clean all` / `pacman -Sc`),
+  *Autoclean* (apt only), and *Autoremove* (`apt-get`/`dnf autoremove`). Superuser-
+  gated, run as the user via sudo, audit-logged (`pkg.cleanup`).
 
 ### Fixed
 - **kdump** dump-content requests were silently dropped after the 0.2.6 channel
@@ -55,6 +70,10 @@ Each tagged release also has auto-generated notes on the
 - SECURITY / THREAT_MODEL / DOCS: read brokering is now complete for all privileged
   reads; only the baseline world-readable introspection remains at agent privilege
   by design.
+
+## [0.2.8] - 2026-07-19
+
+No functional changes — re-tagged from 0.2.7 to re-run the release pipeline.
 
 ## [0.2.7] - 2026-07-18
 
