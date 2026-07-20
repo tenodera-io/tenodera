@@ -36,8 +36,8 @@ cargo build --manifest-path agent/Cargo.toml
 cd panel/ui && npm ci && npm run build
 ```
 
-See [AGENTS.md](AGENTS.md) for the full command reference and architecture notes,
-and [DOCS.md](docs/DOCS.md) for configuration and TLS.
+See [DOCS.md](docs/DOCS.md) for configuration and TLS, and the per-crate READMEs
+(`agent/`, `panel/crates/gateway/`, `panel/ui/`) for architecture notes.
 
 ## Before you open a PR
 
