@@ -9,6 +9,11 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Changed
+- **Command palette** now groups entries per page with thin dividers (a page and
+  its sub-tabs stay together) instead of one flat list — the grouping is derived
+  dynamically from each entry's route.
+
 ## [0.2.11] - 2026-07-19
 
 ### Added
