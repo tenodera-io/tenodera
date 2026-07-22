@@ -27,6 +27,11 @@ Each tagged release also has auto-generated notes on the
   dashboard / storage / networking **charts no longer animate on every update**
   (recharts ran a ~1.5 s requestAnimationFrame loop per tick — wasted CPU on
   constrained guests). The **host-list refresh dropped from every 8 s to every 20 s**.
+- **Build/runtime tidying.** The frontend now splits recharts, xterm and React into
+  **stable vendor chunks**, so those heavy libraries stay browser-cached across app
+  updates (and pair with the gzip/brotli compression above). The unused
+  `metrics.stream` agent handler — a dead 1 s-default streaming channel no client
+  ever opened — was removed.
 
 ### Security
 - **SSH access & Security-page actions are now brokered per-user.** The two

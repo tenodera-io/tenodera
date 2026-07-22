@@ -14,7 +14,6 @@ pub mod journal_query;
 pub mod kdump;
 pub mod log_files;
 pub mod metrics_snapshot;
-pub mod metrics_stream;
 pub mod network_stats;
 pub mod networking;
 pub mod networking_snapshot;
