@@ -3,7 +3,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use crate::handler::ChannelHandler;
-use crate::util::{require_admin, run_cmd};
+use crate::util::{require_admin, run_cmd, sudo_as_user, sudo_stdin_write_as_user};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -315,33 +315,41 @@ impl ChannelHandler for SecurityManageHandler {
                 .to_string()
         };
         let action = get("action");
-        let audit_user = get("_user");
+        // The operator (== audit user). Every write below runs as this user via
+        // `sudo` with their own password, so the host's sudoers/HBAC — not just
+        // the injected admin role — decides whether the action is permitted.
+        let user = get("_user");
+        let password = get("password");
 
         let data = if let Some(err) = require_admin(&extra) {
             err
         } else {
             match action.as_str() {
                 "fail2ban_unban" => {
-                    fail2ban_action("unbanip", &get("jail"), &get("ip"), &audit_user).await
+                    fail2ban_action("unbanip", &get("jail"), &get("ip"), &user, &password).await
                 }
                 "fail2ban_ban" => {
-                    fail2ban_action("banip", &get("jail"), &get("ip"), &audit_user).await
+                    fail2ban_action("banip", &get("jail"), &get("ip"), &user, &password).await
                 }
-                "fail2ban_reload" => fail2ban_reload(&audit_user).await,
+                "fail2ban_reload" => fail2ban_reload(&user, &password).await,
                 "selinux_setenforce" => {
-                    selinux_setenforce(&get("mode"), get("persist") == "true", &audit_user).await
+                    selinux_setenforce(&get("mode"), get("persist") == "true", &user, &password)
+                        .await
                 }
-                "apparmor_set" => apparmor_set(&get("profile"), &get("mode"), &audit_user).await,
+                "apparmor_set" => {
+                    apparmor_set(&get("profile"), &get("mode"), &user, &password).await
+                }
                 "selinux_setbool" => {
                     selinux_setbool(
                         &get("name"),
                         &get("value"),
                         get("persist") == "true",
-                        &audit_user,
+                        &user,
+                        &password,
                     )
                     .await
                 }
-                "selinux_restorecon" => selinux_restorecon(&get("path"), &audit_user).await,
+                "selinux_restorecon" => selinux_restorecon(&get("path"), &user, &password).await,
                 other => json!({ "error": format!("unknown action: {other}") }),
             }
         };
@@ -376,7 +384,22 @@ fn valid_ip(s: &str) -> bool {
             .all(|c| c.is_ascii_hexdigit() || ".:/".contains(c))
 }
 
-async fn fail2ban_action(op: &str, jail: &str, ip: &str, audit_user: &str) -> Value {
+/// Interpret a `sudo_as_user` result: audit it and normalise to `{ok, output}`,
+/// or pass the sudo/host error through (audited as a failure). This is how the
+/// host's decision — a rejected password or a sudoers denial — surfaces to the
+/// operator instead of the action running unconditionally as root.
+fn finish(res: Value, user: &str, action: &str, target: &str, detail: &str) -> Value {
+    if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+        crate::audit::log(user, action, target, false, err);
+        return json!({ "error": err });
+    }
+    let out = res.get("output").and_then(|o| o.as_str()).unwrap_or("");
+    let note = if detail.is_empty() { out } else { detail };
+    crate::audit::log(user, action, target, true, note);
+    json!({ "ok": true, "output": out })
+}
+
+async fn fail2ban_action(op: &str, jail: &str, ip: &str, user: &str, password: &str) -> Value {
     let Some(bin) = resolve("fail2ban-client") else {
         return json!({ "error": "fail2ban is not installed" });
     };
@@ -386,27 +409,25 @@ async fn fail2ban_action(op: &str, jail: &str, ip: &str, audit_user: &str) -> Va
     if !valid_ip(ip) {
         return json!({ "error": "invalid IP address" });
     }
-    let out = run_cmd_at(&bin, &["set", jail, op, ip]).await;
-    crate::audit::log(
-        audit_user,
+    let res = sudo_as_user(user, password, &[bin.as_str(), "set", jail, op, ip]).await;
+    finish(
+        res,
+        user,
         &format!("security.fail2ban_{op}"),
         &format!("{jail}:{ip}"),
-        true,
-        out.trim(),
-    );
-    json!({ "ok": true, "output": out.trim() })
+        "",
+    )
 }
 
-async fn fail2ban_reload(audit_user: &str) -> Value {
+async fn fail2ban_reload(user: &str, password: &str) -> Value {
     let Some(bin) = resolve("fail2ban-client") else {
         return json!({ "error": "fail2ban is not installed" });
     };
-    let out = run_cmd_at(&bin, &["reload"]).await;
-    crate::audit::log(audit_user, "security.fail2ban_reload", "", true, "");
-    json!({ "ok": true, "output": out.trim() })
+    let res = sudo_as_user(user, password, &[bin.as_str(), "reload"]).await;
+    finish(res, user, "security.fail2ban_reload", "", "")
 }
 
-async fn selinux_setenforce(mode: &str, persist: bool, audit_user: &str) -> Value {
+async fn selinux_setenforce(mode: &str, persist: bool, user: &str, password: &str) -> Value {
     let Some(bin) = resolve("setenforce") else {
         return json!({ "error": "SELinux is not available" });
     };
@@ -415,11 +436,14 @@ async fn selinux_setenforce(mode: &str, persist: bool, audit_user: &str) -> Valu
         "permissive" => "0",
         _ => return json!({ "error": "mode must be enforcing or permissive" }),
     };
-    let out = run_cmd_at(&bin, &[arg]).await;
-    if !out.trim().is_empty() {
-        return json!({ "error": format!("setenforce failed: {}", out.trim()) });
+    let res = sudo_as_user(user, password, &[bin.as_str(), arg]).await;
+    if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+        crate::audit::log(user, "security.selinux_setenforce", mode, false, err);
+        return json!({ "error": err });
     }
-    // Optionally make it survive reboots by rewriting SELINUX= in the config.
+    // Optionally make it survive reboots by rewriting SELINUX= in the config —
+    // the privileged write is brokered through the operator's sudo, same as the
+    // runtime toggle above.
     if persist && let Ok(content) = std::fs::read_to_string("/etc/selinux/config") {
         let new: String = content
             .lines()
@@ -434,10 +458,20 @@ async fn selinux_setenforce(mode: &str, persist: bool, audit_user: &str) -> Valu
             })
             .collect::<Vec<_>>()
             .join("\n");
-        let _ = std::fs::write("/etc/selinux/config", new + "\n");
+        let w = sudo_stdin_write_as_user(
+            user,
+            password,
+            &["tee", "/etc/selinux/config"],
+            &(new + "\n"),
+        )
+        .await;
+        if let Some(err) = w.get("error").and_then(|e| e.as_str()) {
+            crate::audit::log(user, "security.selinux_setenforce", mode, false, err);
+            return json!({ "error": format!("runtime change applied, but persisting failed: {err}") });
+        }
     }
     crate::audit::log(
-        audit_user,
+        user,
         "security.selinux_setenforce",
         mode,
         true,
@@ -446,7 +480,13 @@ async fn selinux_setenforce(mode: &str, persist: bool, audit_user: &str) -> Valu
     json!({ "ok": true })
 }
 
-async fn selinux_setbool(name: &str, value: &str, persist: bool, audit_user: &str) -> Value {
+async fn selinux_setbool(
+    name: &str,
+    value: &str,
+    persist: bool,
+    user: &str,
+    password: &str,
+) -> Value {
     let Some(bin) = resolve("setsebool") else {
         return json!({ "error": "setsebool not available" });
     };
@@ -456,27 +496,23 @@ async fn selinux_setbool(name: &str, value: &str, persist: bool, audit_user: &st
     if value != "on" && value != "off" {
         return json!({ "error": "value must be on or off" });
     }
-    let mut args: Vec<&str> = Vec::new();
+    let mut args: Vec<&str> = vec![bin.as_str()];
     if persist {
         args.push("-P");
     }
     args.push(name);
     args.push(value);
-    let out = run_cmd_at(&bin, &args).await;
-    if !out.trim().is_empty() {
-        return json!({ "error": format!("setsebool: {}", out.trim()) });
-    }
-    crate::audit::log(
-        audit_user,
+    let res = sudo_as_user(user, password, &args).await;
+    finish(
+        res,
+        user,
         "security.selinux_setbool",
         &format!("{name}={value}"),
-        true,
         if persist { "persisted" } else { "runtime" },
-    );
-    json!({ "ok": true })
+    )
 }
 
-async fn selinux_restorecon(path: &str, audit_user: &str) -> Value {
+async fn selinux_restorecon(path: &str, user: &str, password: &str) -> Value {
     let Some(bin) = resolve("restorecon") else {
         return json!({ "error": "restorecon not available" });
     };
@@ -488,28 +524,19 @@ async fn selinux_restorecon(path: &str, audit_user: &str) -> Value {
     }
     match tokio::time::timeout(
         Duration::from_secs(120),
-        run_cmd_at(&bin, &["-Rv", "--", path]),
+        sudo_as_user(user, password, &[bin.as_str(), "-Rv", "--", path]),
     )
     .await
     {
-        Ok(out) => {
-            crate::audit::log(audit_user, "security.selinux_restorecon", path, true, "");
-            json!({ "ok": true, "output": out.trim() })
-        }
+        Ok(res) => finish(res, user, "security.selinux_restorecon", path, ""),
         Err(_) => {
-            crate::audit::log(
-                audit_user,
-                "security.selinux_restorecon",
-                path,
-                false,
-                "timeout",
-            );
+            crate::audit::log(user, "security.selinux_restorecon", path, false, "timeout");
             json!({ "error": "restorecon timed out (still running in background)" })
         }
     }
 }
 
-async fn apparmor_set(profile: &str, mode: &str, audit_user: &str) -> Value {
+async fn apparmor_set(profile: &str, mode: &str, user: &str, password: &str) -> Value {
     if !valid_name(profile) {
         return json!({ "error": "invalid profile name" });
     }
@@ -521,13 +548,12 @@ async fn apparmor_set(profile: &str, mode: &str, audit_user: &str) -> Value {
     let Some(bin) = resolve(tool) else {
         return json!({ "error": "apparmor-utils is not installed (aa-enforce/aa-complain missing)" });
     };
-    let out = run_cmd_at(&bin, &[profile]).await;
-    crate::audit::log(
-        audit_user,
+    let res = sudo_as_user(user, password, &[bin.as_str(), profile]).await;
+    finish(
+        res,
+        user,
         "security.apparmor_set",
         &format!("{profile}:{mode}"),
-        true,
-        out.trim(),
-    );
-    json!({ "ok": true, "output": out.trim() })
+        "",
+    )
 }

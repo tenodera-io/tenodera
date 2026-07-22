@@ -4,6 +4,7 @@ import { Icon } from '../components/Icons.tsx';
 import { Tabs } from '../components/Tabs.tsx';
 import { useTabParam } from '../hooks/useTabParam.ts';
 import { useTransport } from '../api/HostTransportContext.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 import { useToast } from '../contexts/ToastContext.tsx';
 
 type Req = ReturnType<typeof useTransport>['request'];
@@ -13,7 +14,19 @@ interface SshKey { type: string; comment: string; preview: string; raw: string }
 interface SshUser { name: string; uid: number; home: string }
 
 export function Ssh({ loginUser }: { loginUser: string }) {
-  const { request } = useTransport();
+  const { request: baseRequest } = useTransport();
+  const su = useSuperuser();
+  // Key/sshd mutations now run on the host under the operator's own sudo, so
+  // attach their superuser password. This page is superuser-gated; the read
+  // actions ignore the extra field.
+  const request = useCallback(
+    (payload: string, options: Record<string, unknown> = {}): Promise<unknown[]> =>
+      baseRequest(
+        payload,
+        payload === 'ssh.manage' ? { ...options, password: su.password } : options,
+      ),
+    [baseRequest, su.password],
+  );
   const toast = useToast();
   const [tab, setTab] = useTabParam<'keys' | 'sshd'>(['keys', 'sshd'], 'keys');
   return (

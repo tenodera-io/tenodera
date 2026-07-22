@@ -472,7 +472,7 @@ That means:
 - **Rights can differ per host.** The same panel login may be an admin on one machine and have no sudo at all on another. Tenodera does not override this and keeps no permission database of its own.
 - **A denial comes back as `sudo access denied`** — that is the host refusing, not a Tenodera bug. `incorrect password` means the host rejected the password itself.
 - **Reads are the exception**: dashboards, logs and system information are collected by the agent as root, so they remain visible regardless of your rights on that host.
-- **A few admin subsystems are the exception the other way**: SSH access management, the Security page (fail2ban / SELinux / AppArmor), and host enrollment / tokens run **as the agent (root), gated only by the admin role** — the host's `sudo` is not consulted for them. For these, the admin role *is* the boundary, so grant it only to operators you trust with root on every managed host.
+- **Host enrollment is the exception the other way**: approving a pending agent and issuing / revoking bootstrap tokens run on the *gateway* (the control plane) **gated only by the admin role** — there is no per-host `sudo` to consult when a machine joins the fleet. Everything that acts on a managed host, including SSH access management and the Security page (fail2ban / SELinux / AppArmor), now runs under the operator's own `sudo`. Treat panel admin-role membership as authority over which agents may enrol.
 
 **Account presence on managed hosts**
 
@@ -1203,7 +1203,7 @@ Host-level system settings, grouped into sub-tabs (only the tabs relevant to the
 
 ### 8.18 SSH access (admin only)
 
-Manage SSH access without hand-editing files. Runs as the agent (root), gated by the admin role.
+Manage SSH access without hand-editing files. Every change runs on the host under **your own `sudo`** (Administrative access required), so the host authorises editing another account's keys or `sshd_config` — not merely the panel's admin role.
 
 - **Authorized keys** — pick a user (local accounts suggested; directory users such as FreeIPA/AD can be typed in), then add / edit / remove keys in that user's `authorized_keys`. Keys are validated with `ssh-keygen`; ownership and permissions on `~/.ssh` are restored after each change. Defaults to the logged-in user.
 - **Server config** — edit `sshd_config` as a table of directives (add / edit / remove; comments preserved). On save the config is validated with `sshd -t`; if invalid it is **rejected, not written**. A backup is kept as `sshd_config.tenodera.bak` and the SSH service is reloaded.
@@ -1216,7 +1216,7 @@ Status and basic actions for host-hardening subsystems. The page **auto-detects*
 - **SELinux** — current mode with an Enforcing/Permissive toggle (runtime, optional persist to `/etc/selinux/config`); **Booleans** (filter + on/off, persistent `-P`); recent **AVC denials** (from the journal); loaded policy **Modules**; and **Relabel** (`restorecon -Rv` on a path, capped at 120s). Switching to Disabled is not offered (needs a reboot).
 - **AppArmor** — profile counts and a table of profiles with their mode; per-profile **Enforce/Complain** when `apparmor-utils` (aa-enforce/aa-complain) is installed, otherwise read-only.
 
-Actions run as the agent (root), gated by the admin role, and are recorded in the audit log.
+Actions run on the host under **your own `sudo`** (Administrative access required), so the host's sudoers authorises each one — not merely the panel's admin role — and they are recorded in the audit log.
 
 ### 8.20 Audit log (admin only)
 
@@ -1336,7 +1336,7 @@ Returns `200 OK` when the agent binary exists and is executable, `503 Service Un
 - Handles 50+ operation types across ~37 handler modules
 - Announces itself via `Hello/HelloAck` handshake on connect
 - Reconnects automatically with exponential backoff on disconnect
-- **Runs as root under systemd**, but drops privilege per operation: the terminal and most privileged writes drop to the authenticated user's UID/GID (`initgroups` → `setgid` → `setuid`) and then run their shell or `sudo -S` as that user, so the host's own sudo rules adjudicate them. Every privileged read now drops the same way (journal, log files, process list, listening-port owners, container reads, user crontabs, kdump crash-dump content, cert listing). Only a few admin subsystems (SSH access, Security, host enrollment) and the baseline world-readable introspection run as root gated by the admin role — see §6 and `THREAT_MODEL.md`
+- **Runs as root under systemd**, but drops privilege per operation: the terminal and most privileged writes drop to the authenticated user's UID/GID (`initgroups` → `setgid` → `setuid`) and then run their shell or `sudo -S` as that user, so the host's own sudo rules adjudicate them. Every privileged read now drops the same way (journal, log files, process list, listening-port owners, container reads, user crontabs, kdump crash-dump content, cert listing). SSH access management and the Security page now drop to the operator the same way. Only host enrollment / token approval — a gateway control-plane action, not something done *on* a managed host — plus the baseline world-readable introspection run at the agent's/gateway's own privilege gated by the admin role — see §6 and `THREAT_MODEL.md`
 
 **Protocol** (`protocol/`)
 - Shared Rust library crate

@@ -14,6 +14,20 @@ Each tagged release also has auto-generated notes on the
   its sub-tabs stay together) instead of one flat list — the grouping is derived
   dynamically from each entry's route.
 
+### Security
+- **SSH access & Security-page actions are now brokered per-user.** The two
+  remaining write subsystems that ran as the agent (root) gated only by the admin
+  role now execute on the host under the operator's own `sudo` with their
+  superuser password — exactly like every other write. SSH key changes and
+  `sshd_config` edits, and the Security page's fail2ban / SELinux / AppArmor
+  actions, are all adjudicated by the host's sudoers/HBAC now, so gateway
+  compromise or a too-freely-granted admin role no longer reaches them as root.
+  authorized_keys files are still written with the target account's owner and
+  `0600`/`0700` modes. The only role-gated operation left is host enrollment /
+  token approval, which is a gateway control-plane action with no per-host `sudo`
+  to consult. (Both pages already required Administrative access, so there is no
+  new prompt.)
+
 ## [0.2.11] - 2026-07-19
 
 ### Added

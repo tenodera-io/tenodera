@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { PageHeader } from '../components/PageHeader.tsx';
 import { Tabs } from '../components/Tabs.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 import { useToast } from '../contexts/ToastContext.tsx';
 
 type Req = ReturnType<typeof useTransport>['request'];
@@ -24,7 +25,19 @@ interface Status { fail2ban: Fail2ban; selinux: Selinux; apparmor: AppArmor }
 const TAB_LABEL: Record<string, string> = { fail2ban: 'fail2ban', selinux: 'SELinux', apparmor: 'AppArmor' };
 
 export function Security() {
-  const { request } = useTransport();
+  const { request: baseRequest } = useTransport();
+  const su = useSuperuser();
+  // Every security.manage action now runs on the host under the operator's own
+  // sudo, so attach their superuser password. This page is superuser-gated, so
+  // su.password is present; the host's sudoers decides whether it goes through.
+  const request = useCallback(
+    (payload: string, options: Record<string, unknown> = {}): Promise<unknown[]> =>
+      baseRequest(
+        payload,
+        payload === 'security.manage' ? { ...options, password: su.password } : options,
+      ),
+    [baseRequest, su.password],
+  );
   const toast = useToast();
   const [status, setStatus] = useState<Status | null>(null);
   const [loading, setLoading] = useState(true);
