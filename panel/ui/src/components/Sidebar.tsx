@@ -19,7 +19,7 @@ interface Props {
 }
 
 function NavRow({
-  item, admin, onClose, currentPath, currentTab, onNavigateSub,
+  item, admin, onClose, currentPath, currentTab, onNavigateSub, suActive,
 }: {
   item: NavItem;
   admin?: boolean;
@@ -27,8 +27,10 @@ function NavRow({
   currentPath: string;
   currentTab: string | null;
   onNavigateSub: (path: string, id: string, defaultId: string) => void;
+  suActive: boolean;
 }) {
-  const subItems = SUBNAV[item.path];
+  // Superuser-only sub-tabs (e.g. Disk usage) are hidden in Limited mode.
+  const subItems = SUBNAV[item.path]?.filter((s) => !s.superuser || suActive);
   const showSub = subItems && currentPath === item.path;
   const activeSub = currentTab ?? subItems?.[0]?.id;
 
@@ -163,6 +165,7 @@ export function Sidebar({
                   currentPath={location.pathname}
                   currentTab={currentTab}
                   onNavigateSub={handleNavigateSub}
+                  suActive={su.active}
                 />
               ))}
             </ul>
@@ -183,6 +186,7 @@ export function Sidebar({
                   currentPath={location.pathname}
                   currentTab={currentTab}
                   onNavigateSub={handleNavigateSub}
+                  suActive={su.active}
                 />
               ))}
             </ul>
