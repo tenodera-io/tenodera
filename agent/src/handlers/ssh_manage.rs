@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 
 use crate::handler::ChannelHandler;
 use crate::handlers::system_settings::active_unit;
-use crate::util::{require_admin, run_cmd};
+use crate::util::{require_admin, run_cmd, sudo_as_user, sudo_stdin_write_as_user};
 use tenodera_protocol::channel::ChannelOpenOptions;
 use tenodera_protocol::message::Message;
 
@@ -41,61 +41,18 @@ impl ChannelHandler for SshManageHandler {
         } else if let Some(err) = require_admin(&extra) {
             err
         } else {
-            let audit_user = options
-                .extra
-                .get("_user")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            // The operator (== audit user, from the gateway-injected `_user`).
+            // Every mutation below runs on the host under *their* sudo with
+            // *their* password, so the host's sudoers — not just the admin role —
+            // decides. `user_arg` is the target account whose keys are edited.
+            let get = |k: &str| options.extra.get(k).and_then(|v| v.as_str()).unwrap_or("");
+            let operator = get("_user");
+            let password = get("password");
             match action {
-                "add_key" => {
-                    add_key(
-                        user_arg,
-                        options
-                            .extra
-                            .get("key")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(""),
-                        audit_user,
-                    )
-                    .await
-                }
-                "remove_key" => remove_key(
-                    user_arg,
-                    options
-                        .extra
-                        .get("key")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(""),
-                    audit_user,
-                ),
-                "edit_key" => {
-                    edit_key(
-                        user_arg,
-                        options
-                            .extra
-                            .get("old")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(""),
-                        options
-                            .extra
-                            .get("key")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(""),
-                        audit_user,
-                    )
-                    .await
-                }
-                "set_sshd" => {
-                    set_sshd(
-                        options
-                            .extra
-                            .get("content")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(""),
-                        audit_user,
-                    )
-                    .await
-                }
+                "add_key" => add_key(user_arg, get("key"), operator, password).await,
+                "remove_key" => remove_key(user_arg, get("key"), operator, password).await,
+                "edit_key" => edit_key(user_arg, get("old"), get("key"), operator, password).await,
+                "set_sshd" => set_sshd(get("content"), operator, password).await,
                 other => json!({ "error": format!("unknown action: {other}") }),
             }
         };
@@ -229,7 +186,61 @@ async fn key_fingerprint(key: &str) -> Option<String> {
     }
 }
 
-async fn add_key(user: &str, key: &str, audit_user: &str) -> Value {
+/// Write `content` to a target user's authorized_keys **as the operator**, via
+/// their sudo: ensure `~/.ssh` (mode 700), write the file, then restore owner and
+/// mode 600. Every step runs under the operator's own sudo, so the host — not the
+/// injected admin role — authorises editing another account's keys.
+async fn apply_authkeys(
+    operator: &str,
+    password: &str,
+    ssh_dir: &str,
+    path: &str,
+    uid: u32,
+    gid: u32,
+    content: &str,
+) -> Value {
+    let uid_s = uid.to_string();
+    let gid_s = gid.to_string();
+    let mk = sudo_as_user(
+        operator,
+        password,
+        &[
+            "install", "-d", "-m", "700", "-o", &uid_s, "-g", &gid_s, ssh_dir,
+        ],
+    )
+    .await;
+    if let Some(err) = mk.get("error") {
+        return json!({ "error": err.clone() });
+    }
+    // tee (run as root via sudo) creates the file root-owned; the chown/chmod
+    // below hand it back to the target account.
+    let w = sudo_stdin_write_as_user(operator, password, &["tee", path], content).await;
+    if let Some(err) = w.get("error") {
+        return json!({ "error": err.clone() });
+    }
+    let owner = format!("{uid}:{gid}");
+    for step in [
+        sudo_as_user(operator, password, &["chown", &owner, path]).await,
+        sudo_as_user(operator, password, &["chmod", "600", path]).await,
+    ] {
+        if let Some(err) = step.get("error") {
+            return json!({ "error": err.clone() });
+        }
+    }
+    json!({ "ok": true })
+}
+
+/// Audit an authorized_keys mutation and normalise the `apply_authkeys` result.
+fn finish_key(res: Value, operator: &str, action: &str, target: &str) -> Value {
+    if let Some(err) = res.get("error").and_then(|e| e.as_str()) {
+        crate::audit::log(operator, action, target, false, err);
+        return json!({ "error": err });
+    }
+    crate::audit::log(operator, action, target, true, "");
+    json!({ "ok": true })
+}
+
+async fn add_key(user: &str, key: &str, operator: &str, password: &str) -> Value {
     let key = key.trim();
     let Some((uid, gid, home, _)) = crate::util::lookup_user(user) else {
         return json!({ "error": "unknown user" });
@@ -253,18 +264,11 @@ async fn add_key(user: &str, key: &str, audit_user: &str) -> Value {
     existing.push_str(key);
     existing.push('\n');
 
-    if let Err(e) = std::fs::create_dir_all(&ssh_dir) {
-        return json!({ "error": format!("failed to create {ssh_dir}: {e}") });
-    }
-    if let Err(e) = std::fs::write(&path, &existing) {
-        return json!({ "error": format!("failed to write authorized_keys: {e}") });
-    }
-    fix_perms(&ssh_dir, &path, uid, gid);
-    crate::audit::log(audit_user, "ssh.add_key", user, true, "");
-    json!({ "ok": true })
+    let res = apply_authkeys(operator, password, &ssh_dir, &path, uid, gid, &existing).await;
+    finish_key(res, operator, "ssh.add_key", user)
 }
 
-fn remove_key(user: &str, key: &str, audit_user: &str) -> Value {
+async fn remove_key(user: &str, key: &str, operator: &str, password: &str) -> Value {
     let key = key.trim();
     let Some((uid, gid, home, _)) = crate::util::lookup_user(user) else {
         return json!({ "error": "unknown user" });
@@ -278,17 +282,13 @@ fn remove_key(user: &str, key: &str, audit_user: &str) -> Value {
     } else {
         kept.join("\n") + "\n"
     };
-    if let Err(e) = std::fs::write(&path, &new_content) {
-        return json!({ "error": format!("failed to write authorized_keys: {e}") });
-    }
-    fix_perms(&ssh_dir, &path, uid, gid);
-    crate::audit::log(audit_user, "ssh.remove_key", user, true, "");
-    json!({ "ok": true })
+    let res = apply_authkeys(operator, password, &ssh_dir, &path, uid, gid, &new_content).await;
+    finish_key(res, operator, "ssh.remove_key", user)
 }
 
 /// Replace one existing key line (matched by its raw text) with a new, validated
 /// key — in place, preserving order and the rest of the file.
-async fn edit_key(user: &str, old: &str, new_key: &str, audit_user: &str) -> Value {
+async fn edit_key(user: &str, old: &str, new_key: &str, operator: &str, password: &str) -> Value {
     let old = old.trim();
     let new_key = new_key.trim();
     let Some((uid, gid, home, _)) = crate::util::lookup_user(user) else {
@@ -322,21 +322,8 @@ async fn edit_key(user: &str, old: &str, new_key: &str, audit_user: &str) -> Val
         })
         .collect();
     let new_content = kept.join("\n") + "\n";
-    if let Err(e) = std::fs::write(&path, &new_content) {
-        return json!({ "error": format!("failed to write authorized_keys: {e}") });
-    }
-    fix_perms(&ssh_dir, &path, uid, gid);
-    crate::audit::log(audit_user, "ssh.edit_key", user, true, "");
-    json!({ "ok": true })
-}
-
-/// Restore correct ownership/permissions on ~/.ssh and authorized_keys.
-fn fix_perms(ssh_dir: &str, path: &str, uid: u32, gid: u32) {
-    use std::os::unix::fs::PermissionsExt;
-    let _ = std::os::unix::fs::chown(ssh_dir, Some(uid), Some(gid));
-    let _ = std::os::unix::fs::chown(path, Some(uid), Some(gid));
-    let _ = std::fs::set_permissions(ssh_dir, std::fs::Permissions::from_mode(0o700));
-    let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+    let res = apply_authkeys(operator, password, &ssh_dir, &path, uid, gid, &new_content).await;
+    finish_key(res, operator, "ssh.edit_key", user)
 }
 
 // ── sshd_config ────────────────────────────────────────────────────────────────
@@ -348,7 +335,7 @@ fn read_sshd() -> Value {
     json!({ "content": content, "path": SSHD_CONFIG })
 }
 
-async fn set_sshd(content: &str, audit_user: &str) -> Value {
+async fn set_sshd(content: &str, operator: &str, password: &str) -> Value {
     if content.trim().is_empty() {
         return json!({ "error": "config is empty" });
     }
@@ -361,7 +348,10 @@ async fn set_sshd(content: &str, audit_user: &str) -> Value {
         format!("{content}\n")
     };
 
-    // Validate with `sshd -t -f <tmp>` before touching the real file.
+    // Stage a scratch copy, then validate it with `sshd -t` run under the
+    // operator's sudo (`sshd -t` needs root to open the host keys). The staged
+    // file is a throwaway, not the live config, so writing it as the agent is
+    // fine — the privileged writes to the real config are all brokered below.
     let tmp = "/run/tenodera-sshd-check.conf";
     if let Err(e) = std::fs::write(tmp, &normalized) {
         return json!({ "error": format!("failed to stage config: {e}") });
@@ -371,47 +361,43 @@ async fn set_sshd(content: &str, audit_user: &str) -> Value {
     } else {
         "/usr/sbin/sshd"
     };
-    // `sshd -t` prints errors to stderr and exits non-zero; empty stderr == valid.
-    let check_err = run_cmd_stderr(sshd_bin, &["-t", "-f", tmp]).await;
+    let check = sudo_as_user(operator, password, &[sshd_bin, "-t", "-f", tmp]).await;
     let _ = std::fs::remove_file(tmp);
-    if !check_err.is_empty() {
+    if let Some(err) = check.get("error").and_then(|e| e.as_str()) {
         crate::audit::log(
-            audit_user,
+            operator,
             "ssh.set_sshd",
             SSHD_CONFIG,
             false,
             "validation failed",
         );
-        return json!({ "error": format!("sshd validation failed:\n{check_err}") });
+        return json!({ "error": format!("sshd validation failed:\n{err}") });
     }
 
-    // Back up, write, reload.
-    let _ = std::fs::copy(SSHD_CONFIG, format!("{SSHD_CONFIG}.tenodera.bak"));
-    if let Err(e) = std::fs::write(SSHD_CONFIG, &normalized) {
-        crate::audit::log(
-            audit_user,
-            "ssh.set_sshd",
-            SSHD_CONFIG,
-            false,
-            "write failed",
-        );
-        return json!({ "error": format!("failed to write sshd_config: {e}") });
+    // Back up, write, reload — all under the operator's sudo.
+    let backup = format!("{SSHD_CONFIG}.tenodera.bak");
+    let _ = sudo_as_user(operator, password, &["cp", SSHD_CONFIG, &backup]).await;
+    let w = sudo_stdin_write_as_user(operator, password, &["tee", SSHD_CONFIG], &normalized).await;
+    if let Some(err) = w.get("error").and_then(|e| e.as_str()) {
+        crate::audit::log(operator, "ssh.set_sshd", SSHD_CONFIG, false, "write failed");
+        return json!({ "error": format!("failed to write sshd_config: {err}") });
     }
     let unit = active_unit(&["sshd", "ssh"])
         .await
         .unwrap_or_else(|| "sshd".to_string());
-    let reload = run_cmd(&["systemctl", "reload", &unit]).await;
-    crate::audit::log(audit_user, "ssh.set_sshd", SSHD_CONFIG, true, &unit);
-    json!({ "ok": true, "reloaded": unit, "reload_out": reload })
-}
-
-/// Run a command and return its stderr (for tools like `sshd -t` that report on stderr).
-async fn run_cmd_stderr(cmd: &str, args: &[&str]) -> String {
-    match tokio::process::Command::new(cmd).args(args).output().await {
-        Ok(out) if out.status.success() => String::new(),
-        Ok(out) => String::from_utf8_lossy(&out.stderr).trim().to_string(),
-        Err(e) => format!("failed to run {cmd}: {e}"),
+    let reload = sudo_as_user(operator, password, &["systemctl", "reload", &unit]).await;
+    if let Some(err) = reload.get("error").and_then(|e| e.as_str()) {
+        crate::audit::log(
+            operator,
+            "ssh.set_sshd",
+            SSHD_CONFIG,
+            true,
+            "written; reload failed",
+        );
+        return json!({ "error": format!("config written but reload failed: {err}") });
     }
+    crate::audit::log(operator, "ssh.set_sshd", SSHD_CONFIG, true, &unit);
+    json!({ "ok": true, "reloaded": unit })
 }
 
 #[cfg(test)]

@@ -137,12 +137,15 @@ The **managed host is the authority**. There is no Tenodera-side permission stor
   crash-dump content, and the certificate listing — with an optional `sudo`
   escalation, so the host decides what they may see, exactly as for writes. Only the
   world-readable baseline introspection stays at the agent's privilege — see §6.
-- **A few write subsystems are an exception where the role *is* the boundary.**
-  SSH access management, the Security page (fail2ban / SELinux / AppArmor), and
-  host enrollment run as the agent (root) after only the `require_admin` role
-  check — the host's `sudo` is not consulted for them. For these the injected role
-  is load-bearing rather than a mere filter, so gateway compromise (§5) or a too-
-  freely-granted admin role reaches them as root. See the residual risk in §6.
+- **Host enrollment stays the one exception where the admin role is the boundary.**
+  Approving a pending agent and issuing/revoking bootstrap tokens run on the
+  *gateway* (the control plane) after only the `require_admin` role check — there
+  is no per-host `sudo` to consult, because admitting a machine to the fleet is not
+  an action *on* an already-managed host. For enrollment the injected role is
+  load-bearing, so gateway compromise (§5) or a too-freely-granted admin role
+  reaches it. Everything that acts *on* a managed host — now including SSH access
+  management and the Security page (fail2ban / SELinux / AppArmor) — runs under the
+  operator's own `sudo`, so the host adjudicates it. See §6.
 
 ### Transport
 
@@ -224,15 +227,16 @@ These are real and not yet closed. Listing them is the point of this document.
   contact. An active MITM present at that exact first connection could pin
   itself. Mitigate by performing first enrollment over a trusted network and/or
   using bootstrap tokens delivered out-of-band.
-- **A few write subsystems run as root gated only by role.** Most state-changing
-  operations run as the operator under `sudo`, so the host authorizes them — but
-  SSH access management, the Security page (fail2ban/SELinux/AppArmor), and host
-  enrollment/token management run at the agent's privilege (root) after only the
-  `require_admin` check. For these the injected `_role` is the boundary: forging
-  it (only possible by compromising the gateway, §5) or granting the admin role
-  too freely yields root-equivalent control of them. Treat admin-role membership
-  as root on every managed host. Moving these behind per-user `sudo` is on the
-  roadmap.
+- **Host enrollment is authorised by the admin role, not per-host sudo.** Every
+  action *on* a managed host — writes and reads alike, now including SSH access
+  management and the Security page (fail2ban/SELinux/AppArmor) — runs as the
+  operator under their own `sudo`, so that host adjudicates. The one role-gated
+  operation left is **enrollment / token management on the gateway** (approving a
+  pending agent, issuing/revoking bootstrap tokens): it is a control-plane action
+  with no host `sudo` to consult, so the injected `_role` is its boundary. Forging
+  it (only by compromising the gateway, §5) or granting the admin role too freely
+  yields control over which agents may join. Treat panel admin-role membership as
+  the authority over fleet enrollment.
 - **Every privileged read is brokered per-user.** All reads that expose
   non-world-readable state now run *as the logged-in user*: the journal
   (`journalctl`), log files under `/var/log` (tail / search / date-filter), the
@@ -275,7 +279,8 @@ These are real and not yet closed. Listing them is the point of this document.
 | Per-user sudo brokering for privileged operations (most write handlers) | **Implemented** |
 | RBAC (admin / read-only) — UX filter for sudo-brokered ops; the boundary for a few root subsystems | **Implemented** |
 | Per-user brokering for **all** privileged reads — journal, log files, process list, listening-port owners, containers, user crontabs, kdump crash-dump content, cert listing (run as the user, `sudo` escalation); baseline world-readable introspection stays root by design | **Implemented** |
-| Per-user sudo brokering for SSH-access / Security / enrollment (today: root gated by admin role) | **Planned** |
+| Per-user sudo brokering for SSH access management and the Security page (fail2ban/SELinux/AppArmor) — run as the operator, the host's `sudo` adjudicates | **Implemented** |
+| Host enrollment / token approval gated by the admin role on the gateway (control-plane action, no per-host sudo to consult) | **By design** |
 | TLS mandatory in **code** (gateway refuses to start unencrypted, binds `127.0.0.1`) | **Implemented** |
 | ⚠️ but the **package installer** ships `TENODERA_ALLOW_UNENCRYPTED=1` + bind `0.0.0.0` for first-run reachability — so a fresh package install is plain HTTP on all interfaces until hardened | **Shipped opt-out — harden before exposing** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |

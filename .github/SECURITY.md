@@ -114,7 +114,7 @@ Tenodera keeps **no permission store of its own — the managed host is the auth
 - The gateway injects `_user` (session username) and `_role` (session role) into every channel `Open` and subsequent `Data` message before forwarding to the agent — the agent never trusts client-supplied identity
 - Admin-only operations (firewall changes, user management, package install, host restart, etc.) are gated by `require_admin()` on the agent side, which checks the gateway-injected `_role`. A missing `_role` is treated as unauthorized — any message that bypasses gateway injection is denied by default
 - Read-only users can observe but cannot execute any write operation
-- **Most writes and every privileged read drop to the logged-in user** — the agent (root) drops to their UID/GID in `pre_exec` (`initgroups` → `setgid` → `setuid`) and then execs `sudo -S -k` with their own password, or reads under their own file/group permissions — so the host's `/etc/sudoers` (or FreeIPA/LDAP sudo rules via SSSD) adjudicates per command and per host. **A few admin subsystems** (SSH access management, the Security page, host enrollment/tokens) instead run as root gated only by the admin role. Which operations fall in which bucket — and the full per-user read-brokering list — is in THREAT_MODEL.md §4/§6
+- **Every action on a managed host drops to the logged-in user** — the agent (root) drops to their UID/GID in `pre_exec` (`initgroups` → `setgid` → `setuid`) and then execs `sudo -S -k` with their own password, or reads under their own file/group permissions — so the host's `/etc/sudoers` (or FreeIPA/LDAP sudo rules via SSSD) adjudicates per command and per host. This now includes SSH access management and the Security page (fail2ban/SELinux/AppArmor). **The one role-gated exception is host enrollment / token management**, which runs on the *gateway* (approving a pending agent, issuing/revoking tokens) where there is no per-host `sudo` to consult. The full split is in THREAT_MODEL.md §4/§6
 - **Exception:** `GET /api/hosts/{id}/user-check` is a gateway-only REST endpoint; it sends a `users.manage` channel request internally (`execute_rpc`) using the session username directly — no `_user`/`_role` injection applies since the agent's `check_exists` action requires no privileges
 
 ### Terminal Security
@@ -159,7 +159,7 @@ The gateway service runs with:
 - `ProtectHome=yes`
 - Dedicated unprivileged service user (`tenodera-gw`)
 
-The agent binary is installed root-owned (mode `0755`, no setuid bit) and runs as root because systemd starts it. How it *uses* that privilege — dropping to the logged-in user for the terminal, most writes, and every privileged read, versus staying root for a few admin subsystems and the world-readable introspection — is covered under [Authorization](#authorization) above and in THREAT_MODEL.md §4/§6.
+The agent binary is installed root-owned (mode `0755`, no setuid bit) and runs as root because systemd starts it. How it *uses* that privilege — dropping to the logged-in user for the terminal, every action on a managed host (writes, reads, SSH access and the Security page included), versus staying root only for the world-readable baseline introspection — is covered under [Authorization](#authorization) above and in THREAT_MODEL.md §4/§6. (Host enrollment / token approval is role-gated, but that runs on the gateway, not the agent.)
 
 ---
 
@@ -173,7 +173,7 @@ These are not handled by the software itself and remain the operator's responsib
 - **Use strong system passwords** — authentication relies on PAM/system accounts; password strength is determined by the OS PAM configuration
 - **Rotate TLS certificates** — the installer can generate a self-signed cert for testing, but use a CA-signed certificate in production
 - **Review sudo configuration** — this is your primary access control, not a formality. Most privileged operations run as the logged-in user under `sudo`, so `/etc/sudoers` (or your FreeIPA/LDAP sudo rules) is what actually decides who may do what on each host. The `admin` role in the UI is only granted to users with unrestricted sudo, but for those operations it merely unhides actions — the host still adjudicates every one of them. Grant per-command rules where you want fine-grained control
-- **Grant the admin role sparingly** — a few subsystems (SSH access management, the Security page, host enrollment) act as root gated *only* by the admin role, without a second `sudo` check on the host. For those, the role is the boundary — treat admin-role membership as equivalent to root on every managed host
+- **Grant the admin role sparingly** — **host enrollment / token approval** runs on the gateway gated *only* by the admin role (there is no per-host `sudo` to consult when a new agent joins the fleet). Everything that acts on a managed host — SSH access and the Security page included — is now adjudicated by that host's own `sudo`. Still, treat panel admin-role membership as control over which agents may enrol
 - **Audit agent enrollment** — review the pending host queue regularly; revoke bootstrap tokens after use or set single-use mode
 
 ---
