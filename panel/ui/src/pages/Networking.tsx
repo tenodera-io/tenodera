@@ -608,7 +608,7 @@ export function Networking() {
                     {ifaceNames.map((name, i) => (
                       <Area key={name} type="monotone" dataKey={`rx_${name}`} name={`RX ${name}`}
                         stroke={IFACE_COLORS[i % IFACE_COLORS.length]}
-                        fill={`url(#rxGrad_${name})`} stackId="rx" />
+                        fill={`url(#rxGrad_${name})`} stackId="rx" isAnimationActive={false} />
                     ))}
                   </AreaChart>
                 </ResponsiveContainer>
@@ -639,7 +639,7 @@ export function Networking() {
                     {ifaceNames.map((name, i) => (
                       <Area key={name} type="monotone" dataKey={`tx_${name}`} name={`TX ${name}`}
                         stroke={IFACE_COLORS[i % IFACE_COLORS.length]}
-                        fill={`url(#txGrad_${name})`} stackId="tx" />
+                        fill={`url(#txGrad_${name})`} stackId="tx" isAnimationActive={false} />
                     ))}
                   </AreaChart>
                 </ResponsiveContainer>

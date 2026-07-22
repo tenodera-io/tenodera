@@ -302,7 +302,7 @@ export function Storage() {
                   tickFormatter={(v: number) => v >= 1024 ? `${(v / 1024).toFixed(1)}M` : `${v.toFixed(0)}`} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((v: unknown) => [formatRate((v as number) * 1024)]) as never} />
-                <Area type="monotone" dataKey="readKBs" name="Read" stroke="var(--c-blue)" fill="url(#readGrad)" />
+                <Area type="monotone" dataKey="readKBs" name="Read" stroke="var(--c-blue)" fill="url(#readGrad)" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -327,7 +327,7 @@ export function Storage() {
                   tickFormatter={(v: number) => v >= 1024 ? `${(v / 1024).toFixed(1)}M` : `${v.toFixed(0)}`} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((v: unknown) => [formatRate((v as number) * 1024)]) as never} />
-                <Area type="monotone" dataKey="writeKBs" name="Write" stroke="var(--c-red)" fill="url(#writeGrad)" />
+                <Area type="monotone" dataKey="writeKBs" name="Write" stroke="var(--c-red)" fill="url(#writeGrad)" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -389,8 +389,8 @@ export function Storage() {
                         labelStyle={tooltipItemStyle}
                         formatter={((v: unknown) => [formatRate((v as number) * 1024)]) as never}
                       />
-                      <Area type="monotone" dataKey="inKBs" name="In" stroke="var(--c-blue)" fill="url(#swapInGrad)" strokeWidth={1.5} dot={false} />
-                      <Area type="monotone" dataKey="outKBs" name="Out" stroke="var(--c-red)" fill="url(#swapOutGrad)" strokeWidth={1.5} dot={false} />
+                      <Area type="monotone" dataKey="inKBs" name="In" stroke="var(--c-blue)" fill="url(#swapInGrad)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
+                      <Area type="monotone" dataKey="outKBs" name="Out" stroke="var(--c-red)" fill="url(#swapOutGrad)" strokeWidth={1.5} dot={false} isAnimationActive={false} />
                     </AreaChart>
                   </ResponsiveContainer>
                 </div>

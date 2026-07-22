@@ -201,6 +201,10 @@ async fn main() -> anyhow::Result<()> {
             security_headers::security_headers,
         ))
         .layer(TraceLayer::new_for_http())
+        // Outermost: gzip/br-compress responses (chiefly the static JS/CSS bundle,
+        // served uncompressed otherwise — the recharts/xterm chunks are hundreds of
+        // KB). Skips already-small and non-compressible bodies and WS upgrades.
+        .layer(tower_http::compression::CompressionLayer::new())
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(bind_addr).await?;
