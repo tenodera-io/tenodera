@@ -1,6 +1,10 @@
 // Ctrl/Cmd+K command palette. Navigation-only for now: jump to any page or
 // sub-tab. Entries come from the shared nav (src/nav.ts), so they stay in sync
 // with the sidebar. Admin pages appear only when superuser mode is active.
+//
+// Rows are grouped visually per page (a page and its sub-tabs), separated by a
+// thin divider. The grouping is derived dynamically from each command's `path`,
+// so nothing here needs touching when nav.ts changes.
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from './Icons.tsx';
@@ -112,19 +116,25 @@ export function CommandPalette({ open, onClose, suActive }: Props) {
           {results.length === 0 ? (
             <div style={S.empty}>No matches</div>
           ) : (
-            results.map((cmd, i) => (
-              <div
-                key={cmd.id}
-                data-idx={i}
-                onMouseMove={() => active !== i && setActive(i)}
-                onClick={() => choose(cmd)}
-                style={{ ...S.row, ...(i === active ? S.rowActive : null) }}
-              >
-                <span style={S.rowIcon}><Icon name={cmd.icon} size={16} /></span>
-                <span style={S.rowLabel}>{cmd.label}</span>
-                <span style={S.rowSection}>{cmd.section}</span>
-              </div>
-            ))
+            results.map((cmd, i) => {
+              // Thin divider when this row starts a new page group.
+              const newGroup = i > 0 && cmd.path !== results[i - 1].path;
+              return (
+                <div key={cmd.id}>
+                  {newGroup && <div style={S.divider} />}
+                  <div
+                    data-idx={i}
+                    onMouseMove={() => active !== i && setActive(i)}
+                    onClick={() => choose(cmd)}
+                    style={{ ...S.row, ...(i === active ? S.rowActive : null) }}
+                  >
+                    <span style={S.rowIcon}><Icon name={cmd.icon} size={16} /></span>
+                    <span style={S.rowLabel}>{cmd.label}</span>
+                    <span style={S.rowSection}>{cmd.section}</span>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </div>
@@ -163,6 +173,7 @@ const S: Record<string, React.CSSProperties> = {
   },
   list: { overflowY: 'auto', padding: '0.4rem' },
   empty: { padding: '1.5rem', textAlign: 'center', color: 'var(--text-2)', fontSize: '0.85rem' },
+  divider: { height: 1, background: 'var(--border-1)', margin: '0.3rem 0.5rem' },
   row: {
     display: 'flex', alignItems: 'center', gap: '0.6rem',
     padding: '0.5rem 0.65rem', borderRadius: 7, cursor: 'pointer',
