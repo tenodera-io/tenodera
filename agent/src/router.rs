@@ -10,10 +10,9 @@ use crate::handler::ChannelHandler;
 use crate::handlers::{
     audit_query, certs, chrony, containers, cron, disk_usage, dns, file_list, file_ops,
     hardware_info, host_config, hosts, journal_query, kdump, log_files, metrics_snapshot,
-    metrics_stream, network_stats, networking, networking_snapshot, packages, security, ssh_manage,
-    storage, storage_du, storage_manage, storage_snapshot, superuser_verify, system_info,
-    system_pubkey, system_settings, systemd_timers, systemd_units, terminal_pty, timesync,
-    top_processes, users,
+    network_stats, networking, networking_snapshot, packages, security, ssh_manage, storage,
+    storage_du, storage_manage, storage_snapshot, superuser_verify, system_info, system_pubkey,
+    system_settings, systemd_timers, systemd_units, terminal_pty, timesync, top_processes, users,
 };
 
 /// Active streaming channel state.
@@ -69,7 +68,6 @@ impl Router {
         self.register(Arc::new(file_ops::FileMkdirHandler));
         self.register(Arc::new(journal_query::JournalQueryHandler));
         self.register(Arc::new(terminal_pty::TerminalPtyHandler::new()));
-        self.register(Arc::new(metrics_stream::MetricsStreamHandler));
         self.register(Arc::new(disk_usage::DiskUsageHandler));
         self.register(Arc::new(network_stats::NetworkStatsHandler));
         self.register(Arc::new(containers::ContainersHandler));
@@ -303,7 +301,6 @@ mod tests {
         let must_have = [
             "system.info",
             "systemd.units",
-            "metrics.stream",
             "terminal.pty",
             "packages.manage",
             "dns.info",
