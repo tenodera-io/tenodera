@@ -13,6 +13,10 @@ Each tagged release also has auto-generated notes on the
 - **Command palette** now groups entries per page with thin dividers (a page and
   its sub-tabs stay together) instead of one flat list — the grouping is derived
   dynamically from each entry's route.
+- **Storage → Disk usage** is now offered only in Administrative mode. The scanner
+  walks the tree as root, so in Limited access the tab is hidden from the Storage
+  page, the sidebar, and the command palette (via a `superuser` flag on the nav
+  entry).
 
 ### Security
 - **SSH access & Security-page actions are now brokered per-user.** The two

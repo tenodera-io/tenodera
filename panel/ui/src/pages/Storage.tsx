@@ -5,6 +5,7 @@ import { useTabParam } from '../hooks/useTabParam.ts';
 import { StorageMounts } from './StorageMounts.tsx';
 import { StorageUsage } from './StorageUsage.tsx';
 import { useTransport } from '../api/HostTransportContext.tsx';
+import { useSuperuser } from '../api/SuperuserContext.tsx';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts';
@@ -151,7 +152,14 @@ const tooltipItemStyle: React.CSSProperties = { color: 'var(--text-1)' };
 
 export function Storage() {
   const { request } = useTransport();
+  const su = useSuperuser();
   const [tab, setTab] = useTabParam<'overview' | 'mounts' | 'usage'>(['overview', 'mounts', 'usage'], 'overview');
+
+  // The disk-usage scanner reads the whole tree as root, so it's offered only in
+  // Administrative mode. If the user drops to Limited while on it, fall back.
+  useEffect(() => {
+    if (tab === 'usage' && !su.active) setTab('overview');
+  }, [tab, su.active, setTab]);
   const [history, setHistory] = useState<IoPoint[]>([]);
   const [blockRows, setBlockRows] = useState<FlatRow[]>([]);
   const [swap, setSwap] = useState<SwapInfo | null>(null);
@@ -260,7 +268,11 @@ export function Storage() {
       />
 
       <Tabs
-        tabs={[{ id: 'overview', label: 'Overview' }, { id: 'mounts', label: 'Mounts' }, { id: 'usage', label: 'Disk usage' }]}
+        tabs={[
+          { id: 'overview', label: 'Overview' },
+          { id: 'mounts', label: 'Mounts' },
+          ...(su.active ? [{ id: 'usage', label: 'Disk usage' }] : []),
+        ]}
         active={tab}
         onChange={(t) => setTab(t as 'overview' | 'mounts' | 'usage')}
         style={{ marginBottom: '1rem' }}
@@ -268,7 +280,7 @@ export function Storage() {
 
       {tab === 'mounts' && <StorageMounts />}
 
-      {tab === 'usage' && <StorageUsage />}
+      {tab === 'usage' && su.active && <StorageUsage />}
 
       {tab === 'overview' && (<>
       {/* ── I/O Charts ── */}

@@ -5,7 +5,10 @@ import type { IconName } from './components/Icons.tsx';
 
 export interface NavItem { path: string; label: string; icon: IconName; }
 export interface NavSection { label: string; items: NavItem[]; }
-export interface SubItem { id: string; label: string; }
+// `superuser: true` hides the sub-tab unless Administrative access is on — used
+// for entries that read privileged host state as root (e.g. the disk-usage
+// scanner), so they aren't offered in Limited mode.
+export interface SubItem { id: string; label: string; superuser?: boolean; }
 
 export const NAV_SECTIONS: NavSection[] = [
   {
@@ -55,7 +58,7 @@ export const SUBNAV: Record<string, SubItem[]> = {
   '/storage': [
     { id: 'overview', label: 'Overview' },
     { id: 'mounts', label: 'Mounts' },
-    { id: 'usage', label: 'Disk usage' },
+    { id: 'usage', label: 'Disk usage', superuser: true },
   ],
   '/networking': [
     { id: 'overview', label: 'Overview' },
@@ -142,6 +145,7 @@ export function buildCommands(suActive: boolean): Command[] {
       });
       const subs = SUBNAV[item.path];
       subs?.forEach((s, i) => {
+        if (s.superuser && !suActive) return;
         cmds.push({
           id: `${item.path}#${s.id}`,
           label: `${item.label} → ${s.label}`,
