@@ -110,10 +110,12 @@ export function useHosts(_connected: boolean): UseHostsResult {
     else sessionStorage.removeItem('active_host_id');
   }, []);
 
-  // Refresh hosts list every 8s for quicker reconnect detection
+  // Refresh the host list periodically for reconnect/status detection. 20s keeps
+  // it reasonably fresh while cutting the /api/hosts fan-out ~2.5× versus polling
+  // every 8s — the list changes rarely and manual actions reload it directly.
   useEffect(() => {
     loadHosts();
-    const interval = setInterval(loadHosts, 8_000);
+    const interval = setInterval(loadHosts, 20_000);
     return () => clearInterval(interval);
   }, [loadHosts]);
 

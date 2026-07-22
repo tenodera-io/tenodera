@@ -478,7 +478,7 @@ export function Dashboard() {
                 <YAxis type="category" dataKey="mount" width={100} tick={{ fontSize: 10, fill: 'var(--text-1)' }} />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle}
                   formatter={((value: unknown) => [`${value}%`]) as never} />
-                <Bar dataKey="use_pct" name="Used" radius={[0, 4, 4, 0]}>
+                <Bar dataKey="use_pct" name="Used" radius={[0, 4, 4, 0]} isAnimationActive={false}>
                   {disks.map((d, i) => (
                     <Cell key={i} fill={d.use_pct > 90 ? 'var(--c-red)' : d.use_pct > 70 ? 'var(--c-yellow)' : 'var(--c-blue)'} />
                   ))}
@@ -546,9 +546,9 @@ export function Dashboard() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-3)' }} unit="%" />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle} />
                 <Area type="monotone" dataKey="cpuUser" name="User" stackId="1"
-                  stroke={COLORS.user} fill="url(#cpuUserGrad)" />
+                  stroke={COLORS.user} fill="url(#cpuUserGrad)" isAnimationActive={false} />
                 <Area type="monotone" dataKey="cpuSys" name="System" stackId="1"
-                  stroke={COLORS.system} fill="url(#cpuSysGrad)" />
+                  stroke={COLORS.system} fill="url(#cpuSysGrad)" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -571,7 +571,7 @@ export function Dashboard() {
                 <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--text-3)' }} unit="%" />
                 <Tooltip contentStyle={tooltipStyle} itemStyle={tooltipItemStyle} labelStyle={tooltipItemStyle} />
                 <Area type="monotone" dataKey="memUsedPct" name="Used"
-                  stroke={COLORS.used} fill="url(#memGrad)" />
+                  stroke={COLORS.used} fill="url(#memGrad)" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
           ) : (
@@ -594,9 +594,9 @@ export function Dashboard() {
                   formatter={((v: unknown) => formatRate(Number(v))) as never} />
                 <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
                 <Line type="monotone" dataKey="netRxRate" name="▼ RX" stroke="var(--c-green)"
-                  dot={false} strokeWidth={2} />
+                  dot={false} strokeWidth={2} isAnimationActive={false} />
                 <Line type="monotone" dataKey="netTxRate" name="▲ TX" stroke="var(--c-blue)"
-                  dot={false} strokeWidth={2} />
+                  dot={false} strokeWidth={2} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -616,9 +616,9 @@ export function Dashboard() {
                   formatter={((v: unknown) => formatRate(Number(v))) as never} />
                 <Legend wrapperStyle={{ fontSize: '0.75rem' }} />
                 <Line type="monotone" dataKey="diskReadRate" name="Read" stroke="var(--c-cyan)"
-                  dot={false} strokeWidth={2} />
+                  dot={false} strokeWidth={2} isAnimationActive={false} />
                 <Line type="monotone" dataKey="diskWriteRate" name="Write" stroke="var(--c-orange)"
-                  dot={false} strokeWidth={2} />
+                  dot={false} strokeWidth={2} isAnimationActive={false} />
               </LineChart>
             </ResponsiveContainer>
           ) : (
@@ -720,7 +720,7 @@ function DonutChart({ data, centerLabel, tooltipFmt }: {
       <ResponsiveContainer>
         <PieChart>
           <Pie data={data} dataKey="value" innerRadius="60%" outerRadius="85%"
-            paddingAngle={2} startAngle={90} endAngle={-270} stroke="none">
+            paddingAngle={2} startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
             {data.map((d, i) => <Cell key={i} fill={d.color} />)}
           </Pie>
           <Tooltip

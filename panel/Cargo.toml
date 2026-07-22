@@ -17,7 +17,7 @@ tokio = { version = "1", features = ["full"] }
 # HTTP / WebSocket
 axum = { version = "0.8", features = ["ws"] }
 tower = { version = "0.5", features = ["full"] }
-tower-http = { version = "0.7", features = ["fs", "cors", "trace"] }
+tower-http = { version = "0.7", features = ["fs", "cors", "trace", "compression-gzip", "compression-br"] }
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "server-auto", "http1", "http2"] }
 
@@ -51,3 +51,13 @@ sha2 = "0.11"
 
 # Internal crates
 tenodera-protocol = { path = "./protocol" }
+
+# Release build tuned for small, low-overhead binaries (weak-hardware targets):
+# thin LTO + single codegen unit for tighter code, and strip symbols to shrink the
+# on-disk/mmap footprint. opt-level stays at the default 3 (CPU is scarce on the
+# target VMs, so favour speed) and panic stays `unwind` — abort would let one
+# panicking task kill the whole gateway and drop every session.
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

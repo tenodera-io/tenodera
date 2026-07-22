@@ -18,6 +18,16 @@ Each tagged release also has auto-generated notes on the
   page, the sidebar, and the command palette (via a `superuser` flag on the nav
   entry).
 
+### Performance
+- **Lighter footprint for weak hardware (small vCenter VMs etc.).** The gateway now
+  **gzip/brotli-compresses** the static UI assets it serves — the recharts and xterm
+  chunks are hundreds of KB uncompressed, and a fresh package install serves them
+  over plain HTTP with no proxy to compress. The Rust **gateway and agent binaries
+  are built with thin LTO + symbol stripping** (~18–27% smaller). The live
+  dashboard / storage / networking **charts no longer animate on every update**
+  (recharts ran a ~1.5 s requestAnimationFrame loop per tick — wasted CPU on
+  constrained guests). The **host-list refresh dropped from every 8 s to every 20 s**.
+
 ### Security
 - **SSH access & Security-page actions are now brokered per-user.** The two
   remaining write subsystems that ran as the agent (root) gated only by the admin
