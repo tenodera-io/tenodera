@@ -277,7 +277,7 @@ These are real and not yet closed. Listing them is the point of this document.
 | Agent installed without setuid bit (`0755`) | **Implemented** |
 | Host-enforced authorization for privileged writes (local sudoers, or FreeIPA/LDAP sudo rules via SSSD) | **Implemented** |
 | Per-user sudo brokering for privileged operations (most write handlers) | **Implemented** |
-| RBAC (admin / read-only) — UX filter for sudo-brokered ops; the boundary for a few root subsystems | **Implemented** |
+| RBAC (admin / read-only) — UX filter for sudo-brokered ops; the boundary for gateway host-enrollment | **Implemented** |
 | Per-user brokering for **all** privileged reads — journal, log files, process list, listening-port owners, containers, user crontabs, kdump crash-dump content, cert listing (run as the user, `sudo` escalation); baseline world-readable introspection stays root by design | **Implemented** |
 | Per-user sudo brokering for SSH access management and the Security page (fail2ban/SELinux/AppArmor) — run as the operator, the host's `sudo` adjudicates | **Implemented** |
 | Host enrollment / token approval gated by the admin role on the gateway (control-plane action, no per-host sudo to consult) | **By design** |
