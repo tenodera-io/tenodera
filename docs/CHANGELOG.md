@@ -9,6 +9,16 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Security
+- **Bootstrap tokens are scrubbed from the agent after enrollment.** Once an agent
+  has enrolled and its Ed25519 key is pinned on the gateway, the token is never
+  needed again. The agent now removes the `TENODERA_BOOTSTRAP_TOKEN` line from
+  `/etc/tenodera/agent.cnf` on its first successful handshake, so a leftover —
+  possibly multi-use — token can't be replayed later to enroll a rogue agent.
+  Commented lines and the rest of the config are left untouched; the removal is
+  best-effort and never fatal. Closes the "bootstrap tokens persist on the agent"
+  residual risk in THREAT_MODEL §6.
+
 ## [0.2.13] - 2026-07-23
 
 ### Performance

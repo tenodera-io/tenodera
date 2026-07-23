@@ -105,7 +105,7 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 
 **Bootstrap tokens:** single-use or TTL-bound tokens used for unattended enrollment. A token can optionally be bound to a specific hostname. Re-enroll tokens allow key rotation for already-enrolled hosts.
 
-> **The token persists on the agent.** `tenodera-agent.sh --token <value>` writes `TENODERA_BOOTSTRAP_TOKEN=…` into `/etc/tenodera/agent.cnf` and it is **not** removed after enrollment (the agent only needs it once — its Ed25519 key is pinned on first connect). Treat it as a bearer secret: prefer **single-use, short-TTL, hostname-bound** tokens so a leftover value is already spent, and delete the line once the host is enrolled. Never leave one long-lived, multi-use token sitting in every host's `agent.cnf`.
+> **The token is scrubbed after enrollment.** `tenodera-agent.sh --token <value>` writes `TENODERA_BOOTSTRAP_TOKEN=…` into `/etc/tenodera/agent.cnf`; the agent **removes that line on its first successful handshake** (it only needs the token once — its Ed25519 key is pinned on first connect), so a leftover multi-use token is not left on an enrolled host. It is still a bearer secret before that first connection (visible in the installer command / config), so prefer **single-use, short-TTL, hostname-bound** tokens and revoke after use.
 
 ### Authorization
 

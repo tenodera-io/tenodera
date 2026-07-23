@@ -69,6 +69,44 @@ fn load_env_file() {
     }
 }
 
+/// Remove the bootstrap-token line from `/etc/tenodera/agent.cnf` after a
+/// successful enrollment. The agent's Ed25519 key is pinned on the gateway on
+/// first connect, so the token is never needed again — scrubbing it stops a
+/// leftover (possibly multi-use) token from being replayed to enroll a rogue
+/// agent. Best-effort: any failure is logged, never fatal.
+pub fn scrub_bootstrap_token() {
+    let path = "/etc/tenodera/agent.cnf";
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return;
+    };
+    if !content.lines().any(is_bootstrap_token_line) {
+        return;
+    }
+    let mut cleaned = content
+        .lines()
+        .filter(|l| !is_bootstrap_token_line(l))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if content.ends_with('\n') {
+        cleaned.push('\n');
+    }
+    match std::fs::write(path, cleaned) {
+        Ok(()) => tracing::info!("scrubbed bootstrap token from {path} after enrollment"),
+        Err(e) => tracing::warn!("could not scrub bootstrap token from {path}: {e}"),
+    }
+}
+
+/// A systemd env-file line that assigns `TENODERA_BOOTSTRAP_TOKEN` (tolerating
+/// leading whitespace and an `export ` prefix). Comment lines and other keys are
+/// left untouched.
+fn is_bootstrap_token_line(line: &str) -> bool {
+    let mut t = line.trim_start();
+    if let Some(rest) = t.strip_prefix("export ") {
+        t = rest.trim_start();
+    }
+    matches!(t.split_once('='), Some((key, _)) if key.trim_end() == "TENODERA_BOOTSTRAP_TOKEN")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,5 +161,22 @@ mod tests {
     #[test]
     fn is_local_remote_false() {
         assert!(!cfg("https://192.168.56.10:9090").is_local());
+    }
+
+    #[test]
+    fn bootstrap_token_line_detection() {
+        assert!(is_bootstrap_token_line("TENODERA_BOOTSTRAP_TOKEN=abc123"));
+        assert!(is_bootstrap_token_line("  TENODERA_BOOTSTRAP_TOKEN = abc "));
+        assert!(is_bootstrap_token_line(
+            "export TENODERA_BOOTSTRAP_TOKEN=abc"
+        ));
+        // comments and other keys are preserved
+        assert!(!is_bootstrap_token_line("# TENODERA_BOOTSTRAP_TOKEN=abc"));
+        assert!(!is_bootstrap_token_line(
+            "TENODERA_GATEWAY_URL=http://x:9090"
+        ));
+        assert!(!is_bootstrap_token_line(
+            "TENODERA_BOOTSTRAP_TOKEN_EXTRA=abc"
+        ));
     }
 }

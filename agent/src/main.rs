@@ -181,6 +181,14 @@ async fn run_session(
 
     tracing::info!(gateway_version, fingerprint = %identity.fingerprint(), "handshake complete");
 
+    // Enrollment succeeded and our key is now pinned on the gateway — a bootstrap
+    // token (if we used one) is single-use in practice. Scrub it from the config
+    // so a leftover, possibly multi-use, token can't be replayed to enroll a rogue
+    // agent later. No-op on reconnects once it's gone.
+    if config.bootstrap_token.is_some() {
+        crate::config::scrub_bootstrap_token();
+    }
+
     // ── Normal operation ──────────────────────────────────────────────────────
     let (out_tx, mut out_rx) = mpsc::channel::<Message>(256);
 

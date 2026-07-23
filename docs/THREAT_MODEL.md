@@ -252,13 +252,15 @@ These are real and not yet closed. Listing them is the point of this document.
   system info, DNS, packages, systemd timers, cron *system* files, and public
   certificate metadata) — it exposes nothing a normal user couldn't already read, so
   brokering it would add cost without changing what anyone can see.
-- **Bootstrap tokens are bearer secrets, and persist on the agent.** Anyone
-  holding a valid, unexpired, non-exhausted token can enroll an agent. The token
-  is written to `/etc/tenodera/agent.cnf` by the installer and is **not** removed
-  after enrollment (the agent only needs it once — its key is pinned on first
-  connect). A leftover *multi-use* token therefore stays usable. Scope them
-  tightly (short TTL, `max_uses=1`, hostname binding), delete the line after the
-  host is enrolled, and revoke after use.
+- **Bootstrap tokens are bearer secrets.** Anyone holding a valid, unexpired,
+  non-exhausted token can enroll an agent. The installer writes it to
+  `/etc/tenodera/agent.cnf`; the agent now **scrubs that line on its first
+  successful handshake** — its Ed25519 key is pinned on first connect, so the
+  token is never needed again — so a leftover, possibly multi-use, token is not
+  left sitting on an enrolled host. The window is narrowed but not zero: the token
+  is still exposed in the installer command / config before that first connection,
+  and remains if the agent never enrolls. Still scope them tightly (short TTL,
+  `max_uses=1`, hostname binding) and revoke after use.
 - **Dependency supply chain.** Rust and npm dependencies are trusted transitively.
   An SBOM and reproducible builds are planned to narrow this.
 
