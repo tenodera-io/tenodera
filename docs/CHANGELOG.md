@@ -10,6 +10,12 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Security
+- **Releases ship a signed SBOM.** Every release now includes a CycloneDX
+  software bill of materials (`tenodera-sbom.cdx.json`) enumerating every Rust and
+  npm dependency, generated from source in CI and **checksummed + signed** in the
+  same `SHA256SUMS` as the packages. Feed it to Grype / Trivy / Dependency-Track
+  to audit what a release contains. (`cargo-deny` advisory/licence scanning already
+  runs on every push.)
 - **Bootstrap tokens are scrubbed from the agent after enrollment.** Once an agent
   has enrolled and its Ed25519 key is pinned on the gateway, the token is never
   needed again. The agent now removes the `TENODERA_BOOTSTRAP_TOKEN` line from

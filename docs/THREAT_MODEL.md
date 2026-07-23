@@ -221,8 +221,9 @@ These are real and not yet closed. Listing them is the point of this document.
 
 - **No external audit.** The controls above are implemented and tested, but have
   not been independently reviewed. Release artifacts *are* checksummed and signed
-  (`SHA256SUMS` + minisign — see SECURITY.md); **reproducible builds and an SBOM**
-  are still on the roadmap (see the supply-chain item below).
+  (`SHA256SUMS` + minisign — see SECURITY.md), and every release now ships a
+  **CycloneDX SBOM** of its dependencies (checksummed and signed with the rest);
+  **reproducible builds** are still on the roadmap (see the supply-chain item below).
 - **First-connection trust (TOFU).** The agent pins the gateway on first
   contact. An active MITM present at that exact first connection could pin
   itself. Mitigate by performing first enrollment over a trusted network and/or
@@ -262,7 +263,9 @@ These are real and not yet closed. Listing them is the point of this document.
   and remains if the agent never enrolls. Still scope them tightly (short TTL,
   `max_uses=1`, hostname binding) and revoke after use.
 - **Dependency supply chain.** Rust and npm dependencies are trusted transitively.
-  An SBOM and reproducible builds are planned to narrow this.
+  Each release ships a CycloneDX **SBOM** (`tenodera-sbom.cdx.json`) enumerating
+  them, and CI runs `cargo-deny` (advisories + licence policy) on every push;
+  **reproducible builds** are still planned to close the gap further.
 
 ---
 
@@ -288,7 +291,8 @@ These are real and not yet closed. Listing them is the point of this document.
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
 | Signed release checksums (`SHA256SUMS` + minisign) | **Implemented** |
-| Reproducible builds + SBOM | **Planned** |
+| CycloneDX SBOM shipped with every release (checksummed + signed) | **Implemented** |
+| Reproducible builds | **Planned** |
 | Per-host session scoping / full gateway→agent authorization | **Planned** |
 | arm64 / aarch64 packages (`.deb` arm64, `.rpm` aarch64) | **Implemented** — built by release CI alongside amd64/x86_64 |
 

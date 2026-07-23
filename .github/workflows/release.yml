@@ -169,9 +169,26 @@ jobs:
           echo "── packages ──"
           ls -l dist
 
+      # Supply-chain transparency: a CycloneDX SBOM of every dependency (Rust
+      # Cargo.lock + the UI's package-lock.json), generated from source and shipped
+      # + checksummed + signed alongside the packages.
+      - name: Checkout source (for SBOM)
+        uses: actions/checkout@v7
+        with:
+          path: source
+
+      - name: Generate SBOM (CycloneDX)
+        uses: anchore/sbom-action@v0
+        with:
+          path: source
+          format: cyclonedx-json
+          output-file: dist/tenodera-sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum *.deb *.rpm > SHA256SUMS
+        run: sha256sum *.deb *.rpm tenodera-sbom.cdx.json > SHA256SUMS
 
       - name: Install minisign
         run: sudo apt-get update && sudo apt-get install -y minisign
@@ -206,6 +223,7 @@ jobs:
           files: |
             dist/*.deb
             dist/*.rpm
+            dist/tenodera-sbom.cdx.json
             dist/SHA256SUMS
             dist/SHA256SUMS.minisig
           body: |
@@ -259,6 +277,9 @@ jobs:
             minisign -Vm SHA256SUMS -P <public-key-from-.github/SECURITY.md>
             sha256sum -c SHA256SUMS
             ```
+
+            A CycloneDX **SBOM** of all dependencies — `tenodera-sbom.cdx.json` — is
+            included and covered by `SHA256SUMS`.
 
             See [README](https://github.com/${{ github.repository }}/blob/main/README.md)
             for full setup instructions and [THREAT_MODEL.md](https://github.com/${{ github.repository }}/blob/main/docs/THREAT_MODEL.md)

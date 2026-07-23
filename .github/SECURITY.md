@@ -23,6 +23,11 @@ Release artifacts (`.deb` / `.rpm`, amd64 and arm64) are checksummed in a
 the packages came from this project's release pipeline and were not tampered with
 in transit.
 
+Each release also ships a **CycloneDX SBOM** — `tenodera-sbom.cdx.json`,
+enumerating every Rust and npm dependency — checksummed in the same `SHA256SUMS`,
+so it is covered by the signature too. Feed it to your own scanner (Grype, Trivy,
+Dependency-Track, …) to audit what a release contains.
+
 Public key:
 
 ```
