@@ -244,7 +244,9 @@ if [ ! -f "${CONF_DIR}/agent.cnf" ]; then
   info "Writing local agent config..."
   cat > "${CONF_DIR}/agent.cnf" <<EOF
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
-# HTTPS: change URL to https:// above. Uncomment below only for self-signed certs.
+# Local agent on the panel host — reaches the gateway directly on loopback; leave
+# this as-is. (Remote agents instead use the panel's HTTPS address via Caddy, the
+# bare host with NO :9090 — see tenodera-agent.sh / README.)
 # TENODERA_AGENT_ACCEPT_INSECURE=1
 EOF
   chmod 640 "${CONF_DIR}/agent.cnf"

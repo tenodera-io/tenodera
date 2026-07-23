@@ -9,6 +9,18 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Fixed
+- **Agent installers steered remote hosts to the wrong gateway URL.** The default
+  `agent.cnf` and the installer help suggested `http://panel:9090`, so operators
+  pointing an agent at a remote panel kept the `:9090` and switched to `https` —
+  producing `https://<panel>:9090`, a TLS handshake against the panel's *plain*
+  loopback-only gateway port (`received corrupt message of type InvalidContentType`).
+  The config templates and `tenodera-agent.sh`/README now state the remote form is
+  the panel's HTTPS address through its Caddy proxy — **the bare host, no `:9090`**
+  — and explain that 9090 is internal. `tenodera-agent.sh` also now accepts
+  `--insecure` as an alias for `--accept-insecure` (the panel installer's printed
+  hint used `--insecure`, which previously errored as an unknown argument).
+
 ### Added
 - **`.deb`/`.rpm` installs now set up the Caddy reverse proxy automatically too.**
   Previously only the source/curl installer installed Caddy; package installs left

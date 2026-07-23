@@ -2,10 +2,15 @@
 # Tenodera Agent — remote host installer
 #
 # Usage:
-#   Install:   sudo bash tenodera-agent.sh --gateway http://gw:9090
+#   Install:   sudo bash tenodera-agent.sh --gateway https://panel --insecure
 #   With token (skip pending approval):
-#              sudo bash tenodera-agent.sh --gateway http://gw:9090 --token <bootstrap-token>
+#              sudo bash tenodera-agent.sh --gateway https://panel --insecure --token <bootstrap-token>
 #   Uninstall: sudo bash tenodera-agent.sh --uninstall
+#
+#   --gateway is the panel's HTTPS address via its Caddy reverse proxy — the bare
+#   host, NO :9090 (that port is the panel's internal loopback-only gateway).
+#   --insecure accepts the installer's default self-signed cert (drop it once the
+#   panel uses a CA-signed cert / real domain).
 #
 # The agent connects outbound to the gateway — no SSH keys, no inbound ports needed.
 # First connection: the host enters a pending state. An admin approves it in the panel
@@ -67,7 +72,7 @@ while [[ $# -gt 0 ]]; do
       GATEWAY_URL="$2"; shift 2;;
     --token)
       BOOTSTRAP_TOKEN="$2"; shift 2;;
-    --accept-insecure)
+    --accept-insecure|--insecure)
       ACCEPT_INSECURE="1"; shift;;
     *)
       fail "Unknown argument: $1";;
@@ -173,8 +178,10 @@ cat > "${CONF_DIR}/agent.cnf" <<EOF
 
 TENODERA_GATEWAY_URL=${GATEWAY_URL}
 
-# HTTPS/WSS: change TENODERA_GATEWAY_URL to https:// above. No other setting needed
-# for CA-signed certs (e.g. Let's Encrypt). Uncomment below ONLY for self-signed certs.
+# TENODERA_GATEWAY_URL is the panel's HTTPS address via its Caddy reverse proxy —
+# the bare host, NO :9090 (that port is the panel's internal loopback-only gateway).
+# CA-signed cert (e.g. Let's Encrypt): nothing else needed. Self-signed (installer
+# default): uncomment the line below.
 ${INSECURE_LINE}
 
 # Optional bootstrap token — skip pending approval on first connect.
