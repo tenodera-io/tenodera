@@ -68,7 +68,7 @@ fn spawn_agent_forwarder(
             };
 
             if let Ok(json) = serde_json::to_string(&msg) {
-                tracing::trace!(agent = %label, raw = %json, "agent → WS client");
+                tracing::trace!(agent = %label, bytes = json.len(), "agent → WS client");
                 let mut s = sink.lock().await;
                 if s.send(Message::Text(json.into())).await.is_err() {
                     break;
@@ -222,7 +222,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                 match msg {
                     Message::Text(text) => {
                         state.sessions.touch(&session_id).await;
-                        tracing::trace!(raw = %text, "WS client → gateway");
+                        tracing::trace!(bytes = text.len(), "WS client → gateway");
 
                         match serde_json::from_str::<message::Message>(&text) {
                             Ok(message::Message::Ping) => {
@@ -350,7 +350,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                     }
                                 }
                             }
-                            Err(e) => tracing::warn!(error = %e, raw = %text, "invalid message from client"),
+                            Err(e) => tracing::warn!(error = %e, bytes = text.len(), "invalid message from client"),
                         }
                     }
                     Message::Close(_) => { tracing::debug!("WebSocket closed by client"); break; }

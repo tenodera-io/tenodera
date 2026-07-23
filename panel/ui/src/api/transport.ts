@@ -112,7 +112,10 @@ export function connect(): Promise<void> {
           }
         }
       } catch {
-        console.warn('invalid message from server', event.data);
+        // Log only the size, never the payload — server messages carry
+        // operational data (command output, file contents, etc.).
+        const len = typeof event.data === 'string' ? event.data.length : 0;
+        console.warn(`invalid message from server (${len} bytes)`);
       }
     };
 
