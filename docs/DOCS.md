@@ -76,7 +76,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 | CPU | x86_64 / amd64, or arm64 / aarch64 (packages built for both) |
 | RAM | 512 MB minimum (1 GB recommended during build) |
 | Disk | ~500 MB for build toolchain + binaries |
-| Network | Port 9090 accessible from browsers and managed hosts |
+| Network | Browsers and managed hosts reach the panel over HTTPS (443 via the reverse proxy by default); the gateway itself listens on loopback `127.0.0.1:9090` |
 | Build deps | Rust (installed automatically), Node.js ≥ 18 (installed automatically), gcc, pkg-config, libssl-dev, libpam0g-dev, libclang-dev |
 
 ### Managed hosts (agent only)
@@ -86,7 +86,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 | OS | Linux (any distribution with systemd) |
 | CPU | x86_64 / amd64, or arm64 / aarch64 (packages built for both) |
 | RAM | ~20 MB for agent process |
-| Network | Outbound TCP to panel host port 9090 |
+| Network | Outbound TCP to the panel — 443 by default (through the reverse proxy), or the gateway's own port if it is exposed directly. No inbound ports on the managed host. |
 | Build deps | Rust, gcc, pkg-config (installed automatically by agent installer) |
 
 ---
@@ -260,7 +260,17 @@ RUST_LOG=tenodera_gateway=info   # Log filter: error | warn | info | debug | tra
 
 ### 4.2 TLS setup
 
-The gateway requires TLS by default and refuses to start without a certificate unless `TENODERA_ALLOW_UNENCRYPTED=1` is set.
+There are two ways to serve the panel over HTTPS:
+
+- **A reverse proxy in front — the default (§4.3).** The source installer sets up
+  Caddy; the gateway stays on loopback HTTP and the proxy terminates TLS. Nothing
+  to configure in this section — skip to §4.3.
+- **The gateway terminates TLS itself (this section).** Use this if you don't want
+  a proxy. It requires exposing the gateway on the network
+  (`TENODERA_BIND_ADDR=0.0.0.0`), so browsers and agents reach it directly at
+  `https://<host>:9090`.
+
+The gateway requires TLS by default and refuses to start without a certificate unless `TENODERA_ALLOW_UNENCRYPTED=1` is set. (When it terminates TLS itself, remember to set `TENODERA_BIND_ADDR=0.0.0.0` so it is reachable off the host.)
 
 #### Self-signed certificate (development / testing)
 
@@ -425,10 +435,11 @@ server {
 The agent reads `/etc/tenodera/agent.cnf` at startup (if environment variables are not already set by systemd).
 
 ```bash
-# Gateway WebSocket endpoint
-# http://  → plain WebSocket (ws://)
-# https:// → encrypted WebSocket (wss://)
-TENODERA_GATEWAY_URL=http://<panel-host>:9090
+# Gateway URL. Default deployment: the panel is behind a reverse proxy on :443,
+# so use https://<panel-host> (no port). If the gateway is exposed directly
+# (no proxy), use http://<host>:9090 or https://<host>:9090 instead.
+# http:// → plain WebSocket (ws://) ; https:// → encrypted (wss://)
+TENODERA_GATEWAY_URL=https://<panel-host>
 
 # Optional bootstrap token — skip pending-state approval on first connect.
 # Generate one in the panel under Hosts → Tokens.
@@ -467,8 +478,9 @@ HTTPS/WSS is controlled by the URL scheme in `TENODERA_GATEWAY_URL`, not by `TEN
 
 | Scenario | Config |
 |----------|--------|
-| Plain HTTP (default) | `TENODERA_GATEWAY_URL=http://...` |
-| HTTPS with CA-signed cert | `TENODERA_GATEWAY_URL=https://...` |
+| Behind a reverse proxy (default) | `TENODERA_GATEWAY_URL=https://<panel-host>` (add `TENODERA_AGENT_ACCEPT_INSECURE=1` if the proxy uses a self-signed cert) |
+| Plain HTTP — gateway exposed directly | `TENODERA_GATEWAY_URL=http://<host>:9090` |
+| HTTPS with a CA-signed cert on the gateway | `TENODERA_GATEWAY_URL=https://<host>:9090` |
 | HTTPS with self-signed cert — skip verify | `TENODERA_GATEWAY_URL=https://...` + `TENODERA_AGENT_ACCEPT_INSECURE=1` |
 | HTTPS with self-signed cert — CA store | Add cert to OS trust store (see §4.2), then `TENODERA_GATEWAY_URL=https://...` |
 
@@ -1590,7 +1602,7 @@ journalctl -u tenodera-agent -e
 
 Common causes:
 - **Wrong gateway URL** — check `TENODERA_GATEWAY_URL` in `/etc/tenodera/agent.cnf`
-- **Firewall blocking port 9090** — the managed host must be able to reach the panel host on port 9090 (outbound TCP)
+- **Firewall blocking the panel port** — the managed host must be able to reach the panel (outbound TCP): port **443** when it is behind the reverse proxy (the default), or the gateway's own port if exposed directly
 - **TLS cert verification failing** — if the panel uses a self-signed cert, set `TENODERA_AGENT_ACCEPT_INSECURE=1` in `agent.cnf`
 
 After editing `agent.cnf`, always restart:

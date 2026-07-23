@@ -74,8 +74,8 @@ sudo dnf install \
 ```
 
 The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, the
-service account, and the data dir), enables and starts the gateway on port 9090,
-and starts the local agent.
+service account, and the data dir), enables and starts the gateway on
+**loopback** (`127.0.0.1:9090`), and starts the local agent.
 
 By default the gateway binds to **loopback only** (`127.0.0.1`), so a fresh
 install is not exposed on the network. Reach it over an SSH tunnel:
@@ -107,17 +107,20 @@ sudo apt install ./tenodera-agent_amd64.deb
 sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 ```
 
-Then, on either distro, point the agent at your panel and start it:
+Then point the agent at your panel and start it. The panel binds loopback by
+default, so use the URL it's actually reachable at — typically
+`https://<panel-host>` through its reverse proxy (add the insecure line only if
+that proxy uses a self-signed cert):
 
 ```bash
-sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
+sudo sed -i 's|^TENODERA_GATEWAY_URL=.*|TENODERA_GATEWAY_URL=https://<panel-host>|' /etc/tenodera/agent.cnf
+echo 'TENODERA_AGENT_ACCEPT_INSECURE=1' | sudo tee -a /etc/tenodera/agent.cnf   # self-signed cert only
 sudo systemctl enable --now tenodera-agent
 ```
 
 The agent connects outbound — no inbound ports needed. On first connect it waits
 for approval; go to **Management → Pending** in the panel and click **Approve**.
-To skip approval, generate a bootstrap token in **Management → Tokens** and pass
-it with `--token` to the curl installer below.
+To skip approval, generate a bootstrap token in **Management → Tokens**.
 
 > arm64 / aarch64: swap `amd64` → `arm64` (.deb) and `x86_64` → `aarch64` (.rpm).
 > For a specific version, replace `latest` with the tag, e.g.
