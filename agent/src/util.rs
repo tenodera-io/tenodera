@@ -584,8 +584,6 @@ mod tests {
         assert!(out.contains("PATH=/usr/sbin:/usr/bin:/sbin:/bin"));
     }
 
-    use super::*;
-
     #[test]
     fn lookup_user_root_resolves() {
         // root always exists (uid/gid 0) — covers the NSS lookup path.
