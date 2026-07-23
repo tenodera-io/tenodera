@@ -9,6 +9,20 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Fixed
+- **The local panel agent auto-enrolls again on a fresh install.** An earlier
+  IP-display fix relabelled every loopback connection with the host's primary IP
+  *before* the enrollment decision, so the panel's own agent — which connects over
+  loopback — was seen as a routable host and dropped into **pending** instead of
+  auto-enrolling. Existing installs didn't notice because their enrollment survives
+  in `hosts.json` across upgrades; only a first install on an internet-connected
+  host hit it. The enrollment decision now uses the real resolved peer (loopback →
+  auto-enroll; a proxied remote agent's `X-Forwarded-For` origin → pending), and
+  the primary-IP substitution is applied **display-only** in the hosts list, so the
+  panel host still never shows `127.0.0.1`.
+
+## [0.5.0] - 2026-07-23
+
 ### Security
 - **Hardening pass from an external security audit.** Closes every P0 finding and
   several P1/P2 items:

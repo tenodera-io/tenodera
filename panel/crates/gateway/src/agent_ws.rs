@@ -25,7 +25,7 @@ use crate::hosts_config;
 /// which connects over loopback so its socket peer is `127.0.0.1`. Uses the classic
 /// "connect a UDP socket to a public address and read the local address" trick — no
 /// packet is sent; it just resolves the source IP the routing table would pick.
-fn primary_ip() -> Option<std::net::IpAddr> {
+pub(crate) fn primary_ip() -> Option<std::net::IpAddr> {
     let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     sock.connect("1.1.1.1:80").ok()?;
     sock.local_addr().ok().map(|a| a.ip())
@@ -46,13 +46,14 @@ pub async fn agent_ws_upgrade(
     // agent's real IP from the proxy's X-Forwarded-For (trusted only from loopback).
     // A still-loopback result means the local agent connected over loopback with no
     // proxy — label it with the host's primary IP rather than 127.0.0.1.
-    let mut client_ip = crate::auth::real_client_ip(addr.ip(), &headers);
-    if client_ip.is_loopback()
-        && let Some(ip) = primary_ip()
-    {
-        client_ip = ip;
-    }
-    let remote_ip = client_ip.to_string();
+    // `remote_ip` drives the loopback auto-enrollment trust decision, so it must
+    // stay the *real* resolved peer: loopback for the local agent's direct
+    // connection (→ auto-enroll), or the X-Forwarded-For origin for a proxied
+    // remote agent (→ pending). The UI substitutes a friendly address for the
+    // local host in `hosts_list`; folding that in here (an earlier IP-display fix
+    // did) relabels the loopback agent to a routable IP and silently breaks its
+    // auto-enrollment.
+    let remote_ip = crate::auth::real_client_ip(addr.ip(), &headers).to_string();
     // Bound per-connection memory (agent frames carry command output, file reads, …).
     ws.max_message_size(4 * 1024 * 1024)
         .max_frame_size(1024 * 1024)
