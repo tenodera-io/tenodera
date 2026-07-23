@@ -110,10 +110,10 @@ sudo apt install ./tenodera-agent_amd64.deb
 sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 ```
 
-Then point the agent at your panel and start it. The panel binds loopback by
-default, so use the URL it's actually reachable at — typically
-`https://<panel-host>` through its reverse proxy (add the insecure line only if
-that proxy uses a self-signed cert):
+Then point the agent at your panel and start it. Use the panel's HTTPS address
+through its Caddy reverse proxy — **the bare host, with no `:9090`** (port 9090 is
+the panel's internal loopback-only gateway, not reachable by agents). Add the
+insecure line only while the proxy uses the installer's self-signed cert:
 
 ```bash
 sudo sed -i 's|^TENODERA_GATEWAY_URL=.*|TENODERA_GATEWAY_URL=https://<panel-host>|' /etc/tenodera/agent.cnf

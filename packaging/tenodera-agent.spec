@@ -23,10 +23,18 @@ mkdir -p %{_sysconfdir}/tenodera
 if [ ! -f %{_sysconfdir}/tenodera/agent.cnf ]; then
     cat > %{_sysconfdir}/tenodera/agent.cnf <<'CFG'
 # Tenodera Agent Configuration
-# On a managed host, set this to your panel host, e.g. http://panel:9090
+#
+# TENODERA_GATEWAY_URL — where this agent connects to the panel:
+#   * Local agent (this host IS the panel): keep the default below — it reaches
+#     the gateway directly on loopback.
+#   * Remote / managed host: use the panel's HTTPS address through its reverse
+#     proxy (Caddy), e.g.  https://panel.example.com  — the bare host, NO :9090.
+#     Port 9090 is the panel's internal loopback-only gateway; agents never use
+#     it directly. For the installer's default self-signed cert, also uncomment
+#     TENODERA_AGENT_ACCEPT_INSECURE=1 below (drop it once you use a real cert).
 TENODERA_GATEWAY_URL=http://127.0.0.1:9090
 
-# Uncomment if the gateway uses a self-signed TLS certificate:
+# Uncomment if the panel's TLS certificate is self-signed (the installer default):
 # TENODERA_AGENT_ACCEPT_INSECURE=1
 
 # Optional bootstrap token to skip pending-approval on first connect:
