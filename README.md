@@ -151,18 +151,20 @@ Panel host — installs and enrolls the local agent automatically:
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
 ```
 
-Managed hosts:
+Managed hosts connect to the panel **through Caddy over HTTPS**. `--insecure`
+accepts the installer's default self-signed certificate — **drop it** once the
+panel uses a real cert/domain:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway https://<panel-host> --insecure
 ```
 
 Unattended (skip approval) — pass a bootstrap token from **Management → Tokens**:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <token>
+  | sudo bash -s -- --gateway https://<panel-host> --insecure --token <token>
 ```
 
 > See [DOCS.md](docs/DOCS.md) for TLS setup, configuration reference, and more.

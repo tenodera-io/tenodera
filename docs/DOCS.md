@@ -126,14 +126,16 @@ and log in with any PAM system user.
 
 ### 3.2 Agent (managed hosts)
 
-Run on each host you want to manage:
+Run on each host you want to manage. Agents connect **through the panel's reverse
+proxy over HTTPS**; `--insecure` accepts the installer's default self-signed
+certificate — **drop it** once the panel uses a real cert/domain:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway https://<panel-host> --insecure
 ```
 
-Replace `<panel-host>` with the panel IP or hostname.
+Replace `<panel-host>` with the panel IP or hostname (or your domain).
 
 The agent connects outbound to the gateway on first start. Because the agent's key is unknown to the gateway, the host enters the **pending** state. Approve it in the panel under **Hosts → Pending** — the connection is then promoted to a fully enrolled host and the key is saved for future reconnects.
 
@@ -141,7 +143,7 @@ The agent connects outbound to the gateway on first start. Because the agent's k
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <bootstrap-token>
+  | sudo bash -s -- --gateway https://<panel-host> --insecure --token <bootstrap-token>
 ```
 
 The panel provides a ready-to-use install command with the gateway URL and token pre-filled — copy it from **Hosts → Tokens → Install command**.
@@ -530,7 +532,7 @@ Run on the managed host:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway https://<panel-host> --insecure
 ```
 
 The agent generates an Ed25519 key on first start and connects to the gateway. Because the key is not yet known, the host enters the **pending** state — visible under **Hosts → Pending**. Click **Approve** to enroll the host; the key is saved and future reconnects are authenticated automatically (TOFU — Trust on First Use).

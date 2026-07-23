@@ -19,6 +19,9 @@ Each tagged release also has auto-generated notes on the
   line for your own cert. The source install's gateway now also binds `127.0.0.1`
   by default (matching the package default). `.deb`/`.rpm` installs don't pull
   Caddy in — install it the same way and drop in the same Caddyfile (DOCS §4.3).
+  Because the gateway is loopback-only, **remote agents now connect through the
+  proxy** — `--gateway https://<host> --insecure` for the self-signed default,
+  dropping `--insecure` once a real certificate is in place.
 
 ### Security
 - **Package installs bind to loopback by default (secure default).** The `.deb`/
