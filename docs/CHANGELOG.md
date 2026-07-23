@@ -9,6 +9,8 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-23
+
 ### Documentation
 - **Install docs rewritten around the packaged, proxied default.** The README is
   now a short install guide (top diagram shows the real flow: browser and remote
@@ -36,8 +38,6 @@ Each tagged release also has auto-generated notes on the
   cert). The source one-liner now fetches `tenodera-agent.sh` from GitHub — the
   panel never served that path, so the old `{panel}/tenodera-agent.sh` piped the
   SPA's HTML into `bash`.
-
-### Fixed
 - **Agent installers steered remote hosts to the wrong gateway URL.** The default
   `agent.cnf` and the installer help suggested `http://panel:9090`, so operators
   pointing an agent at a remote panel kept the `:9090` and switched to `https` —
@@ -48,6 +48,8 @@ Each tagged release also has auto-generated notes on the
   — and explain that 9090 is internal. `tenodera-agent.sh` also now accepts
   `--insecure` as an alias for `--accept-insecure` (the panel installer's printed
   hint used `--insecure`, which previously errored as an unknown argument).
+
+## [0.4.0] - 2026-07-23
 
 ### Added
 - **`.deb`/`.rpm` installs now set up the Caddy reverse proxy automatically too.**
@@ -63,6 +65,8 @@ Each tagged release also has auto-generated notes on the
   swap in a domain + real cert in the Caddyfile). The generated Caddyfile now lists
   **every non-loopback IP of the host**, so the panel answers on whichever
   interface you browse to on a multi-homed machine.
+
+## [0.3.1] - 2026-07-23
 
 ### Fixed
 - **Host IPs showed `127.0.0.1` behind the reverse proxy.** With the gateway on
