@@ -291,7 +291,7 @@ These are real and not yet closed. Listing them is the point of this document.
 | Per-user sudo brokering for SSH access management and the Security page (fail2ban/SELinux/AppArmor) — run as the operator, the host's `sudo` adjudicates | **Implemented** |
 | Host enrollment / token approval gated by the admin role on the gateway (control-plane action, no per-host sudo to consult) | **By design** |
 | TLS mandatory in **code** (gateway refuses to start unencrypted, binds `127.0.0.1`) | **Implemented** |
-| ⚠️ but the **package installer** ships `TENODERA_ALLOW_UNENCRYPTED=1` + bind `0.0.0.0` for first-run reachability — so a fresh package install is plain HTTP on all interfaces until hardened | **Shipped opt-out — harden before exposing** |
+| Package installer binds **`127.0.0.1`** by default (loopback only) with `TENODERA_ALLOW_UNENCRYPTED=1` — a fresh install is plain HTTP but reachable only from the panel host (SSH-tunnel or reverse-proxy to reach it); enable TLS and change the bind before exposing on the network | **Secure default (loopback)** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
 | Signed release checksums (`SHA256SUMS` + minisign) | **Implemented** |

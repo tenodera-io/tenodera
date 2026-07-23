@@ -10,6 +10,13 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Security
+- **Package installs bind to loopback by default (secure default).** The `.deb`/
+  `.rpm` installers now ship `TENODERA_BIND_ADDR=127.0.0.1` instead of `0.0.0.0`,
+  so a fresh install runs plain HTTP but is reachable **only from the panel host**
+  — no longer exposed on every interface until hardened. Reach it over an SSH
+  tunnel (`ssh -L 9090:127.0.0.1:9090 <host>`); to serve it to the network, front
+  it with a TLS reverse proxy or enable TLS and change the bind. `README`, `DOCS`,
+  `SECURITY` and `THREAT_MODEL` updated accordingly.
 - **Optional gateway-id pinning closes the first-connect (TOFU) window.** Set
   `TENODERA_GATEWAY_ID` in the agent config to the gateway's id (read it on the
   panel host from `/var/lib/tenodera-gw/gateway-id`) and the agent verifies the

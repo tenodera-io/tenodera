@@ -114,13 +114,15 @@ The installer:
 10. Writes `/etc/tenodera/agent.cnf` and enables `tenodera-agent.service`
 11. Starts `tenodera-agent` — the local agent connects and enters the **pending** state; approve it in the panel under **Hosts → Pending** to bring it online
 
-After install, log in at `http://<host>:9090` with any PAM system user.
+After install the panel is bound to **loopback only** — reach it over an SSH
+tunnel (`ssh -L 9090:127.0.0.1:9090 <host>`, then open `http://localhost:9090`)
+and log in with any PAM system user.
 
-> **Note — two different defaults:**
+> **Note — the defaults are loopback + plain HTTP:**
 > - **Code default:** TLS is *mandatory*. The gateway refuses to start without a certificate, binds to `127.0.0.1:9090`, and `TENODERA_ALLOW_UNENCRYPTED` is `false`.
-> - **Package/installer default:** to make the panel reachable immediately on first install, the shipped `/etc/tenodera/tenodera.cnf` sets `TENODERA_BIND_ADDR=0.0.0.0`, `TENODERA_BIND_PORT=9090`, **and `TENODERA_ALLOW_UNENCRYPTED=1`** — i.e. plain HTTP on all interfaces.
+> - **Package/installer default:** the shipped `/etc/tenodera/tenodera.cnf` sets `TENODERA_BIND_ADDR=127.0.0.1`, `TENODERA_BIND_PORT=9090`, **and `TENODERA_ALLOW_UNENCRYPTED=1`** — plain HTTP, but reachable **only from the panel host**, so a fresh install is not exposed on the network.
 >
-> So **after a package install the panel is HTTP on `0.0.0.0:9090`**. Configure TLS (§4.2) or put it behind a reverse proxy bound to localhost (§4.3), and remove `TENODERA_ALLOW_UNENCRYPTED=1`, before exposing it to any untrusted network.
+> To serve the panel to the network: configure TLS (§4.2) or put it behind a reverse proxy (§4.3). Only set `TENODERA_BIND_ADDR=0.0.0.0` **after** enabling TLS and removing `TENODERA_ALLOW_UNENCRYPTED=1`, or you will serve unencrypted on every interface.
 
 ### 3.2 Agent (managed hosts)
 
@@ -228,7 +230,7 @@ sudo systemctl restart tenodera
 
 ```bash
 # ── Network ──────────────────────────────────────────────────────────────────
-TENODERA_BIND_ADDR=0.0.0.0      # Listen address (default: 0.0.0.0)
+TENODERA_BIND_ADDR=127.0.0.1    # Listen address (package default: 127.0.0.1, loopback only)
 TENODERA_BIND_PORT=9090          # Listen port (default: 9090)
 
 # ── External URL ──────────────────────────────────────────────────────────────

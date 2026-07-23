@@ -58,7 +58,11 @@ chmod 622 /var/log/tenodera_audit.log
 if [ ! -f %{_sysconfdir}/tenodera/tenodera.cnf ]; then
     cat > %{_sysconfdir}/tenodera/tenodera.cnf <<'CFG'
 # Tenodera Panel Configuration
-TENODERA_BIND_ADDR=0.0.0.0
+# Bound to loopback by default — the panel is reachable only from this host.
+# Reach it with an SSH tunnel:  ssh -L 9090:127.0.0.1:9090 <host>  then open
+# http://localhost:9090 . To expose it on the network, enable TLS below (or put a
+# reverse proxy in front) and change this to 0.0.0.0.
+TENODERA_BIND_ADDR=127.0.0.1
 TENODERA_BIND_PORT=9090
 TENODERA_AGENT_BIN=/usr/bin/tenodera-agent
 TENODERA_UI_DIR=/usr/share/tenodera/ui
