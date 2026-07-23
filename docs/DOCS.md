@@ -446,14 +446,14 @@ TENODERA_GATEWAY_URL=https://<panel-host>
 # Written automatically by tenodera-agent.sh --token <value>.
 # TENODERA_BOOTSTRAP_TOKEN=<token>
 #
-# ⚠️ The token is a BEARER SECRET and is NOT removed from agent.cnf after
-# enrollment — it stays in this file. It is only needed once (the agent's
-# Ed25519 key is pinned on first connect), so:
-#   • Prefer single-use, short-TTL, hostname-bound tokens (Hosts → Tokens) —
-#     then a leftover token here is already spent and useless.
-#   • You may delete this line after the host is enrolled and shows as online.
-#   • Never reuse one long-lived multi-use token across many hosts and leave it
-#     sitting in every /etc/tenodera/agent.cnf.
+# ⚠️ The token is a BEARER SECRET. The agent removes this line automatically on
+# its first successful enrollment (its Ed25519 key is pinned on first connect, so
+# the token is never needed again), so a leftover token is not left on an enrolled
+# host. It is still exposed before that first connect — in the installer command
+# and in this file — so:
+#   • Prefer single-use, short-TTL, hostname-bound tokens (Hosts → Tokens).
+#   • Revoke it after use; never reuse one long-lived multi-use token across many
+#     hosts.
 
 # Skip TLS certificate verification.
 # Uncomment ONLY when using https:// with a self-signed certificate.

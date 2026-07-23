@@ -14,8 +14,12 @@ The gateway is the central server accessible from the browser. It handles:
 5. **Multi-host** -- `AgentRegistry` routes channels to the correct agent by `host` field
 
 ```
-Browser --> HTTPS/WSS --> Gateway (:9090) <-- outbound WS -- tenodera-agent (each host)
+Browser --> reverse proxy (HTTPS) --> Gateway (127.0.0.1:9090) <-- outbound WS -- tenodera-agent
 ```
+
+The gateway binds loopback by default; a reverse proxy (Caddy, set up by the
+installer) terminates TLS for browsers and agents. It can also terminate TLS
+itself if bound to the network — see DOCS §4.
 
 Agents connect outbound to `GET /api/agent`. The gateway performs an Ed25519
 TOFU handshake (`Hello` → `Challenge` → `ChallengeResponse` → `HelloAck`).
