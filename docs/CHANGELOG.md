@@ -9,6 +9,30 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Security
+- **Every command the agent spawns is now bounded and runs in a clean
+  environment** (external audit P1). The agent runs as root, so an unbounded or
+  environment-influenced child could hang it, exhaust its memory, or be steered
+  into the wrong binary:
+  - **Timeout** — commands are killed after `TENODERA_CMD_TIMEOUT_SECS` (default
+    **900 s**). Children are put in their own process group first, so a timeout
+    terminates `sudo` *and* what it spawned (`SIGTERM`, then `SIGKILL`) instead of
+    orphaning the real worker. The default is deliberately generous: this guards
+    against hangs, and must never kill a legitimate `apt upgrade` or package
+    install mid-transaction.
+  - **Bounded output** — collected stdout/stderr is capped at
+    `TENODERA_CMD_MAX_OUTPUT_MB` (default **4 MB**) and flagged as truncated, so a
+    runaway command (`yes`, an enormous journal) can't exhaust the agent.
+  - **Fixed environment** — `env_clear()` plus a fixed `PATH`, `C.UTF-8` locale and
+    (for per-user reads) the user's `HOME`, instead of inheriting the agent's
+    environment. This closes `PATH`/`LD_PRELOAD`/`BASH_ENV`-style influence and
+    makes command output deterministic for the handlers that parse it.
+
+  All execution paths (`run_cmd`, `sudo_as_user`, `run_cmd_as_user`, `which`, and
+  the sudo write/read wrappers built on them) go through the same helpers. Covered
+  by unit tests for the kill-on-timeout, output-cap and no-environment-leak
+  behaviours.
+
 ### Fixed
 - **Uninstalling now actually cleans up.** The `.deb` packages shipped no `postrm`
   at all, so even `apt purge` left configuration, gateway/agent state, the audit
