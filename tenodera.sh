@@ -83,8 +83,22 @@ fi
 # ── Install ───────────────────────────────────────────────
 
 REPO="${TENODERA_REPO:-tenodera-io/tenodera}"
-BRANCH="${TENODERA_BRANCH:-main}"
 WORK_DIR="/tmp/tenodera-install"
+
+# Build an immutable ref by default: the latest *released tag*, not the moving
+# `main` branch — so an install is reproducible and a branch/account compromise
+# can't silently change what gets built as root. Override with TENODERA_REF
+# (a tag, branch, or commit SHA) for development. (The signed .deb/.rpm packages
+# remain the recommended, checksum-verified install path — see DOCS §3.)
+if [ -n "${TENODERA_REF:-}" ]; then
+  REF="$TENODERA_REF"
+elif [ -n "${TENODERA_BRANCH:-}" ]; then
+  REF="$TENODERA_BRANCH"
+else
+  REF=$(curl -sSfL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
+        | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+  [ -n "$REF" ] || REF="main"
+fi
 
 command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
   fail "curl or wget is required"
@@ -97,18 +111,19 @@ command -v make >/dev/null 2>&1 || {
   elif command -v dnf >/dev/null 2>&1; then
     dnf install -y -q make >/dev/null
   elif command -v pacman >/dev/null 2>&1; then
-    pacman -Sy --noconfirm --needed make >/dev/null
+    pacman -Syu --noconfirm --needed make >/dev/null
   else
     fail "Install 'make' manually before running this script"
   fi
 }
 
-info "Downloading Tenodera source..."
+info "Downloading Tenodera source (ref: ${REF})..."
 
 rm -rf "$WORK_DIR"
 mkdir -p "$WORK_DIR"
 
-TARBALL_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz"
+# `archive/<ref>.tar.gz` resolves a tag, branch, or commit SHA.
+TARBALL_URL="https://github.com/${REPO}/archive/${REF}.tar.gz"
 
 if command -v curl >/dev/null 2>&1; then
   curl -sSfL "$TARBALL_URL" | tar xz -C "$WORK_DIR"
@@ -195,7 +210,7 @@ install_caddy() {
     dnf copr enable -y '@caddy/caddy' >/dev/null 2>&1 || return 1
     dnf install -y -q caddy >/dev/null 2>&1
   elif command -v pacman >/dev/null 2>&1; then
-    pacman -Sy --noconfirm --needed caddy >/dev/null 2>&1
+    pacman -Syu --noconfirm --needed caddy >/dev/null 2>&1
   else
     return 1
   fi
@@ -218,7 +233,12 @@ if install_caddy; then
 #   panel.example.com {
 #       reverse_proxy 127.0.0.1:9090         # Let's Encrypt cert, automatic
 #       # tls /etc/caddy/certs/panel.crt /etc/caddy/certs/panel.key  # or your own
+#       # header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 #   }
+#
+# Enable that HSTS header ONLY with a real CA-signed cert — never with the
+# self-signed default below, or a browser that has seen HSTS will then refuse the
+# untrusted cert with no click-through.
 #
 # Then: sudo systemctl reload caddy .  See DOCS.md -> Reverse proxy.
 
