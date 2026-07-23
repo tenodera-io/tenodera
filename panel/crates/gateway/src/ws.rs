@@ -141,7 +141,7 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
             }
         };
 
-        let session = match state.sessions.get(&token).await {
+        let session = match state.sessions.get_valid(&token).await {
             Some(s) => s,
             None => {
                 let err = message::Message::AuthResult {

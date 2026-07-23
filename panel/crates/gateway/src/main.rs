@@ -380,7 +380,7 @@ async fn token_create(
         )
             .into_response();
     };
-    let Some(session) = state.sessions.get(&bearer).await else {
+    let Some(session) = state.sessions.get_valid(&bearer).await else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({"error": "unauthorized"})),
@@ -539,7 +539,7 @@ async fn pending_approve(
         )
             .into_response();
     };
-    let Some(session) = state.sessions.get(&bearer).await else {
+    let Some(session) = state.sessions.get_valid(&bearer).await else {
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({"error": "unauthorized"})),
@@ -641,7 +641,7 @@ async fn save_display_name(host_id: &str, display_name: Option<String>) -> anyho
 
 async fn require_admin(state: &AppState, headers: &HeaderMap) -> Result<(), ()> {
     let bearer = extract_bearer_token(headers).ok_or(())?;
-    let session = state.sessions.get(&bearer).await.ok_or(())?;
+    let session = state.sessions.get_valid(&bearer).await.ok_or(())?;
     if session.role != crate::session::Role::Admin {
         return Err(());
     }
@@ -667,7 +667,7 @@ async fn host_user_check(
         Some(t) => t,
         None => return (StatusCode::UNAUTHORIZED, Json(serde_json::Value::Null)).into_response(),
     };
-    let session = match state.sessions.get(&bearer).await {
+    let session = match state.sessions.get_valid(&bearer).await {
         Some(s) => s,
         None => return (StatusCode::UNAUTHORIZED, Json(serde_json::Value::Null)).into_response(),
     };
@@ -730,6 +730,7 @@ struct HostListEntry {
 }
 
 async fn hosts_list(
+    _auth: crate::auth::Auth,
     State(state): State<Arc<AppState>>,
     headers: axum::http::HeaderMap,
 ) -> Json<serde_json::Value> {
@@ -770,18 +771,10 @@ async fn hosts_list(
 }
 
 async fn hosts_remove(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    crate::auth::AdminAuth(session): crate::auth::AdminAuth,
+    crate::auth::ClientAddr(client_ip): crate::auth::ClientAddr,
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> StatusCode {
-    let token = match extract_bearer_token(&headers) {
-        Some(t) => t,
-        None => return StatusCode::UNAUTHORIZED,
-    };
-    if state.sessions.get(&token).await.is_none() {
-        return StatusCode::UNAUTHORIZED;
-    }
-
     let mut config = hosts_config::load().await;
     let before = config.hosts.len();
     config.hosts.retain(|h| h.id != id);
@@ -791,15 +784,26 @@ async fn hosts_remove(
 
     match hosts_config::save(&config).await {
         Ok(()) => {
-            tracing::info!(host_id = %id, "host removed");
+            crate::audit::log(
+                &session.user,
+                "host.remove",
+                &id,
+                true,
+                &format!("ip={client_ip}"),
+            );
+            tracing::info!(user = %session.user, host_id = %id, "host removed");
             StatusCode::NO_CONTENT
         }
         Err(e) => {
+            crate::audit::log(&session.user, "host.remove", &id, false, "save failed");
             tracing::error!(error = %e, "failed to save hosts.json");
             StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
+
+/// Upper bound on a host display name — a semantic cap on top of the 16 KiB body limit.
+const MAX_DISPLAY_NAME_LEN: usize = 128;
 
 #[derive(Deserialize)]
 struct PatchHostRequest {
@@ -807,31 +811,40 @@ struct PatchHostRequest {
 }
 
 async fn hosts_patch(
-    State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    crate::auth::AdminAuth(session): crate::auth::AdminAuth,
+    crate::auth::ClientAddr(client_ip): crate::auth::ClientAddr,
     axum::extract::Path(id): axum::extract::Path<String>,
     Json(body): Json<PatchHostRequest>,
 ) -> StatusCode {
-    let token = match extract_bearer_token(&headers) {
-        Some(t) => t,
-        None => return StatusCode::UNAUTHORIZED,
+    // Normalize + enforce a semantic length cap before touching config.
+    let display_name = match body.display_name {
+        Some(n) => {
+            let t = n.trim().to_string();
+            if t.chars().count() > MAX_DISPLAY_NAME_LEN {
+                return StatusCode::BAD_REQUEST;
+            }
+            if t.is_empty() { None } else { Some(t) }
+        }
+        None => None,
     };
-    if state.sessions.get(&token).await.is_none() {
-        return StatusCode::UNAUTHORIZED;
-    }
 
     let mut config = hosts_config::load().await;
     let Some(host) = config.hosts.iter_mut().find(|h| h.id == id) else {
         return StatusCode::NOT_FOUND;
     };
-
-    host.display_name = body.display_name.and_then(|n| {
-        let t = n.trim().to_string();
-        if t.is_empty() { None } else { Some(t) }
-    });
+    host.display_name = display_name;
 
     match hosts_config::save(&config).await {
-        Ok(()) => StatusCode::NO_CONTENT,
+        Ok(()) => {
+            crate::audit::log(
+                &session.user,
+                "host.rename",
+                &id,
+                true,
+                &format!("ip={client_ip}"),
+            );
+            StatusCode::NO_CONTENT
+        }
         Err(e) => {
             tracing::error!(error = %e, "failed to save hosts.json");
             StatusCode::INTERNAL_SERVER_ERROR

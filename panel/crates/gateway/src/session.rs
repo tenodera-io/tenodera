@@ -40,9 +40,11 @@ pub struct Session {
 
 impl std::fmt::Debug for Session {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The id is a bearer token — never render it, even in Debug/logs.
         f.debug_struct("Session")
-            .field("id", &self.id)
+            .field("id", &"[REDACTED]")
             .field("user", &self.user)
+            .field("role", &self.role)
             .field("created_at", &self.created_at)
             .field("last_activity", &self.last_activity)
             .finish()
@@ -88,6 +90,25 @@ impl SessionStore {
 
     pub async fn get(&self, id: &str) -> Option<Session> {
         self.inner.read().await.get(id).cloned()
+    }
+
+    /// Fetch a session **only if it is still valid**, refreshing its activity.
+    ///
+    /// Unlike [`get`], expiry (idle timeout **and** absolute lifetime) is checked
+    /// inline and an expired session is removed and rejected — so a session is
+    /// never accepted in the window between its expiry and the next reaper pass.
+    /// All authorization paths must use this, not `get`.
+    pub async fn get_valid(&self, id: &str) -> Option<Session> {
+        let mut map = self.inner.write().await;
+        let session = map.get_mut(id)?;
+        let idle_ok = session.last_activity.elapsed().as_secs() <= self.idle_timeout_secs;
+        let age_ok = session.created_at.elapsed().as_secs() <= self.max_lifetime_secs;
+        if !(idle_ok && age_ok) {
+            map.remove(id);
+            return None;
+        }
+        session.last_activity = std::time::Instant::now();
+        Some(session.clone())
     }
 
     /// Update last_activity timestamp for the given session.
