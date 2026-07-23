@@ -22,6 +22,10 @@ use crate::security_headers::origin_matches_host;
 
 const MAX_CHANNELS_PER_SESSION: usize = 512;
 const MAX_REMOTE_AGENTS: usize = 50;
+/// Bound per-connection memory: cap WebSocket frame and message sizes instead of
+/// relying on framework defaults. A single message may span multiple frames.
+const MAX_WS_FRAME: usize = 1024 * 1024; // 1 MiB
+const MAX_WS_MESSAGE: usize = 4 * 1024 * 1024; // 4 MiB
 const AUTH_TIMEOUT_SECS: u64 = 10;
 
 pub async fn ws_upgrade(
@@ -51,7 +55,10 @@ pub async fn ws_upgrade(
         }
     }
 
-    Ok(ws.on_upgrade(move |socket| handle_socket(state, socket)))
+    Ok(ws
+        .max_message_size(MAX_WS_MESSAGE)
+        .max_frame_size(MAX_WS_FRAME)
+        .on_upgrade(move |socket| handle_socket(state, socket)))
 }
 
 fn spawn_agent_forwarder(
@@ -235,6 +242,19 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                     let close = message::Message::Close {
                                         channel: channel.clone(),
                                         problem: Some("channel-limit-exceeded".into()),
+                                    };
+                                    let mut s = sink.lock().await;
+                                    let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
+                                    continue;
+                                }
+
+                                // Reject a re-used channel id instead of overwriting the
+                                // existing route (which would orphan the old task, leak its
+                                // sender, and interleave data on one id).
+                                if channel_routes.contains_key(&channel) {
+                                    let close = message::Message::Close {
+                                        channel: channel.clone(),
+                                        problem: Some("duplicate-channel-id".into()),
                                     };
                                     let mut s = sink.lock().await;
                                     let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;

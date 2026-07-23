@@ -53,16 +53,19 @@ pub async fn agent_ws_upgrade(
         client_ip = ip;
     }
     let remote_ip = client_ip.to_string();
-    ws.on_upgrade(move |socket| {
-        handle_agent_socket(
-            registry,
-            pending_registry,
-            bootstrap_registry,
-            gateway_id,
-            socket,
-            remote_ip,
-        )
-    })
+    // Bound per-connection memory (agent frames carry command output, file reads, …).
+    ws.max_message_size(4 * 1024 * 1024)
+        .max_frame_size(1024 * 1024)
+        .on_upgrade(move |socket| {
+            handle_agent_socket(
+                registry,
+                pending_registry,
+                bootstrap_registry,
+                gateway_id,
+                socket,
+                remote_ip,
+            )
+        })
 }
 
 async fn handle_agent_socket(
