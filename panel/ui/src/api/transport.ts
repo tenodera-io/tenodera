@@ -48,7 +48,10 @@ export function onConnectionChange(cb: ConnectionCallback): () => void {
 
 function scheduleReconnect() {
   if (reconnectTimer !== null) return;
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY_MS);
+  // Full jitter: a random delay in [0, exponential cap] so many tabs/clients
+  // don't all reconnect in the same instant when the gateway comes back.
+  const cap = Math.min(1000 * Math.pow(2, reconnectAttempt), MAX_RECONNECT_DELAY_MS);
+  const delay = Math.random() * cap;
   reconnectAttempt++;
   notifyConnectionState('reconnecting');
   reconnectTimer = setTimeout(() => {
