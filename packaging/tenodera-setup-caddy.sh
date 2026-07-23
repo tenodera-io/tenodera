@@ -64,7 +64,12 @@ write_caddyfile() {
 #   panel.example.com {
 #       reverse_proxy 127.0.0.1:9090         # Let's Encrypt cert, automatic
 #       # tls /etc/caddy/certs/panel.crt /etc/caddy/certs/panel.key  # or your own
+#       # header Strict-Transport-Security "max-age=31536000; includeSubDomains"
 #   }
+#
+# Enable that HSTS header ONLY with a real CA-signed cert — never with the
+# self-signed default below, or a browser that has seen HSTS will then refuse the
+# untrusted cert with no click-through.
 #
 # Then: sudo systemctl reload caddy .  See DOCS.md -> Reverse proxy.
 

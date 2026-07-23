@@ -8,7 +8,58 @@ use serde::{Deserialize, Serialize};
 
 use crate::AppState;
 use crate::pam;
-use crate::session::Role;
+use crate::session::{Role, Session};
+
+/// Bearer token from the `Authorization` header, if present and well-formed.
+fn bearer_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(str::to_owned)
+}
+
+/// Extractor requiring **any valid (non-expired) session**. Rejects with 401.
+///
+/// Using this in a handler signature makes authentication impossible to forget —
+/// the request cannot reach the handler body without a live session.
+pub struct Auth(pub Session);
+
+impl axum::extract::FromRequestParts<Arc<AppState>> for Auth {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &Arc<AppState>,
+    ) -> Result<Self, Self::Rejection> {
+        let token = bearer_token(&parts.headers).ok_or(StatusCode::UNAUTHORIZED)?;
+        let session = state
+            .sessions
+            .get_valid(&token)
+            .await
+            .ok_or(StatusCode::UNAUTHORIZED)?;
+        Ok(Self(session))
+    }
+}
+
+/// Extractor requiring a valid session **with the `Admin` role**. Rejects with
+/// 401 when unauthenticated, 403 when authenticated but not an admin.
+pub struct AdminAuth(pub Session);
+
+impl axum::extract::FromRequestParts<Arc<AppState>> for AdminAuth {
+    type Rejection = StatusCode;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        state: &Arc<AppState>,
+    ) -> Result<Self, Self::Rejection> {
+        let Auth(session) = Auth::from_request_parts(parts, state).await?;
+        if session.role != Role::Admin {
+            return Err(StatusCode::FORBIDDEN);
+        }
+        Ok(Self(session))
+    }
+}
 
 /// Resolve the real client IP behind a trusted local reverse proxy.
 ///
@@ -73,7 +124,7 @@ pub(crate) fn host_header_ip(headers: &HeaderMap) -> Option<IpAddr> {
 /// Extract the client IP, resolving `X-Forwarded-For` behind a loopback proxy
 /// (see [`real_client_ip`]). Works in both plaintext mode (native `ConnectInfo`)
 /// and TLS mode (our accept loop injects it via `axum::Extension`).
-pub(crate) struct ClientAddr(IpAddr);
+pub(crate) struct ClientAddr(pub(crate) IpAddr);
 
 impl<S: Send + Sync> axum::extract::FromRequestParts<S> for ClientAddr {
     type Rejection = StatusCode;
@@ -142,7 +193,7 @@ pub async fn logout(
     match token {
         Some(t) if t == req.session_id => {}
         _ => {
-            tracing::warn!(session_id = %req.session_id, "logout rejected: missing or mismatched Authorization header");
+            tracing::warn!("logout rejected: missing or mismatched Authorization header");
             return StatusCode::UNAUTHORIZED;
         }
     }
@@ -155,7 +206,7 @@ pub async fn logout(
         .unwrap_or_default();
     state.sessions.remove(&req.session_id).await;
     crate::audit::log(&user, "logout", "", true, "");
-    tracing::info!(session_id = %req.session_id, "session destroyed via logout");
+    tracing::info!(user = %user, "session destroyed via logout");
     StatusCode::OK
 }
 

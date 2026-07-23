@@ -81,20 +81,24 @@ async function getOrCreateKey(): Promise<CryptoKey> {
   return key;
 }
 
+/** Legacy key for a since-removed plaintext fallback — only cleared, never written. */
 const PLAIN_KEY = 'su_plain';
 
 /* ── public API ──────────────────────────────────────────── */
 
 /**
  * Encrypt and store the superuser password in sessionStorage.
- * On plain HTTP (no crypto.subtle), falls back to unencrypted sessionStorage —
- * acceptable because plain HTTP offers no transport security anyway.
- * Returns true on success.
+ * Only stored when a secure context is available (HTTPS or localhost), encrypted
+ * with a non-extractable AES-GCM key. On plain HTTP (no crypto.subtle) the
+ * password is **not persisted** — never written in the clear. Returns whether it
+ * was persisted.
  */
 export async function saveSuperuserPassword(password: string): Promise<boolean> {
   if (!isSecureContext()) {
-    sessionStorage.setItem(PLAIN_KEY, password);
-    return true;
+    // No crypto.subtle → do not persist the password anywhere. (Also drop any
+    // plaintext value left by an older build.)
+    sessionStorage.removeItem(PLAIN_KEY);
+    return false;
   }
   try {
     const key = await getOrCreateKey();
@@ -123,7 +127,9 @@ export async function saveSuperuserPassword(password: string): Promise<boolean> 
  */
 export async function loadSuperuserPassword(): Promise<string | null> {
   if (!isSecureContext()) {
-    return sessionStorage.getItem(PLAIN_KEY);
+    // Nothing is persisted on plain HTTP; clear any legacy plaintext value.
+    sessionStorage.removeItem(PLAIN_KEY);
+    return null;
   }
   try {
     const b64 = sessionStorage.getItem(SESSION_KEY);

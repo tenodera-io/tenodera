@@ -61,7 +61,17 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!(error = %e, "connection failed — reconnecting in {backoff_secs}s");
             }
         }
-        tokio::time::sleep(Duration::from_secs(backoff_secs)).await;
+        // Full jitter: sleep a random duration in [0, backoff] so a fleet of
+        // agents doesn't reconnect in lockstep when the gateway comes back after
+        // an outage. Nanosecond clock skew across hosts is enough entropy here —
+        // this is de-synchronization, not security — so no RNG dependency is pulled in.
+        let ceiling_ms = backoff_secs.saturating_mul(1000).saturating_add(1);
+        let jitter_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| u64::from(d.subsec_nanos()))
+            .unwrap_or(0)
+            % ceiling_ms;
+        tokio::time::sleep(Duration::from_millis(jitter_ms)).await;
         backoff_secs = (backoff_secs * 2).min(30);
     }
 }

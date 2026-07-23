@@ -9,6 +9,33 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Security
+- **Hardening pass from an external security audit.** Closes every P0 finding and
+  several P1/P2 items:
+  - **Broken access control on the hosts API fixed.** `GET /api/hosts` now requires
+    a valid session (was unauthenticated — leaked the host inventory);
+    `DELETE`/`PATCH /api/hosts/{id}` now require the **admin** role (a read-only
+    user could delete or rename hosts), are audit-logged with the acting user +
+    client IP, and rename enforces a 128-char cap. New `Auth` / `AdminAuth`
+    request extractors make the check impossible to omit.
+  - **Sessions are validated inline** (`get_valid`): an expired session is never
+    accepted in the window before the reaper runs. The session id (a bearer token)
+    is redacted from `Debug`/logs.
+  - **Raw WebSocket payloads are no longer logged** (gateway TRACE/WARN and the
+    frontend console) — they carried sudo passwords, file contents and tokens; only
+    byte counts are logged now.
+  - **The sudo password is never persisted in cleartext.** On plain HTTP (no
+    `crypto.subtle`) it is not stored at all; a secure context keeps the existing
+    AES-GCM + non-extractable-key scheme.
+  - **Source installers build an immutable released tag by default** (via the
+    releases API) instead of the moving `main` branch, so a `curl | sudo bash`
+    install is reproducible; override with `TENODERA_REF`. `pacman -Sy` → `-Syu`.
+  - **WebSocket frame/message sizes are capped** (1 MiB / 4 MiB) on both browser and
+    agent connections, and a re-used channel id is rejected instead of overwriting
+    the route.
+  - **Reconnect uses full jitter** (agent + frontend) to avoid a thundering herd
+    when the gateway returns after an outage.
+
 ## [0.4.1] - 2026-07-23
 
 ### Documentation

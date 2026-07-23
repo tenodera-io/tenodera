@@ -118,17 +118,29 @@ SVCEOF
   fi
 else
   REPO="${TENODERA_REPO:-tenodera-io/tenodera}"
-  BRANCH="${TENODERA_BRANCH:-main}"
   WORK_DIR="/tmp/tenodera-agent-install"
 
   command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || \
     fail "curl or wget is required"
 
-  info "Downloading agent source..."
+  # Immutable ref by default: latest released tag, not the moving `main` branch
+  # (reproducible; a branch/account compromise can't change what builds as root).
+  # Override with TENODERA_REF (tag, branch, or SHA). Prefer the signed packages.
+  if [ -n "${TENODERA_REF:-}" ]; then
+    REF="$TENODERA_REF"
+  elif [ -n "${TENODERA_BRANCH:-}" ]; then
+    REF="$TENODERA_BRANCH"
+  else
+    REF=$(curl -sSfL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null \
+          | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+    [ -n "$REF" ] || REF="main"
+  fi
+
+  info "Downloading agent source (ref: ${REF})..."
   rm -rf "$WORK_DIR"
   mkdir -p "$WORK_DIR"
 
-  TARBALL_URL="https://github.com/${REPO}/archive/refs/heads/${BRANCH}.tar.gz"
+  TARBALL_URL="https://github.com/${REPO}/archive/${REF}.tar.gz"
 
   if command -v curl >/dev/null 2>&1; then
     curl -sSfL "$TARBALL_URL" | tar xz -C "$WORK_DIR"
