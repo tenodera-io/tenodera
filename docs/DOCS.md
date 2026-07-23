@@ -5,9 +5,9 @@
 1. [Overview](#1-overview)
 2. [Requirements](#2-requirements)
 3. [Installation](#3-installation)
-   - 3.1 [Panel (gateway + UI)](#31-panel-gateway--ui)
-   - 3.2 [Agent (managed hosts)](#32-agent-managed-hosts)
-   - 3.3 [Build from source](#33-build-from-source)
+   - 3.1 [Packages (recommended)](#31-packages-recommended)
+   - 3.2 [Source installer (curl)](#32-source-installer-curl)
+   - 3.3 [Build from source (manual)](#33-build-from-source-manual)
 4. [Panel Configuration](#4-panel-configuration)
    - 4.1 [Gateway config reference](#41-gateway-config-reference)
    - 4.2 [TLS setup](#42-tls-setup)
@@ -53,13 +53,15 @@
 Tenodera is a self-hosted Linux server administration panel. It provides a real-time web interface for managing local and remote Linux servers — terminal access, service control, user management, package management, networking, storage, containers, logs, and more.
 
 ```
-Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote host)
-                                 <──WS── tenodera-agent (localhost)
+Browser ─────────HTTPS──┐
+                        ▼
+Remote agents ──WSS──> Caddy (:443) ──> Gateway (127.0.0.1:9090) <──WS── local agent
 ```
 
 **Key design principles:**
 
-- **No inbound ports on managed hosts** — agents connect outbound to the gateway via WebSocket
+- **Private gateway, public proxy** — the gateway listens only on loopback; the installer sets up a Caddy reverse proxy that serves the panel (and agent connections) over HTTPS
+- **No inbound ports on managed hosts** — agents connect outbound to the panel via WebSocket
 - **No extra daemon required** — the agent is a single binary managed by systemd
 - **PAM authentication** — uses existing system accounts (local, LDAP, SSSD, FreeIPA)
 - **Role-based access** — admin vs. read-only, based on sudo group membership
@@ -93,121 +95,102 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 
 ## 3. Installation
 
-### 3.1 Panel (gateway + UI)
-
-Run on the host that will serve the web interface:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
-```
-
-The installer:
-1. Installs system build dependencies (Rust, Node.js, gcc, libssl-dev, libpam0g-dev, libclang-dev)
-2. Downloads Tenodera source from GitHub
-3. Compiles the gateway and PAM helper (`cargo build --release`)
-4. Builds the React UI (`npm ci && npm run build`)
-5. Installs binaries to `/usr/local/bin/`
-6. Creates the `tenodera-gw` service account
-7. Writes `/etc/tenodera/tenodera.cnf` (gateway config)
-8. Installs and enables `tenodera.service` (systemd)
-9. Compiles and installs the local agent (`tenodera-agent`)
-10. Writes `/etc/tenodera/agent.cnf` and enables `tenodera-agent.service`
-11. Starts `tenodera-agent` — the local agent connects and enters the **pending** state; approve it in the panel under **Hosts → Pending** to bring it online
-
-After install the panel is bound to **loopback only** — reach it over an SSH
-tunnel (`ssh -L 9090:127.0.0.1:9090 <host>`, then open `http://localhost:9090`)
-and log in with any PAM system user.
-
-> **Note — the defaults are loopback + plain HTTP:**
-> - **Code default:** TLS is *mandatory*. The gateway refuses to start without a certificate, binds to `127.0.0.1:9090`, and `TENODERA_ALLOW_UNENCRYPTED` is `false`.
-> - **Package/installer default:** the shipped `/etc/tenodera/tenodera.cnf` sets `TENODERA_BIND_ADDR=127.0.0.1`, `TENODERA_BIND_PORT=9090`, **and `TENODERA_ALLOW_UNENCRYPTED=1`** — plain HTTP, but reachable **only from the panel host**, so a fresh install is not exposed on the network.
->
-> To serve the panel to the network: configure TLS (§4.2) or put it behind a reverse proxy (§4.3). Only set `TENODERA_BIND_ADDR=0.0.0.0` **after** enabling TLS and removing `TENODERA_ALLOW_UNENCRYPTED=1`, or you will serve unencrypted on every interface.
-
-### 3.2 Agent (managed hosts)
-
-Run on each host you want to manage. Agents connect **through the panel's reverse
-proxy over HTTPS**; `--insecure` accepts the installer's default self-signed
-certificate — **drop it** once the panel uses a real cert/domain:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway https://<panel-host> --insecure
-```
-
-Replace `<panel-host>` with the panel IP or hostname (or your domain).
-
-The agent connects outbound to the gateway on first start. Because the agent's key is unknown to the gateway, the host enters the **pending** state. Approve it in the panel under **Hosts → Pending** — the connection is then promoted to a fully enrolled host and the key is saved for future reconnects.
-
-**Unattended installs (skip approval):** generate a bootstrap token in **Hosts → Tokens**, then pass it with `--token`:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway https://<panel-host> --insecure --token <bootstrap-token>
-```
-
-The panel provides a ready-to-use install command with the gateway URL and token pre-filled — copy it from **Hosts → Tokens → Install command**.
-
-### 3.3 Install from prebuilt packages
+### 3.1 Packages (recommended)
 
 Every [release](https://github.com/tenodera-io/tenodera/releases) ships signed
-packages that install without compiling:
+packages — `.deb` for Debian 12+ / Ubuntu 24.04+ (amd64, arm64) and `.rpm` for
+Fedora / RHEL (x86_64, aarch64). `releases/latest/download/…` always fetches the
+newest release; for a specific version replace `latest` with the tag; for
+arm64/aarch64 swap `amd64`→`arm64` (.deb) or `x86_64`→`aarch64` (.rpm).
 
-- **`.deb`** — built on Debian 12 (bookworm), so it runs on Debian 12+ and Ubuntu 24.04+ (glibc is forward-compatible). amd64 and arm64.
-- **`.rpm`** — built on Fedora. x86_64 and aarch64.
-
-Asset filenames carry no version, so `releases/latest/download/…` always fetches the newest release. For a specific version, replace `latest` with the tag (e.g. `releases/download/v0.1.6/tenodera_amd64.deb`); arm64/aarch64: swap `amd64`→`arm64` (.deb) and `x86_64`→`aarch64` (.rpm).
-
-**Panel host** (install the panel and the agent together — the gateway validates the agent binary at startup):
+**Panel host** — panel + agent together:
 
 ```bash
 # Debian / Ubuntu
 wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera_amd64.deb
 wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
 sudo apt install ./tenodera_amd64.deb ./tenodera-agent_amd64.deb
-# Fedora (dnf installs straight from the URL)
+
+# Fedora / RHEL (dnf installs straight from the URL)
 sudo dnf install \
   https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-x86_64.rpm \
   https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 ```
 
-The panel package's `postinst`/`%post` creates `/etc/tenodera` (owned `root:tenodera-gw`, mode 750) with a default `tenodera.cnf`, the `/var/lib/tenodera-gw` data directory, the audit log, re-groups the setuid PAM helper to `tenodera-gw`, then enables and starts `tenodera.service` — and starts the bundled local agent (its default `agent.cnf` points at `127.0.0.1:9090`).
+The package sets up everything: `/etc/tenodera/tenodera.cnf`, the `tenodera-gw`
+service account and data dir, the gateway on loopback (`127.0.0.1:9090`), the
+local agent — and, via the one-shot `tenodera-caddy-setup.service` a few seconds
+after install, the latest Caddy with a generated `/etc/caddy/Caddyfile`, serving
+the panel at **`https://<panel-host>`** (self-signed certificate by default; own
+domain/cert: §4.3). Open it, accept the certificate warning, and log in with any
+PAM user that has `sudo` privileges.
 
-**Managed host** (agent only). The agent package installs but does **not** start the service — the gateway URL is host-specific:
+> If Caddy couldn't be installed (no network, unsupported distro), the panel
+> stays on loopback: reach it with `ssh -L 9090:127.0.0.1:9090 <panel-host>` →
+> `http://localhost:9090`, then retry with
+> `sudo systemctl start tenodera-caddy-setup`.
+
+**Managed hosts** — agent only. The package installs but does **not** start the
+service (the gateway URL is host-specific). Point the agent at the panel's HTTPS
+address — the bare host, **no `:9090`** (9090 is the panel's internal
+loopback-only port, not reachable by agents):
 
 ```bash
 # Debian / Ubuntu
 wget https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent_amd64.deb
 sudo apt install ./tenodera-agent_amd64.deb
-# Fedora: sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
-sudo sed -i 's|127.0.0.1|<panel-host>|' /etc/tenodera/agent.cnf
+# Fedora / RHEL: sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
+
+sudo sed -i 's|^TENODERA_GATEWAY_URL=.*|TENODERA_GATEWAY_URL=https://<panel-host>|' /etc/tenodera/agent.cnf
+echo 'TENODERA_AGENT_ACCEPT_INSECURE=1' | sudo tee -a /etc/tenodera/agent.cnf   # self-signed cert only
 sudo systemctl enable --now tenodera-agent
 ```
 
-**Verifying the download.** Each release includes `SHA256SUMS` and a
-`SHA256SUMS.minisig` signature (Ed25519, via [minisign](https://jedisct1.github.io/minisign/)). The public key is in [SECURITY.md](../.github/SECURITY.md):
+The agent connects outbound (no inbound ports, no SSH keys) and enters the
+**pending** state; approve it under **Management → Pending** — its key is then
+saved for future reconnects. To skip approval, generate a bootstrap token in
+**Management → Tokens** and set `TENODERA_BOOTSTRAP_TOKEN=<token>` in `agent.cnf`
+before starting — the panel shows ready-to-copy config and install commands with
+the token pre-filled.
+
+**Verify the download.** Each release includes `SHA256SUMS` and a
+`SHA256SUMS.minisig` signature (Ed25519, via
+[minisign](https://jedisct1.github.io/minisign/)); the public key is in
+[SECURITY.md](../.github/SECURITY.md):
 
 ```bash
 minisign -Vm SHA256SUMS -P <public-key>
 sha256sum --ignore-missing -c SHA256SUMS
 ```
 
-Upgrades (`apt install`/`dnf upgrade` a newer package) restart the service onto the new binary; removal (`apt remove`/`dnf remove`) stops and disables it.
+Upgrades (`apt install`/`dnf upgrade` a newer package) restart the service onto
+the new binary; removal (`apt remove`/`dnf remove`) stops and disables it.
 
-For reference, the agent source installer (§3.2):
-1. Installs build dependencies (Rust, gcc, pkg-config)
-2. Compiles `tenodera-agent` from source
-3. Installs the binary root-owned (`-m 0755`, no setuid bit); it runs as root via systemd
-4. Writes `/etc/tenodera/agent.cnf`
-5. Installs and enables `tenodera-agent.service`
+### 3.2 Source installer (curl)
 
-The host appears in the panel under Hosts → Pending within seconds of the agent starting. No SSH keys, no open inbound ports required.
+Same end state as the packages (services + Caddy proxy), but compiled on the
+host (~3–4 min; build dependencies are installed automatically).
 
-### 3.3 Build from source
+Panel host — installs and enrolls the local agent automatically:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
+```
+
+Managed hosts — `--insecure` accepts the default self-signed certificate (drop
+it once the panel uses a real cert); add `--token <token>` for unattended
+enrollment:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
+  | sudo bash -s -- --gateway https://<panel-host> --insecure
+```
+
+### 3.3 Build from source (manual)
 
 ```bash
 git clone https://github.com/tenodera-io/tenodera
-cd Tenodera
+cd tenodera
 
 # Panel (on the gateway host):
 cd panel && sudo make all
@@ -262,9 +245,9 @@ RUST_LOG=tenodera_gateway=info   # Log filter: error | warn | info | debug | tra
 
 There are two ways to serve the panel over HTTPS:
 
-- **A reverse proxy in front — the default (§4.3).** The source installer sets up
-  Caddy; the gateway stays on loopback HTTP and the proxy terminates TLS. Nothing
-  to configure in this section — skip to §4.3.
+- **A reverse proxy in front — the default (§4.3).** Every installer (packages
+  and source) sets up Caddy; the gateway stays on loopback HTTP and the proxy
+  terminates TLS. Nothing to configure in this section — skip to §4.3.
 - **The gateway terminates TLS itself (this section).** Use this if you don't want
   a proxy. It requires exposing the gateway on the network
   (`TENODERA_BIND_ADDR=0.0.0.0`), so browsers and agents reach it directly at
@@ -428,7 +411,7 @@ The agent reads `/etc/tenodera/agent.cnf` at startup (if environment variables a
 TENODERA_GATEWAY_URL=https://<panel-host>
 
 # Optional bootstrap token — skip pending-state approval on first connect.
-# Generate one in the panel under Hosts → Tokens.
+# Generate one in the panel under Management → Tokens.
 # Written automatically by tenodera-agent.sh --token <value>.
 # TENODERA_BOOTSTRAP_TOKEN=<token>
 #
@@ -437,7 +420,7 @@ TENODERA_GATEWAY_URL=https://<panel-host>
 # the token is never needed again), so a leftover token is not left on an enrolled
 # host. It is still exposed before that first connect — in the installer command
 # and in this file — so:
-#   • Prefer single-use, short-TTL, hostname-bound tokens (Hosts → Tokens).
+#   • Prefer single-use, short-TTL, hostname-bound tokens (Management → Tokens).
 #   • Revoke it after use; never reuse one long-lived multi-use token across many
 #     hosts.
 
@@ -533,9 +516,9 @@ curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-
   | sudo bash -s -- --gateway https://<panel-host> --insecure
 ```
 
-The agent generates an Ed25519 key on first start and connects to the gateway. Because the key is not yet known, the host enters the **pending** state — visible under **Hosts → Pending**. Click **Approve** to enroll the host; the key is saved and future reconnects are authenticated automatically (TOFU — Trust on First Use).
+The agent generates an Ed25519 key on first start and connects to the gateway. Because the key is not yet known, the host enters the **pending** state — visible under **Management → Pending**. Click **Approve** to enroll the host; the key is saved and future reconnects are authenticated automatically (TOFU — Trust on First Use).
 
-**Unattended installs:** generate a bootstrap token in **Hosts → Tokens**, then pass `--token <token>` to the installer. The gateway validates the token and enrolls the host immediately without requiring manual approval. The panel provides a ready-to-use install command with the gateway URL and token pre-filled.
+**Unattended installs:** generate a bootstrap token in **Management → Tokens**, then pass `--token <token>` to the installer. The gateway validates the token and enrolls the host immediately without requiring manual approval. The panel provides a ready-to-use install command with the gateway URL and token pre-filled.
 
 **Switching between hosts:**
 
@@ -1543,7 +1526,20 @@ directly (see [§4.2 TLS setup](#42-tls-setup)).
 
 ## 14. Uninstall
 
-### Panel host (removes everything)
+### Installed from packages
+
+```bash
+# Debian / Ubuntu (panel host: both; managed host: just tenodera-agent)
+sudo apt remove tenodera tenodera-agent
+
+# Fedora / RHEL
+sudo dnf remove tenodera tenodera-agent
+```
+
+Caddy (and `/etc/caddy/Caddyfile`) is left in place — remove it separately if
+nothing else uses it (`sudo apt remove caddy` / `sudo dnf remove caddy`).
+
+### Installed from source — panel host (removes everything)
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh \
@@ -1552,7 +1548,7 @@ curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.
 
 Removes: gateway and agent binaries, PAM helper, UI assets, systemd services, `/etc/tenodera/`, logrotate config, PAM config, `tenodera-gw` user.
 
-### Managed hosts (agent only)
+### Installed from source — managed hosts (agent only)
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
@@ -1561,7 +1557,7 @@ curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-
 
 Removes: agent binary, systemd service, `/etc/tenodera/`.
 
-### From source
+### From a git checkout
 
 ```bash
 cd panel && sudo make uninstall
@@ -1589,6 +1585,10 @@ journalctl -u tenodera-agent -e
 ```
 
 Common causes:
+- **`https://<host>:9090` in the URL** — the log shows `received corrupt message of
+  type InvalidContentType`: that is a TLS handshake against the gateway's *plain*
+  internal port. Remote agents use the panel's proxied HTTPS address — the bare
+  host, **no `:9090`**: `TENODERA_GATEWAY_URL=https://<panel-host>`
 - **Wrong gateway URL** — check `TENODERA_GATEWAY_URL` in `/etc/tenodera/agent.cnf`
 - **Firewall blocking the panel port** — the managed host must be able to reach the panel (outbound TCP): port **443** when it is behind the reverse proxy (the default), or the gateway's own port if exposed directly
 - **TLS cert verification failing** — if the panel uses a self-signed cert, set `TENODERA_AGENT_ACCEPT_INSECURE=1` in `agent.cnf`
@@ -1599,9 +1599,9 @@ After editing `agent.cnf`, always restart:
 sudo systemctl restart tenodera-agent
 ```
 
-### Agent not appearing under Hosts → Pending
+### Agent not appearing under Management → Pending
 
-If the agent is running but the host does not appear under **Hosts → Pending**, check:
+If the agent is running but the host does not appear under **Management → Pending**, check:
 
 ```bash
 journalctl -u tenodera-agent -e
@@ -1609,7 +1609,7 @@ journalctl -u tenodera-agent -e
 
 Common causes:
 - **Wrong gateway URL** — the agent cannot connect; verify `TENODERA_GATEWAY_URL` in `agent.cnf`
-- **Bootstrap token invalid or expired** — if `TENODERA_BOOTSTRAP_TOKEN` is set in `agent.cnf`, ensure the token exists and has not expired (check **Hosts → Tokens** in the panel); remove or correct the token and restart the agent
+- **Bootstrap token invalid or expired** — if `TENODERA_BOOTSTRAP_TOKEN` is set in `agent.cnf`, ensure the token exists and has not expired (check **Management → Tokens** in the panel); remove or correct the token and restart the agent
 - **Pending limit reached** — the gateway caps pending agents at 100 to prevent abuse; check gateway logs: `journalctl -u tenodera -e`
 
 ### Agent challenge rejected
@@ -1624,7 +1624,7 @@ sudo rm -rf /var/lib/tenodera/
 sudo systemctl start tenodera-agent
 ```
 
-Then approve the host again in **Hosts → Pending**. If the host was previously enrolled, remove it first via **Hosts → Enrolled → Remove** so the new key is accepted.
+Then approve the host again in **Management → Pending**. If the host was previously enrolled, remove it first via **Management → Hosts → Remove** so the new key is accepted.
 
 ### Login fails
 

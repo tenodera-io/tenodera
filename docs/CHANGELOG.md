@@ -9,6 +9,17 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Documentation
+- **Install docs rewritten around the packaged, proxied default.** The README is
+  now a short install guide (top diagram shows the real flow: browser and remote
+  agents → Caddy :443 → loopback gateway); DOCS §3 leads with the signed
+  `.deb`/`.rpm` packages (source installer and manual build follow), documents the
+  one-shot Caddy setup and its fallback, and fixes the managed-host snippet that
+  produced a `:9090` agent URL; DOCS §14 adds package uninstall, §15 documents the
+  `https://…:9090` → `InvalidContentType` mistake. THREAT_MODEL/SECURITY updated
+  for the loopback + HTTPS-proxy default, and every "Hosts →" reference renamed to
+  the actual **Management** page.
+
 ### Fixed
 - **The Tokens tab's bootstrap-install instructions were misleading.** After
   generating a token, the panel built the agent install command from the gateway's

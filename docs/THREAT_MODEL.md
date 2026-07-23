@@ -292,7 +292,7 @@ These are real and not yet closed. Listing them is the point of this document.
 | Per-user sudo brokering for SSH access management and the Security page (fail2ban/SELinux/AppArmor) — run as the operator, the host's `sudo` adjudicates | **Implemented** |
 | Host enrollment / token approval gated by the admin role on the gateway (control-plane action, no per-host sudo to consult) | **By design** |
 | TLS mandatory in **code** (gateway refuses to start unencrypted, binds `127.0.0.1`) | **Implemented** |
-| Package installer binds **`127.0.0.1`** by default (loopback only) with `TENODERA_ALLOW_UNENCRYPTED=1` — a fresh install is plain HTTP but reachable only from the panel host (SSH-tunnel or reverse-proxy to reach it); enable TLS and change the bind before exposing on the network | **Secure default (loopback)** |
+| Installers (packages and source) bind the gateway to **`127.0.0.1`** with `TENODERA_ALLOW_UNENCRYPTED=1` and front it with an auto-installed **Caddy HTTPS reverse proxy** — the plain-HTTP backend is reachable only from the panel host, and the network sees only HTTPS on :443 | **Secure default (loopback + HTTPS proxy)** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
 | Signed release checksums (`SHA256SUMS` + minisign) | **Implemented** |
