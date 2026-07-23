@@ -441,6 +441,20 @@ After editing, restart the agent:
 sudo systemctl restart tenodera-agent
 ```
 
+**Command execution limits (optional).** Every command the agent spawns runs with
+a wall-clock timeout and an output cap, so a hung or runaway command cannot stall
+or exhaust the agent. The defaults suit normal use; tune them only if a host
+legitimately needs more:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `TENODERA_CMD_TIMEOUT_SECS` | `900` (15 min) | Safety net against hangs — deliberately well above the slowest legitimate operation (`apt upgrade`, a big install, an image pull), which must never be killed mid-transaction. On expiry the command's whole process group is terminated (`SIGTERM`, then `SIGKILL`). |
+| `TENODERA_CMD_MAX_OUTPUT_MB` | `4` | Cap on collected stdout/stderr per command. Output beyond this is dropped and the result flagged as truncated. |
+
+Commands also run with a **fixed minimal environment** (`PATH=/usr/sbin:/usr/bin:/sbin:/bin`,
+`LANG`/`LC_ALL=C.UTF-8`, plus `HOME` for per-user reads) rather than inheriting the
+agent's — this is not configurable.
+
 ### 5.2 HTTPS / TLS for agents
 
 HTTPS/WSS is controlled by the URL scheme in `TENODERA_GATEWAY_URL`, not by `TENODERA_AGENT_ACCEPT_INSECURE`.

@@ -1,21 +1,210 @@
 use serde_json::Value;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 // ── Command execution helpers ─────────────────────────────────
 // Shared across multiple handler modules to avoid duplication.
+//
+// Every command the agent spawns goes through these helpers, so the same three
+// guarantees hold everywhere: a wall-clock timeout, a cap on collected output,
+// and a fixed minimal environment. The agent runs as root — an unbounded or
+// environment-influenced child is a direct path to hanging or exhausting it.
+
+/// Grace period between SIGTERM and SIGKILL when a command times out.
+const KILL_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Wall-clock ceiling for any spawned command; on expiry the whole process group
+/// is terminated.
+///
+/// This is a **safety net against hangs, not a functional limit** — it must stay
+/// well above the slowest legitimate operation (`apt upgrade`, a large package
+/// install, an image pull). Killing one of those mid-transaction would be far
+/// worse than the hang it guards against. Override with
+/// `TENODERA_CMD_TIMEOUT_SECS` when a host legitimately needs longer.
+fn cmd_timeout() -> std::time::Duration {
+    static V: std::sync::OnceLock<std::time::Duration> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        let secs = std::env::var("TENODERA_CMD_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .filter(|s| *s > 0)
+            .unwrap_or(900);
+        std::time::Duration::from_secs(secs)
+    })
+}
+
+/// Cap on collected stdout (and, separately, stderr). A runaway command (`yes`,
+/// an enormous journal) must not be able to exhaust the agent's memory. Output
+/// past the cap is dropped and flagged. Override with `TENODERA_CMD_MAX_OUTPUT_MB`.
+fn max_output_bytes() -> usize {
+    static V: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *V.get_or_init(|| {
+        let mb = std::env::var("TENODERA_CMD_MAX_OUTPUT_MB")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .filter(|m| *m > 0)
+            .unwrap_or(4);
+        mb * 1024 * 1024
+    })
+}
+
+/// Give a command a fixed, minimal environment.
+///
+/// The agent runs as root, so inheriting its environment would let anything that
+/// influenced it (`PATH`, `LD_PRELOAD`, `LD_LIBRARY_PATH`, `BASH_ENV`, …) steer the
+/// child. A fixed `PATH` makes helper lookup deterministic, and `C.UTF-8` pins the
+/// locale so command output stays in the stable form the handlers parse.
+fn harden_env(cmd: &mut tokio::process::Command, home: Option<&str>) {
+    cmd.env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .env("LANG", "C.UTF-8")
+        .env("LC_ALL", "C.UTF-8");
+    if let Some(h) = home {
+        cmd.env("HOME", h);
+    }
+}
+
+/// Put the child in its own session/process group **before** any privilege drop,
+/// so a timeout can signal the whole tree — `sudo` *and* whatever it spawned —
+/// rather than orphaning the real worker.
+///
+/// # Safety
+/// `pre_exec` runs in the forked child between fork and exec; `setsid` is
+/// async-signal-safe and the child is never a group leader at that point.
+fn detach_process_group(cmd: &mut tokio::process::Command) {
+    unsafe {
+        cmd.pre_exec(|| {
+            if libc::setsid() == -1 {
+                return Err(std::io::Error::last_os_error());
+            }
+            Ok(())
+        });
+    }
+}
+
+/// Read to EOF but never buffer more than `cap` bytes; stops early once the cap is
+/// hit (the caller then kills the child, so it can't block forever on a full pipe).
+async fn read_capped<R: tokio::io::AsyncRead + Unpin>(mut r: R, cap: usize) -> (Vec<u8>, bool) {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match r.read(&mut chunk).await {
+            Ok(0) | Err(_) => return (buf, false),
+            Ok(n) => {
+                if buf.len() + n > cap {
+                    let take = cap.saturating_sub(buf.len());
+                    buf.extend_from_slice(&chunk[..take]);
+                    return (buf, true);
+                }
+                buf.extend_from_slice(&chunk[..n]);
+            }
+        }
+    }
+}
+
+/// Output of a command run under the agent's limits.
+struct CappedOutput {
+    status: std::process::ExitStatus,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    /// Output exceeded the size cap and was cut short.
+    truncated: bool,
+    /// The command hit the wall-clock timeout and was killed.
+    timed_out: bool,
+}
+
+/// Collect a spawned child's output under the configured timeout and size caps.
+async fn wait_capped(child: tokio::process::Child) -> std::io::Result<CappedOutput> {
+    wait_capped_with(child, cmd_timeout(), max_output_bytes()).await
+}
+
+/// Core of [`wait_capped`], with the limits passed in so they can be tested.
+///
+/// Terminates the child's process group (TERM, then KILL after a grace period) if
+/// it overruns, and always reaps the child.
+async fn wait_capped_with(
+    mut child: tokio::process::Child,
+    timeout: std::time::Duration,
+    cap: usize,
+) -> std::io::Result<CappedOutput> {
+    let pgid = child.id().map(|p| p as i32);
+    let out_pipe = child.stdout.take();
+    let err_pipe = child.stderr.take();
+
+    let collect = async {
+        let o = async {
+            match out_pipe {
+                Some(p) => read_capped(p, cap).await,
+                None => (Vec::new(), false),
+            }
+        };
+        let e = async {
+            match err_pipe {
+                Some(p) => read_capped(p, cap).await,
+                None => (Vec::new(), false),
+            }
+        };
+        tokio::join!(o, e)
+    };
+
+    let run = async {
+        let ((so, so_cut), (se, se_cut)) = collect.await;
+        let status = child.wait().await?;
+        Ok::<_, std::io::Error>((status, so, se, so_cut || se_cut))
+    };
+
+    match tokio::time::timeout(timeout, run).await {
+        Ok(Ok((status, stdout, stderr, truncated))) => Ok(CappedOutput {
+            status,
+            stdout,
+            stderr,
+            truncated,
+            timed_out: false,
+        }),
+        Ok(Err(e)) => Err(e),
+        Err(_) => {
+            // Overran: signal the group so sudo's child dies with it, then reap.
+            if let Some(pgid) = pgid {
+                unsafe { libc::killpg(pgid, libc::SIGTERM) };
+                tokio::time::sleep(KILL_GRACE).await;
+                unsafe { libc::killpg(pgid, libc::SIGKILL) };
+            }
+            let status = child.wait().await?;
+            Ok(CappedOutput {
+                status,
+                stdout: Vec::new(),
+                stderr: Vec::new(),
+                truncated: false,
+                timed_out: true,
+            })
+        }
+    }
+}
+
+/// Message surfaced when a command is killed for overrunning the timeout.
+fn timeout_error() -> String {
+    format!("command timed out after {}s", cmd_timeout().as_secs())
+}
 
 /// Run a command and return its stdout (falling back to stderr if stdout is empty).
 pub async fn run_cmd(args: &[&str]) -> String {
     let Some((cmd, rest)) = args.split_first() else {
         return String::new();
     };
-    match tokio::process::Command::new(cmd)
+    let mut command = tokio::process::Command::new(cmd);
+    command
         .args(rest)
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-    {
+        .stderr(std::process::Stdio::piped());
+    harden_env(&mut command, None);
+    detach_process_group(&mut command);
+
+    let child = match command.spawn() {
+        Ok(c) => c,
+        Err(e) => return format!("error: {e}"),
+    };
+    match wait_capped(child).await {
+        Ok(out) if out.timed_out => format!("error: {}", timeout_error()),
         Ok(out) => {
             let stdout = String::from_utf8_lossy(&out.stdout).to_string();
             if stdout.is_empty() {
@@ -102,6 +291,9 @@ pub async fn sudo_as_user(user: &str, password: &str, args: &[&str]) -> Value {
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    harden_env(&mut cmd, None);
+    // Own process group first, so a timeout can kill sudo *and* the command it ran.
+    detach_process_group(&mut cmd);
 
     // pre_exec runs in the forked child before exec: drop to the target user so
     // `sudo` sees the real user and applies their rules. gid before uid; initgroups
@@ -127,10 +319,15 @@ pub async fn sudo_as_user(user: &str, password: &str, args: &[&str]) -> Value {
         drop(stdin);
     }
 
-    match child.wait_with_output().await {
+    match wait_capped(child).await {
+        Ok(out) if out.timed_out => serde_json::json!({ "error": timeout_error() }),
         Ok(out) if out.status.success() => {
             let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
-            serde_json::json!({ "ok": true, "output": stdout })
+            if out.truncated {
+                serde_json::json!({ "ok": true, "output": stdout, "truncated": true })
+            } else {
+                serde_json::json!({ "ok": true, "output": stdout })
+            }
         }
         Ok(out) => serde_json::json!({ "error": clean_sudo_stderr(&out.stderr) }),
         Err(e) => serde_json::json!({ "error": e.to_string() }),
@@ -160,7 +357,7 @@ pub enum UserReadOutcome {
 /// This is the read-side counterpart to [`sudo_as_user`]: same per-host authorization
 /// gate, but without escalating — reads never prompt for a password.
 pub async fn run_cmd_as_user(user: &str, args: &[&str]) -> UserReadOutcome {
-    let Some((uid, gid, _home, _shell)) = lookup_user(user) else {
+    let Some((uid, gid, home, _shell)) = lookup_user(user) else {
         return UserReadOutcome::NoAccount;
     };
     let ucstr = match std::ffi::CString::new(user) {
@@ -176,6 +373,9 @@ pub async fn run_cmd_as_user(user: &str, args: &[&str]) -> UserReadOutcome {
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
+    // Runs as the target user, so give them their own HOME alongside the fixed env.
+    harden_env(&mut cmd, Some(&home));
+    detach_process_group(&mut cmd);
 
     // pre_exec runs in the forked child before exec: drop to the target user so the
     // kernel enforces *their* access rights. gid before uid; initgroups pulls
@@ -192,8 +392,17 @@ pub async fn run_cmd_as_user(user: &str, args: &[&str]) -> UserReadOutcome {
         });
     }
 
-    match cmd.output().await {
-        Ok(out) => UserReadOutcome::Ran(out),
+    let child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => return UserReadOutcome::SpawnFailed(e.to_string()),
+    };
+    match wait_capped(child).await {
+        Ok(out) if out.timed_out => UserReadOutcome::SpawnFailed(timeout_error()),
+        Ok(out) => UserReadOutcome::Ran(std::process::Output {
+            status: out.status,
+            stdout: out.stdout,
+            stderr: out.stderr,
+        }),
         Err(e) => UserReadOutcome::SpawnFailed(e.to_string()),
     }
 }
@@ -217,14 +426,18 @@ pub async fn sudo_output_as_user(user: &str, password: &str, args: &[&str]) -> S
 
 /// Check if a command exists on `$PATH`.
 pub async fn which(cmd: &str) -> bool {
-    tokio::process::Command::new("which")
+    let mut command = tokio::process::Command::new("which");
+    command
         .arg(cmd)
+        .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .stderr(std::process::Stdio::null());
+    // Fixed PATH matters most here: this is what decides whether a tool "exists".
+    harden_env(&mut command, None);
+    match tokio::time::timeout(cmd_timeout(), command.status()).await {
+        Ok(Ok(s)) => s.success(),
+        _ => false,
+    }
 }
 
 /// Escape a string for safe embedding in a POSIX shell single-quoted context.
@@ -314,6 +527,63 @@ pub fn extract_string_array(data: &Value, key: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    fn piped(program: &str, args: &[&str]) -> tokio::process::Child {
+        let mut c = tokio::process::Command::new(program);
+        c.args(args)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        harden_env(&mut c, None);
+        detach_process_group(&mut c);
+        c.spawn().expect("spawn")
+    }
+
+    #[tokio::test]
+    async fn overrunning_command_is_killed_and_reported() {
+        let started = std::time::Instant::now();
+        let out = wait_capped_with(
+            piped("sleep", &["120"]),
+            std::time::Duration::from_millis(300),
+            1024,
+        )
+        .await
+        .expect("wait");
+        assert!(out.timed_out, "expected the command to be killed");
+        // Must not have waited anywhere near the sleep duration.
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+    }
+
+    #[tokio::test]
+    async fn runaway_output_is_capped_not_buffered_forever() {
+        // `yes` never ends and never stops writing — the cap must bound it.
+        let out = wait_capped_with(
+            piped("yes", &["flood"]),
+            std::time::Duration::from_secs(20),
+            4096,
+        )
+        .await
+        .expect("wait");
+        assert!(out.truncated, "expected output to be marked truncated");
+        assert!(
+            out.stdout.len() <= 4096,
+            "buffered {} bytes, cap was 4096",
+            out.stdout.len()
+        );
+    }
+
+    #[tokio::test]
+    async fn environment_is_replaced_not_inherited() {
+        unsafe { std::env::set_var("TENODERA_TEST_LEAK", "leaked") };
+        let out = run_cmd(&["env"]).await;
+        assert!(
+            !out.contains("TENODERA_TEST_LEAK"),
+            "agent environment leaked into the child: {out}"
+        );
+        assert!(out.contains("PATH=/usr/sbin:/usr/bin:/sbin:/bin"));
+    }
+
     use super::*;
 
     #[test]
