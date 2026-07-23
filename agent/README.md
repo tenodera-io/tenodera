@@ -87,8 +87,19 @@ same agent connection via `AgentRegistry`.
 The agent reads `/etc/tenodera/agent.cnf` at startup:
 
 ```bash
-TENODERA_GATEWAY_URL=https://<panel-host>:9090   # Gateway WebSocket endpoint (required)
-# TENODERA_AGENT_ACCEPT_INSECURE=1              # Allow self-signed TLS (dev only)
+# Panel URL (required). Default deployment fronts the gateway with a reverse proxy
+# on :443, so use https://<panel-host> . If the gateway is exposed directly, use
+# http://<host>:9090 or https://<host>:9090 . http:// → ws:// ; https:// → wss:// .
+TENODERA_GATEWAY_URL=https://<panel-host>
+# TENODERA_AGENT_ACCEPT_INSECURE=1   # accept a self-signed cert (skips verification)
+
+# Optional bootstrap token to auto-enroll (skip pending approval). The agent
+# removes this line automatically after its first successful enrollment.
+# TENODERA_BOOTSTRAP_TOKEN=<token>
+
+# Optional: pin the expected gateway id to verify it on first connect (closes the
+# TOFU window). Read it on the panel host: sudo cat /var/lib/tenodera-gw/gateway-id
+# TENODERA_GATEWAY_ID=<gateway-id>
 
 # Optional: one or more roles for this host (comma or space separated).
 # Roles group hosts in the Management page of the panel.

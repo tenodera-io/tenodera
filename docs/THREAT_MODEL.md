@@ -19,7 +19,7 @@ Three components:
 
 | Component | Runs on | Privilege | Network |
 |-----------|---------|-----------|---------|
-| **Gateway** (`panel/crates/gateway`) | panel host | starts as root, drops to `tenodera-gw` | listens on `:9090` (inbound, browser-facing) |
+| **Gateway** (`panel/crates/gateway`) | panel host | starts as root, drops to `tenodera-gw` | listens on `127.0.0.1:9090` by default; a reverse proxy (Caddy) fronts it for browsers/agents over HTTPS |
 | **Agent** (`agent/`) | every managed host | runs as root under systemd | **outbound only** — dials the gateway, no listener |
 | **UI** (`panel/ui`) | browser | none | talks to gateway over HTTP(S)/WS(S) |
 
@@ -210,7 +210,8 @@ We reduce, but do not remove, this risk:
   *already-enrolled* agent.
 
 The correct operational posture is to treat the panel host as a
-security-critical asset: isolate it, enable TLS, restrict who can reach `:9090`,
+security-critical asset: isolate it, terminate TLS (reverse proxy or the gateway
+itself), restrict who can reach the panel,
 and monitor the audit log.
 
 ---

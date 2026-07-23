@@ -76,7 +76,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 | CPU | x86_64 / amd64, or arm64 / aarch64 (packages built for both) |
 | RAM | 512 MB minimum (1 GB recommended during build) |
 | Disk | ~500 MB for build toolchain + binaries |
-| Network | Port 9090 accessible from browsers and managed hosts |
+| Network | Browsers and managed hosts reach the panel over HTTPS (443 via the reverse proxy by default); the gateway itself listens on loopback `127.0.0.1:9090` |
 | Build deps | Rust (installed automatically), Node.js ≥ 18 (installed automatically), gcc, pkg-config, libssl-dev, libpam0g-dev, libclang-dev |
 
 ### Managed hosts (agent only)
@@ -86,7 +86,7 @@ Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote 
 | OS | Linux (any distribution with systemd) |
 | CPU | x86_64 / amd64, or arm64 / aarch64 (packages built for both) |
 | RAM | ~20 MB for agent process |
-| Network | Outbound TCP to panel host port 9090 |
+| Network | Outbound TCP to the panel — 443 by default (through the reverse proxy), or the gateway's own port if it is exposed directly. No inbound ports on the managed host. |
 | Build deps | Rust, gcc, pkg-config (installed automatically by agent installer) |
 
 ---
@@ -126,14 +126,16 @@ and log in with any PAM system user.
 
 ### 3.2 Agent (managed hosts)
 
-Run on each host you want to manage:
+Run on each host you want to manage. Agents connect **through the panel's reverse
+proxy over HTTPS**; `--insecure` accepts the installer's default self-signed
+certificate — **drop it** once the panel uses a real cert/domain:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway https://<panel-host> --insecure
 ```
 
-Replace `<panel-host>` with the panel IP or hostname.
+Replace `<panel-host>` with the panel IP or hostname (or your domain).
 
 The agent connects outbound to the gateway on first start. Because the agent's key is unknown to the gateway, the host enters the **pending** state. Approve it in the panel under **Hosts → Pending** — the connection is then promoted to a fully enrolled host and the key is saved for future reconnects.
 
@@ -141,7 +143,7 @@ The agent connects outbound to the gateway on first start. Because the agent's k
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090 --token <bootstrap-token>
+  | sudo bash -s -- --gateway https://<panel-host> --insecure --token <bootstrap-token>
 ```
 
 The panel provides a ready-to-use install command with the gateway URL and token pre-filled — copy it from **Hosts → Tokens → Install command**.
@@ -258,7 +260,17 @@ RUST_LOG=tenodera_gateway=info   # Log filter: error | warn | info | debug | tra
 
 ### 4.2 TLS setup
 
-The gateway requires TLS by default and refuses to start without a certificate unless `TENODERA_ALLOW_UNENCRYPTED=1` is set.
+There are two ways to serve the panel over HTTPS:
+
+- **A reverse proxy in front — the default (§4.3).** The source installer sets up
+  Caddy; the gateway stays on loopback HTTP and the proxy terminates TLS. Nothing
+  to configure in this section — skip to §4.3.
+- **The gateway terminates TLS itself (this section).** Use this if you don't want
+  a proxy. It requires exposing the gateway on the network
+  (`TENODERA_BIND_ADDR=0.0.0.0`), so browsers and agents reach it directly at
+  `https://<host>:9090`.
+
+The gateway requires TLS by default and refuses to start without a certificate unless `TENODERA_ALLOW_UNENCRYPTED=1` is set. (When it terminates TLS itself, remember to set `TENODERA_BIND_ADDR=0.0.0.0` so it is reachable off the host.)
 
 #### Self-signed certificate (development / testing)
 
@@ -340,25 +352,59 @@ sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/tenodera.sh
 
 ### 4.3 Reverse proxy (nginx / Caddy)
 
-When running behind a reverse proxy, the proxy terminates TLS and the gateway
-should speak plain HTTP **only on loopback** so the unencrypted backend is not
-reachable directly. Set this in `tenodera.cnf`:
+The gateway binds `127.0.0.1` by default (plain HTTP on loopback), and the
+**source/curl installer installs the latest [Caddy](https://caddyserver.com) and
+writes `/etc/caddy/Caddyfile`** so the panel is served over **HTTPS on the
+network** while the backend stays private. Out of the box Caddy uses its internal
+CA on the host's IP, so a browser warns about an untrusted certificate — expected
+on a LAN; click through. The generated file:
 
-```bash
-TENODERA_BIND_ADDR=127.0.0.1      # bind to loopback only — NOT 0.0.0.0
-TENODERA_BIND_PORT=9090
-TENODERA_ALLOW_UNENCRYPTED=1       # the proxy provides TLS
-TENODERA_EXTERNAL_URL=https://panel.example.com   # correct agent install commands
+```
+<host-ip> {
+    tls internal
+    reverse_proxy 127.0.0.1:9090
+}
 ```
 
-> ⚠️ **Do not leave `TENODERA_BIND_ADDR=0.0.0.0` with `TENODERA_ALLOW_UNENCRYPTED=1`.**
-> The package installer ships `0.0.0.0` by default (see §3.1), so if you only add
-> the reverse proxy without changing the bind address, the plain-HTTP backend
-> stays reachable on `http://<host>:9090` on every interface — bypassing TLS,
-> the proxy's access control, and its logging. Bind to `127.0.0.1` **and** block
-> port 9090 at the firewall for good measure.
+**Use your own domain + certificate.** Edit `/etc/caddy/Caddyfile`, then
+`sudo systemctl reload caddy`. With a domain that resolves to the host and ports
+80/443 reachable, Caddy fetches and renews a **Let's Encrypt** certificate
+automatically — nothing else to configure:
 
-**nginx example:**
+```
+panel.example.com {
+    reverse_proxy 127.0.0.1:9090
+}
+```
+
+To bring **your own certificate** instead of Let's Encrypt, add a `tls` line with
+your cert and key (PEM; the cert should be the fullchain). This is also how you
+use an internal / company CA:
+
+```
+panel.example.com {
+    tls /etc/caddy/certs/panel.crt /etc/caddy/certs/panel.key
+    reverse_proxy 127.0.0.1:9090
+}
+```
+
+Then set, so the panel shows the right agent-install commands:
+
+```bash
+# in /etc/tenodera/tenodera.cnf
+TENODERA_EXTERNAL_URL=https://panel.example.com
+```
+
+> `.deb`/`.rpm` installs don't pull Caddy in automatically — install it the same
+> way (see [caddyserver.com/docs/install](https://caddyserver.com/docs/install))
+> and drop the `Caddyfile` shown above into `/etc/caddy/Caddyfile`.
+
+> ⚠️ The gateway binds `127.0.0.1`, so the plain-HTTP backend is reachable only via
+> the proxy. If you set `TENODERA_BIND_ADDR=0.0.0.0`, **first** enable TLS and
+> remove `TENODERA_ALLOW_UNENCRYPTED=1` (or block port 9090 at the firewall), or
+> you serve the unencrypted panel on every interface.
+
+**Prefer nginx?** Point it at the loopback backend:
 
 ```nginx
 server {
@@ -380,16 +426,6 @@ server {
 }
 ```
 
-**Caddy example:**
-
-```
-panel.example.com {
-    reverse_proxy localhost:9090 {
-        header_up Host {host}
-    }
-}
-```
-
 ---
 
 ## 5. Agent Configuration
@@ -399,24 +435,25 @@ panel.example.com {
 The agent reads `/etc/tenodera/agent.cnf` at startup (if environment variables are not already set by systemd).
 
 ```bash
-# Gateway WebSocket endpoint
-# http://  → plain WebSocket (ws://)
-# https:// → encrypted WebSocket (wss://)
-TENODERA_GATEWAY_URL=http://<panel-host>:9090
+# Gateway URL. Default deployment: the panel is behind a reverse proxy on :443,
+# so use https://<panel-host> (no port). If the gateway is exposed directly
+# (no proxy), use http://<host>:9090 or https://<host>:9090 instead.
+# http:// → plain WebSocket (ws://) ; https:// → encrypted (wss://)
+TENODERA_GATEWAY_URL=https://<panel-host>
 
 # Optional bootstrap token — skip pending-state approval on first connect.
 # Generate one in the panel under Hosts → Tokens.
 # Written automatically by tenodera-agent.sh --token <value>.
 # TENODERA_BOOTSTRAP_TOKEN=<token>
 #
-# ⚠️ The token is a BEARER SECRET and is NOT removed from agent.cnf after
-# enrollment — it stays in this file. It is only needed once (the agent's
-# Ed25519 key is pinned on first connect), so:
-#   • Prefer single-use, short-TTL, hostname-bound tokens (Hosts → Tokens) —
-#     then a leftover token here is already spent and useless.
-#   • You may delete this line after the host is enrolled and shows as online.
-#   • Never reuse one long-lived multi-use token across many hosts and leave it
-#     sitting in every /etc/tenodera/agent.cnf.
+# ⚠️ The token is a BEARER SECRET. The agent removes this line automatically on
+# its first successful enrollment (its Ed25519 key is pinned on first connect, so
+# the token is never needed again), so a leftover token is not left on an enrolled
+# host. It is still exposed before that first connect — in the installer command
+# and in this file — so:
+#   • Prefer single-use, short-TTL, hostname-bound tokens (Hosts → Tokens).
+#   • Revoke it after use; never reuse one long-lived multi-use token across many
+#     hosts.
 
 # Skip TLS certificate verification.
 # Uncomment ONLY when using https:// with a self-signed certificate.
@@ -441,8 +478,9 @@ HTTPS/WSS is controlled by the URL scheme in `TENODERA_GATEWAY_URL`, not by `TEN
 
 | Scenario | Config |
 |----------|--------|
-| Plain HTTP (default) | `TENODERA_GATEWAY_URL=http://...` |
-| HTTPS with CA-signed cert | `TENODERA_GATEWAY_URL=https://...` |
+| Behind a reverse proxy (default) | `TENODERA_GATEWAY_URL=https://<panel-host>` (add `TENODERA_AGENT_ACCEPT_INSECURE=1` if the proxy uses a self-signed cert) |
+| Plain HTTP — gateway exposed directly | `TENODERA_GATEWAY_URL=http://<host>:9090` |
+| HTTPS with a CA-signed cert on the gateway | `TENODERA_GATEWAY_URL=https://<host>:9090` |
 | HTTPS with self-signed cert — skip verify | `TENODERA_GATEWAY_URL=https://...` + `TENODERA_AGENT_ACCEPT_INSECURE=1` |
 | HTTPS with self-signed cert — CA store | Add cert to OS trust store (see §4.2), then `TENODERA_GATEWAY_URL=https://...` |
 
@@ -506,7 +544,7 @@ Run on the managed host:
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway http://<panel-host>:9090
+  | sudo bash -s -- --gateway https://<panel-host> --insecure
 ```
 
 The agent generates an Ed25519 key on first start and connects to the gateway. Because the key is not yet known, the host enters the **pending** state — visible under **Hosts → Pending**. Click **Approve** to enroll the host; the key is saved and future reconnects are authenticated automatically (TOFU — Trust on First Use).
@@ -1564,7 +1602,7 @@ journalctl -u tenodera-agent -e
 
 Common causes:
 - **Wrong gateway URL** — check `TENODERA_GATEWAY_URL` in `/etc/tenodera/agent.cnf`
-- **Firewall blocking port 9090** — the managed host must be able to reach the panel host on port 9090 (outbound TCP)
+- **Firewall blocking the panel port** — the managed host must be able to reach the panel (outbound TCP): port **443** when it is behind the reverse proxy (the default), or the gateway's own port if exposed directly
 - **TLS cert verification failing** — if the panel uses a self-signed cert, set `TENODERA_AGENT_ACCEPT_INSECURE=1` in `agent.cnf`
 
 After editing `agent.cnf`, always restart:
