@@ -122,8 +122,23 @@ async fn run_session(
         }
         Some(_) => {}
         None => {
+            // First connection. If the operator pinned the expected gateway id
+            // out-of-band (TENODERA_GATEWAY_ID), verify it before trusting — this
+            // closes the trust-on-first-use MITM window. Without it we fall back to
+            // plain TOFU: pin whatever answers first.
+            if let Some(expected) = &config.expected_gateway_id
+                && expected != &gateway_id
+            {
+                anyhow::bail!(
+                    "gateway_id {gateway_id} does not match the configured TENODERA_GATEWAY_ID {expected} — refusing first-connect enrollment (possible MITM)"
+                );
+            }
             identity.save_gateway_id(&gateway_id)?;
-            tracing::info!(%gateway_id, "gateway_id pinned (first enrollment)");
+            if config.expected_gateway_id.is_some() {
+                tracing::info!(%gateway_id, "gateway_id pinned (verified against TENODERA_GATEWAY_ID)");
+            } else {
+                tracing::info!(%gateway_id, "gateway_id pinned (first enrollment, TOFU)");
+            }
         }
     }
 

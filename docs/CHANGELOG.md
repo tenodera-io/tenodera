@@ -10,6 +10,13 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Security
+- **Optional gateway-id pinning closes the first-connect (TOFU) window.** Set
+  `TENODERA_GATEWAY_ID` in the agent config to the gateway's id (read it on the
+  panel host from `/var/lib/tenodera-gw/gateway-id`) and the agent verifies the
+  gateway presents that id before trusting it on first connect — refusing a
+  mismatch as a possible MITM instead of pinning whatever answers first. Without
+  it, behaviour is unchanged (plain trust-on-first-use). The commented option is
+  shipped in the agent config template (deb/rpm/source installer).
 - **Releases ship a signed SBOM.** Every release now includes a CycloneDX
   software bill of materials (`tenodera-sbom.cdx.json`) enumerating every Rust and
   npm dependency, generated from source in CI and **checksummed + signed** in the

@@ -224,10 +224,14 @@ These are real and not yet closed. Listing them is the point of this document.
   (`SHA256SUMS` + minisign — see SECURITY.md), and every release now ships a
   **CycloneDX SBOM** of its dependencies (checksummed and signed with the rest);
   **reproducible builds** are still on the roadmap (see the supply-chain item below).
-- **First-connection trust (TOFU).** The agent pins the gateway on first
-  contact. An active MITM present at that exact first connection could pin
-  itself. Mitigate by performing first enrollment over a trusted network and/or
-  using bootstrap tokens delivered out-of-band.
+- **First-connection trust (TOFU) — now closable.** The agent pins the gateway's
+  id on first contact; an active MITM present at that exact first connection could
+  otherwise pin itself. To close the window, set **`TENODERA_GATEWAY_ID`** in the
+  agent's config to the gateway's id (read it on the panel host from
+  `/var/lib/tenodera-gw/gateway-id`) — the agent verifies the presented id against
+  it before trusting, and **refuses a mismatch as a possible MITM** instead of
+  pinning. Without it the agent falls back to plain TOFU; either way, prefer first
+  enrollment over a trusted network and/or out-of-band bootstrap tokens.
 - **Host enrollment is authorised by the admin role, not per-host sudo.** Every
   action *on* a managed host — writes and reads alike, now including SSH access
   management and the Security page (fail2ban/SELinux/AppArmor) — runs as the

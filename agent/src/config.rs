@@ -5,6 +5,11 @@ pub struct AgentConfig {
     /// Bootstrap enrollment token (TENODERA_BOOTSTRAP_TOKEN).
     /// Required for first-time enrollment; absent for already-enrolled agents.
     pub bootstrap_token: Option<String>,
+    /// Expected gateway id, pinned out-of-band (TENODERA_GATEWAY_ID). When set,
+    /// the agent verifies the gateway presents this id on first connect before
+    /// trusting it — closing the trust-on-first-use MITM window. Absent = plain
+    /// TOFU (pin whatever answers first).
+    pub expected_gateway_id: Option<String>,
 }
 
 impl AgentConfig {
@@ -25,10 +30,15 @@ impl AgentConfig {
             .ok()
             .filter(|s| !s.is_empty());
 
+        let expected_gateway_id = std::env::var("TENODERA_GATEWAY_ID")
+            .ok()
+            .filter(|s| !s.is_empty());
+
         Ok(Self {
             gateway_url,
             accept_insecure,
             bootstrap_token,
+            expected_gateway_id,
         })
     }
 
@@ -116,6 +126,7 @@ mod tests {
             gateway_url: url.to_string(),
             accept_insecure: false,
             bootstrap_token: None,
+            expected_gateway_id: None,
         }
     }
 
