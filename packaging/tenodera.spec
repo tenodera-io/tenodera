@@ -24,6 +24,9 @@ exit 0
 install -D -m 755 %{_sourcedir}/tenodera-gateway %{buildroot}%{_bindir}/tenodera-gateway
 install -D -m 4750 %{_sourcedir}/tenodera-pam-helper %{buildroot}%{_bindir}/tenodera-pam-helper
 install -D -m 644 %{_sourcedir}/tenodera.service %{buildroot}%{_unitdir}/tenodera.service
+# One-shot Caddy reverse-proxy setup (installs Caddy + Caddyfile post-install).
+install -D -m 755 %{_sourcedir}/tenodera-setup-caddy.sh %{buildroot}%{_bindir}/tenodera-setup-caddy
+install -D -m 644 %{_sourcedir}/tenodera-caddy-setup.service %{buildroot}%{_unitdir}/tenodera-caddy-setup.service
 install -D -m 644 %{_sourcedir}/tenodera.logrotate %{buildroot}%{_sysconfdir}/logrotate.d/tenodera
 install -D -m 644 %{_sourcedir}/tenodera.pam %{buildroot}%{_sysconfdir}/pam.d/tenodera
 # UI assets
@@ -58,10 +61,11 @@ chmod 622 /var/log/tenodera_audit.log
 if [ ! -f %{_sysconfdir}/tenodera/tenodera.cnf ]; then
     cat > %{_sysconfdir}/tenodera/tenodera.cnf <<'CFG'
 # Tenodera Panel Configuration
-# Bound to loopback by default — the panel is reachable only from this host.
-# Reach it with an SSH tunnel:  ssh -L 9090:127.0.0.1:9090 <host>  then open
-# http://localhost:9090 . To expose it on the network, enable TLS below (or put a
-# reverse proxy in front) and change this to 0.0.0.0.
+# Bound to loopback by default — the gateway is reachable only from this host.
+# The installer fronts it with a Caddy HTTPS reverse proxy (see DOCS 4.3), so the
+# panel is served on the network at https://<host> while this stays on 127.0.0.1.
+# Without a proxy, reach it via SSH tunnel (ssh -L 9090:127.0.0.1:9090 <host>);
+# only set 0.0.0.0 here if you enable TLS below and serve it directly.
 TENODERA_BIND_ADDR=127.0.0.1
 TENODERA_BIND_PORT=9090
 TENODERA_AGENT_BIN=/usr/bin/tenodera-agent
@@ -91,10 +95,20 @@ if [ -d /run/systemd/system ]; then
     # package leaves it untouched, so enable and start it from here.
     systemctl enable tenodera-agent.service || :
     systemctl restart tenodera-agent.service || :
+    # Install Caddy + a basic Caddyfile after this transaction releases the rpm
+    # lock (a scriptlet can't install packages itself). Runs async and disables
+    # itself on success; safe to re-run with `systemctl start tenodera-caddy-setup`.
+    systemctl enable tenodera-caddy-setup.service || :
+    systemctl start --no-block tenodera-caddy-setup.service || :
 fi
 
 %preun
 %systemd_preun tenodera.service
+if [ "$1" = 0 ] && [ -d /run/systemd/system ]; then
+    # Full uninstall: drop the one-shot Caddy-setup unit's enablement (Caddy and
+    # any Caddyfile are left in place — they are the operator's proxy).
+    systemctl disable tenodera-caddy-setup.service || :
+fi
 
 %postun
 # Plain postun (daemon-reload); the post scriptlet already restarts on upgrade,
@@ -108,7 +122,9 @@ fi
 # the group exists (declaring the group as an owner here would add an
 # install-time Requires on the group, which is only created later).
 %{_bindir}/tenodera-pam-helper
+%{_bindir}/tenodera-setup-caddy
 %{_unitdir}/tenodera.service
+%{_unitdir}/tenodera-caddy-setup.service
 %{_sysconfdir}/logrotate.d/tenodera
 %{_sysconfdir}/pam.d/tenodera
 %{_datadir}/tenodera/ui/

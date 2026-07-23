@@ -30,10 +30,11 @@ chmod 622 /var/log/tenodera_audit.log
 if [ ! -f "$CONFDIR/tenodera.cnf" ]; then
     cat > "$CONFDIR/tenodera.cnf" <<'CFG'
 # Tenodera Panel Configuration
-# Bound to loopback by default — the panel is reachable only from this host.
-# Reach it with an SSH tunnel:  ssh -L 9090:127.0.0.1:9090 <host>  then open
-# http://localhost:9090 . To expose it on the network, enable TLS below (or put a
-# reverse proxy in front) and change this to 0.0.0.0.
+# Bound to loopback by default — the gateway is reachable only from this host.
+# The installer fronts it with a Caddy HTTPS reverse proxy (see DOCS 4.3), so the
+# panel is served on the network at https://<host> while this stays on 127.0.0.1.
+# Without a proxy, reach it via SSH tunnel (ssh -L 9090:127.0.0.1:9090 <host>);
+# only set 0.0.0.0 here if you enable TLS below and serve it directly.
 TENODERA_BIND_ADDR=127.0.0.1
 TENODERA_BIND_PORT=9090
 TENODERA_AGENT_BIN=/usr/bin/tenodera-agent
@@ -63,6 +64,11 @@ if [ -d /run/systemd/system ]; then
     # so enable and start it here (the agent package leaves it untouched).
     systemctl enable tenodera-agent.service || true
     systemctl restart tenodera-agent.service || true
+    # Install Caddy + a basic Caddyfile once this dpkg transaction releases its
+    # lock (a maintainer script can't install packages itself). Runs async and
+    # disables itself on success; re-run with `systemctl start tenodera-caddy-setup`.
+    systemctl enable tenodera-caddy-setup.service || true
+    systemctl start --no-block tenodera-caddy-setup.service || true
 fi
 
 exit 0
