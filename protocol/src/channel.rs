@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 /// Maximum length of a channel identifier (bytes).
 /// Extended to 128 to accommodate gateway-side session prefixes
 /// (8 hex chars + separator) prepended to remote agent channel IDs.
-const MAX_CHANNEL_ID_LEN: usize = 128;
+///
+/// Public so the gateway can reserve room for that prefix when accepting a
+/// client-supplied id — otherwise the prefixed id it forwards would exceed the
+/// limit and be rejected by the agent's own deserialization.
+pub const MAX_CHANNEL_ID_LEN: usize = 128;
 
 /// Unique channel identifier within a session.
 ///

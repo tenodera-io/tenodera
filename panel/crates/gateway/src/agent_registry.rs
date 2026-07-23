@@ -9,7 +9,7 @@ use tenodera_protocol::message::Message;
 
 use crate::agent_auth::AuthenticatedAgent;
 
-const SESSION_PREFIX_LEN: usize = 8;
+pub const SESSION_PREFIX_LEN: usize = 8;
 
 /// One entry per connected agent host.
 struct AgentConn {

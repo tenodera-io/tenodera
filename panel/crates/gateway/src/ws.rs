@@ -248,6 +248,23 @@ async fn handle_socket(state: Arc<AppState>, socket: WebSocket) {
                                     continue;
                                 }
 
+                                // The id is forwarded to remote agents with a session
+                                // prefix (`<8 hex>-`) prepended. Reserve room for it here,
+                                // or the prefixed id would exceed the protocol's limit and
+                                // the agent would reject the frame outright.
+                                if channel.as_str().len()
+                                    > tenodera_protocol::channel::MAX_CHANNEL_ID_LEN
+                                        - (crate::agent_registry::SESSION_PREFIX_LEN + 1)
+                                {
+                                    let close = message::Message::Close {
+                                        channel: channel.clone(),
+                                        problem: Some("channel-id-too-long".into()),
+                                    };
+                                    let mut s = sink.lock().await;
+                                    let _ = s.send(Message::Text(serde_json::to_string(&close).unwrap().into())).await;
+                                    continue;
+                                }
+
                                 // Reject a re-used channel id instead of overwriting the
                                 // existing route (which would orphan the old task, leak its
                                 // sender, and interleave data on one id).

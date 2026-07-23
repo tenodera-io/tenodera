@@ -10,6 +10,23 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Security
+- **Enrollment and protocol-boundary hardening** (external audit P1/P2):
+  - **Bootstrap tokens are no longer held in plaintext.** The registry stores only
+    a SHA-256 digest of each token; the value is returned once at creation and
+    never retained, so a memory disclosure of the gateway can't hand out live
+    enrollment credentials. Presented tokens are hashed and compared in constant
+    time as before.
+  - **Per-source cap on the pending queue.** A single address can now hold at most
+    `MAX_PENDING_PER_IP` (5) pending entries, so one host can no longer fill the
+    100-entry queue with freshly generated keys and crowd out real enrollments.
+  - **Over-long channel ids are rejected at the gateway.** The gateway prefixes
+    client channel ids with a session prefix before forwarding them to remote
+    agents; an id at the protocol's 128-byte maximum became 137 bytes once
+    prefixed and was then rejected by the agent's own deserialization. The gateway
+    now reserves room for the prefix and closes such a channel with
+    `channel-id-too-long` instead of emitting a frame the agent must reject.
+
+### Security
 - **Every command the agent spawns is now bounded and runs in a clean
   environment** (external audit P1). The agent runs as root, so an unbounded or
   environment-influenced child could hang it, exhaust its memory, or be steered

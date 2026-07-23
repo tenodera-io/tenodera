@@ -18,6 +18,16 @@ pub const CHALLENGE_DEADLINE: Duration = Duration::from_secs(10);
 /// Max time an agent may wait for admin approval while in the pending state.
 pub const PENDING_TIMEOUT: Duration = Duration::from_secs(86_400);
 pub const MAX_PENDING: usize = 100;
+/// Cap on pending entries from any single source address.
+///
+/// The global cap alone lets one host fill the whole queue with generated keys and
+/// crowd out real enrollments; this bounds each source so the queue stays usable.
+pub const MAX_PENDING_PER_IP: usize = 5;
+
+/// SHA-256 of a bootstrap token's plaintext value, used for storage and lookup.
+fn token_digest(value: &str) -> [u8; 32] {
+    Sha256::digest(value.as_bytes()).into()
+}
 
 // ── AuthenticatedAgent newtype ────────────────────────────────────────────────
 
@@ -116,8 +126,13 @@ pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
 
 pub struct BootstrapToken {
     pub id: String,
-    /// Secret value agents present in Hello.bootstrap_token.
-    pub value: String,
+    /// SHA-256 of the secret value agents present in `Hello.bootstrap_token`.
+    ///
+    /// The plaintext is returned once at creation (so the UI can show it) and
+    /// never stored: a memory disclosure of the gateway must not hand out live
+    /// enrollment credentials. Presented values are hashed and compared in
+    /// constant time.
+    pub value_digest: [u8; 32],
     pub single_use: bool,
     pub use_count: u32,
     pub max_uses: Option<u32>,
@@ -186,7 +201,7 @@ impl BootstrapRegistry {
 
         let token = BootstrapToken {
             id: id.clone(),
-            value: value.clone(),
+            value_digest: token_digest(&value),
             single_use,
             use_count: 0,
             max_uses,
@@ -202,10 +217,11 @@ impl BootstrapRegistry {
     /// Check if a token value is valid for the given hostname; consume it if single-use.
     /// Returns the token's `re_enroll` flag if valid.
     pub async fn validate_and_consume(&self, token_value: &str, hostname: &str) -> Option<bool> {
+        let presented = token_digest(token_value);
         let mut guard = self.inner.write().await;
         let entry = guard
             .values_mut()
-            .find(|t| constant_time_eq(t.value.as_bytes(), token_value.as_bytes()))?;
+            .find(|t| constant_time_eq(&t.value_digest, &presented))?;
 
         if !entry.is_valid_for(hostname) {
             return None;
@@ -292,7 +308,19 @@ impl PendingRegistry {
         approve_tx: oneshot::Sender<HostEntry>,
     ) -> bool {
         let mut guard = self.inner.write().await;
-        if guard.len() >= MAX_PENDING && !guard.contains_key(&pubkey_b64) {
+        let is_new = !guard.contains_key(&pubkey_b64);
+        if guard.len() >= MAX_PENDING && is_new {
+            return false;
+        }
+        // Per-source cap: one address must not be able to crowd real enrollments
+        // out of the queue by presenting freshly generated keys.
+        if is_new
+            && guard.values().filter(|e| e.remote_ip == remote_ip).count() >= MAX_PENDING_PER_IP
+        {
+            tracing::warn!(
+                %remote_ip, %hostname,
+                "pending queue: per-IP limit reached, rejecting enrollment attempt"
+            );
             return false;
         }
         let fingerprint_hex = pubkey_fingerprint_hex(&pubkey_b64);
@@ -394,6 +422,71 @@ impl PendingRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn bootstrap_token_validates_by_digest_not_stored_plaintext() {
+        let reg = BootstrapRegistry::new();
+        let (id, value) = reg
+            .create(Duration::from_secs(60), false, None, None, false)
+            .await;
+
+        // The plaintext is never retained — only its digest.
+        {
+            let guard = reg.inner.read().await;
+            let stored = guard.get(&id).expect("token stored");
+            assert_eq!(stored.value_digest, token_digest(&value));
+        }
+
+        assert_eq!(
+            reg.validate_and_consume("not-the-token", "host1").await,
+            None,
+            "a wrong value must not validate"
+        );
+        assert_eq!(
+            reg.validate_and_consume(&value, "host1").await,
+            Some(false),
+            "the issued value must still validate"
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_queue_caps_entries_per_source_ip() {
+        let reg = PendingRegistry::new();
+        let mut accepted = 0;
+        for i in 0..(MAX_PENDING_PER_IP + 3) {
+            let (tx, _rx) = oneshot::channel();
+            if reg
+                .insert(
+                    format!("pubkey-{i}"),
+                    format!("host{i}"),
+                    "203.0.113.7".to_string(),
+                    None,
+                    tx,
+                )
+                .await
+            {
+                accepted += 1;
+            }
+        }
+        assert_eq!(
+            accepted, MAX_PENDING_PER_IP,
+            "one source address must not exceed its per-IP cap"
+        );
+
+        // A different source is unaffected by the first one's cap.
+        let (tx, _rx) = oneshot::channel();
+        assert!(
+            reg.insert(
+                "pubkey-other".to_string(),
+                "other".to_string(),
+                "198.51.100.9".to_string(),
+                None,
+                tx,
+            )
+            .await
+        );
+    }
+
     use ed25519_dalek::{Signer, SigningKey};
     use tenodera_protocol::auth::build_challenge_payload;
 
