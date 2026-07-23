@@ -5,6 +5,7 @@ use std::time::Duration;
 use axum::{
     extract::ws::Message as WsMessage,
     extract::{ConnectInfo, State, WebSocketUpgrade, ws::WebSocket},
+    http::HeaderMap,
     response::IntoResponse,
 };
 use futures::{SinkExt, StreamExt};
@@ -20,17 +21,38 @@ use crate::agent_auth::{
 use crate::agent_registry::{self, AgentRegistry};
 use crate::hosts_config;
 
+/// Best-effort primary (outbound) IP of this host. Used to label the local agent,
+/// which connects over loopback so its socket peer is `127.0.0.1`. Uses the classic
+/// "connect a UDP socket to a public address and read the local address" trick — no
+/// packet is sent; it just resolves the source IP the routing table would pick.
+fn primary_ip() -> Option<std::net::IpAddr> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("1.1.1.1:80").ok()?;
+    sock.local_addr().ok().map(|a| a.ip())
+}
+
 /// GET /api/agent — WebSocket endpoint for agent connections.
 pub async fn agent_ws_upgrade(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     ws: WebSocketUpgrade,
 ) -> impl IntoResponse {
     let registry = state.agent_registry.clone();
     let pending_registry = state.pending_registry.clone();
     let bootstrap_registry = state.bootstrap_registry.clone();
     let gateway_id = state.gateway_id.clone();
-    let remote_ip = addr.ip().to_string();
+    // Behind the loopback reverse proxy the socket peer is 127.0.0.1; recover the
+    // agent's real IP from the proxy's X-Forwarded-For (trusted only from loopback).
+    // A still-loopback result means the local agent connected over loopback with no
+    // proxy — label it with the host's primary IP rather than 127.0.0.1.
+    let mut client_ip = crate::auth::real_client_ip(addr.ip(), &headers);
+    if client_ip.is_loopback()
+        && let Some(ip) = primary_ip()
+    {
+        client_ip = ip;
+    }
+    let remote_ip = client_ip.to_string();
     ws.on_upgrade(move |socket| {
         handle_agent_socket(
             registry,
