@@ -736,10 +736,15 @@ async fn hosts_list(
 ) -> Json<serde_json::Value> {
     let config = hosts_config::load().await;
     let online = state.agent_registry.online_host_ids().await;
-    // The local panel host connects over loopback, so its stored IP is a
-    // best-effort guess (default-route interface). Prefer the address the
-    // operator actually browsed to (Host header), which is unambiguous.
-    let browsed_ip = crate::auth::host_header_ip(&headers).map(|ip| ip.to_string());
+    // The local panel host connects over loopback, so its stored IP is loopback.
+    // For display, prefer the address the operator actually browsed to (Host
+    // header, unambiguous), then the host's primary outbound IP, and only then the
+    // stored value — so the UI never shows `127.0.0.1` for the panel host. (The
+    // stored value must stay loopback for the auto-enrollment decision — see
+    // `agent_ws`; this substitution is display-only.)
+    let browsed_ip = crate::auth::host_header_ip(&headers)
+        .map(|ip| ip.to_string())
+        .or_else(|| crate::agent_ws::primary_ip().map(|ip| ip.to_string()));
     let mut hosts = Vec::with_capacity(config.hosts.len());
     for h in &config.hosts {
         let is_online = online.contains(&h.id);
