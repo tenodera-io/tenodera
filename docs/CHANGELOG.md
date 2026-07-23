@@ -10,6 +10,23 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Fixed
+- **The Tokens tab's bootstrap-install instructions were misleading.** After
+  generating a token, the panel built the agent install command from the gateway's
+  *own* TLS state and the request host — so opening the panel over its internal
+  path (directly on `:9090`, or an SSH tunnel) produced `http://<host>:9090`, an
+  address a remote agent can never use. The command now reflects how agents really
+  connect: it prefers an operator-set `TENODERA_EXTERNAL_URL`, honours the reverse
+  proxy's `X-Forwarded-Proto`/host to show the panel's HTTPS address
+  (`https://<host>`, no port), and — when the panel was reached over an internal
+  path and can't tell its public address — shows an explicit `https://<panel-host>`
+  placeholder with a warning to set `TENODERA_EXTERNAL_URL`, never a wrong `:9090`
+  URL. `--insecure` / `TENODERA_AGENT_ACCEPT_INSECURE=1` are included for the
+  installer's self-signed default (the UI notes to drop them with a CA-signed
+  cert). The source one-liner now fetches `tenodera-agent.sh` from GitHub — the
+  panel never served that path, so the old `{panel}/tenodera-agent.sh` piped the
+  SPA's HTML into `bash`.
+
+### Fixed
 - **Agent installers steered remote hosts to the wrong gateway URL.** The default
   `agent.cnf` and the installer help suggested `http://panel:9090`, so operators
   pointing an agent at a remote panel kept the `:9090` and switched to `https` —

@@ -431,8 +431,12 @@ export function TokensTab() {
 
       {/* Newly created token */}
       {newToken && (() => {
-        const gwUrl = newToken.install_cmd.match(/--gateway (\S+)/)?.[1] ?? 'http://<panel-host>:9090';
-        const cnfBlock = `TENODERA_GATEWAY_URL=${gwUrl}\nTENODERA_BOOTSTRAP_TOKEN=${newToken.token}`;
+        const gwUrl = newToken.install_cmd.match(/--gateway (\S+)/)?.[1] ?? 'https://<panel-host>';
+        // Mirror the backend: it adds --insecure only for the self-signed default.
+        const insecure = / --insecure(\s|$)/.test(newToken.install_cmd);
+        // Backend couldn't determine the panel's public address (opened via loopback/:9090).
+        const needsEdit = gwUrl.includes('<panel-host>');
+        const cnfBlock = `TENODERA_GATEWAY_URL=${gwUrl}\n${insecure ? 'TENODERA_AGENT_ACCEPT_INSECURE=1\n' : ''}TENODERA_BOOTSTRAP_TOKEN=${newToken.token}`;
         const snippet: React.CSSProperties = { fontFamily: 'monospace', fontSize: '0.72rem', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-2)', background: 'var(--bg-panel)', border: '1px solid var(--border)', borderRadius: 4, padding: '0.4rem 0.55rem', margin: 0 };
         const label: React.CSSProperties = { fontSize: '0.78rem', fontWeight: 600, color: 'var(--text-1)', margin: '0.1rem 0 0.25rem' };
         return (
@@ -457,6 +461,19 @@ export function TokensTab() {
                 {copiedKey === 'cnf' ? '✓' : 'Copy config'}
               </button>
             </div>
+            {needsEdit ? (
+              <div style={{ fontSize: '0.72rem', color: 'var(--c-amber, #f59e0b)', marginTop: '0.3rem' }}>
+                ⚠ Replace <code>&lt;panel-host&gt;</code> with the panel's public HTTPS address (its reverse
+                proxy). You opened the panel over an internal path (loopback or <code>:9090</code>), so it
+                can't tell its external address — set <code>TENODERA_EXTERNAL_URL</code> in <code>tenodera.cnf</code>
+                to fix this for good. Agents connect through the proxy — never <code>:9090</code>.
+              </div>
+            ) : insecure ? (
+              <div style={{ fontSize: '0.72rem', color: 'var(--text-2)', marginTop: '0.3rem' }}>
+                <code>TENODERA_AGENT_ACCEPT_INSECURE</code> (and <code>--insecure</code> below) accept the
+                installer's default self-signed certificate — drop them once the panel uses a CA-signed cert.
+              </div>
+            ) : null}
           </div>
 
           {/* One-line source install */}

@@ -364,6 +364,10 @@ fn default_true() -> bool {
     true
 }
 
+/// Canonical location of the source agent installer (the panel does not serve it).
+const AGENT_INSTALLER_URL: &str =
+    "https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh";
+
 async fn token_create(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -403,25 +407,69 @@ async fn token_create(
         )
         .await;
 
+    // Build the agent-facing gateway URL for the install instructions.
+    //
+    // A remote agent reaches the panel only through its public entry point — the
+    // reverse proxy on HTTPS. The gateway's own loopback bind and internal plain
+    // port (:9090) are NOT reachable by remote agents, so the instructions must
+    // never show them, even when the admin opened the panel that way (directly on
+    // :9090, or over an SSH tunnel). Precedence: an operator-set TENODERA_EXTERNAL_URL
+    // wins; otherwise trust a proxied request's host; otherwise emit a placeholder.
     let tls_active = state.config.tls_cert.is_some() && state.config.tls_key.is_some();
-    let scheme = if tls_active { "https" } else { "http" };
-    let gateway_url = state.config.external_url.clone().unwrap_or_else(|| {
-        // Prefer the Host header (reflects actual hostname/port the client used)
-        // over bind_addr which may be 0.0.0.0.
-        let host = headers
-            .get("host")
-            .and_then(|v| v.to_str().ok())
-            .map(|h| h.to_string())
-            .unwrap_or_else(|| state.config.bind_addr.to_string());
-        format!("{scheme}://{host}")
-    });
+    let fwd_proto = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.split(',').next())
+        .map(|s| s.trim().to_ascii_lowercase());
+    let scheme = fwd_proto
+        .as_deref()
+        .unwrap_or(if tls_active { "https" } else { "http" });
+
+    let host_hdr = headers
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    // Split host/port (best-effort; ignores the IPv6-literal-with-port corner case).
+    let (host_only, host_port) = match host_hdr.rsplit_once(':') {
+        Some((h, p)) if !h.is_empty() => (h, p.parse::<u16>().ok()),
+        _ => (host_hdr.as_str(), None),
+    };
+    let host_is_loopback = host_only.eq_ignore_ascii_case("localhost")
+        || host_only
+            .parse::<std::net::IpAddr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or(false);
+    // The request came in on the internal path (loopback, or the plain bind port)
+    // when the gateway isn't itself terminating TLS there — such an address is
+    // useless to a remote agent.
+    let via_internal = !tls_active
+        && (host_hdr.is_empty()
+            || host_is_loopback
+            || host_port == Some(state.config.bind_addr.port()));
+
+    let gateway_url = match &state.config.external_url {
+        Some(url) => url.clone(),
+        None if !via_internal => format!("{scheme}://{host_hdr}"),
+        None => "https://<panel-host>".to_string(),
+    };
+    let needs_edit = gateway_url.contains("<panel-host>");
+
+    // The source installer script is hosted on GitHub (the panel does not serve it),
+    // so `curl` it from there over a normal CA-verified TLS connection. Only the
+    // agent's *own* connection to the panel may hit the installer's self-signed
+    // default cert, so `--insecure` is added for an HTTPS panel URL; the UI notes it
+    // can be dropped with a CA-signed cert.
+    let https = gateway_url.starts_with("https://");
+    let insecure_flag = if https { " --insecure" } else { "" };
 
     Json(serde_json::json!({
         "id": id,
         "token": value,
         "ttl_secs": body.ttl_secs,
+        "needs_edit": needs_edit,
         "install_cmd": format!(
-            "curl -sSL {gateway_url}/tenodera-agent.sh | sudo bash -s -- --gateway {gateway_url} --token {value}"
+            "curl -sSL {AGENT_INSTALLER_URL} | sudo bash -s -- --gateway {gateway_url}{insecure_flag} --token {value}"
         ),
     }))
     .into_response()
