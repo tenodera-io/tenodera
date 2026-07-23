@@ -9,14 +9,7 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
-### Changed
-- **Command palette** now groups entries per page with thin dividers (a page and
-  its sub-tabs stay together) instead of one flat list — the grouping is derived
-  dynamically from each entry's route.
-- **Storage → Disk usage** is now offered only in Administrative mode. The scanner
-  walks the tree as root, so in Limited access the tab is hidden from the Storage
-  page, the sidebar, and the command palette (via a `superuser` flag on the nav
-  entry).
+## [0.2.13] - 2026-07-23
 
 ### Performance
 - **Lighter footprint for weak hardware (small vCenter VMs etc.).** The gateway now
@@ -32,6 +25,22 @@ Each tagged release also has auto-generated notes on the
   updates (and pair with the gzip/brotli compression above). The unused
   `metrics.stream` agent handler — a dead 1 s-default streaming channel no client
   ever opened — was removed.
+
+### Documentation
+- THREAT_MODEL: tightened the RBAC summary-table row — after the per-user
+  brokering below, the admin role is the boundary only for gateway
+  host-enrollment, not "a few root subsystems".
+
+## [0.2.12] - 2026-07-22
+
+### Changed
+- **Command palette** now groups entries per page with thin dividers (a page and
+  its sub-tabs stay together) instead of one flat list — the grouping is derived
+  dynamically from each entry's route.
+- **Storage → Disk usage** is now offered only in Administrative mode. The scanner
+  walks the tree as root, so in Limited access the tab is hidden from the Storage
+  page, the sidebar, and the command palette (via a `superuser` flag on the nav
+  entry).
 
 ### Security
 - **SSH access & Security-page actions are now brokered per-user.** The two
