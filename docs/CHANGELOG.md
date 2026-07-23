@@ -9,6 +9,17 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Added
+- **The source installer sets up an HTTPS reverse proxy (Caddy) automatically.**
+  `tenodera.sh` now installs the latest Caddy (from its official repo, apt/dnf/
+  pacman) and writes `/etc/caddy/Caddyfile`, so the panel is served over **HTTPS at
+  `https://<host>`** while the gateway stays on `127.0.0.1`. The default uses
+  Caddy's internal CA on the host IP (self-signed — accept the browser warning on a
+  LAN); swap in a domain for an automatic Let's Encrypt certificate, or a `tls`
+  line for your own cert. The source install's gateway now also binds `127.0.0.1`
+  by default (matching the package default). `.deb`/`.rpm` installs don't pull
+  Caddy in — install it the same way and drop in the same Caddyfile (DOCS §4.3).
+
 ### Security
 - **Package installs bind to loopback by default (secure default).** The `.deb`/
   `.rpm` installers now ship `TENODERA_BIND_ADDR=127.0.0.1` instead of `0.0.0.0`,

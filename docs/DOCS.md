@@ -340,25 +340,59 @@ sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/tenodera.sh
 
 ### 4.3 Reverse proxy (nginx / Caddy)
 
-When running behind a reverse proxy, the proxy terminates TLS and the gateway
-should speak plain HTTP **only on loopback** so the unencrypted backend is not
-reachable directly. Set this in `tenodera.cnf`:
+The gateway binds `127.0.0.1` by default (plain HTTP on loopback), and the
+**source/curl installer installs the latest [Caddy](https://caddyserver.com) and
+writes `/etc/caddy/Caddyfile`** so the panel is served over **HTTPS on the
+network** while the backend stays private. Out of the box Caddy uses its internal
+CA on the host's IP, so a browser warns about an untrusted certificate — expected
+on a LAN; click through. The generated file:
 
-```bash
-TENODERA_BIND_ADDR=127.0.0.1      # bind to loopback only — NOT 0.0.0.0
-TENODERA_BIND_PORT=9090
-TENODERA_ALLOW_UNENCRYPTED=1       # the proxy provides TLS
-TENODERA_EXTERNAL_URL=https://panel.example.com   # correct agent install commands
+```
+<host-ip> {
+    tls internal
+    reverse_proxy 127.0.0.1:9090
+}
 ```
 
-> ⚠️ **Do not leave `TENODERA_BIND_ADDR=0.0.0.0` with `TENODERA_ALLOW_UNENCRYPTED=1`.**
-> The package installer ships `0.0.0.0` by default (see §3.1), so if you only add
-> the reverse proxy without changing the bind address, the plain-HTTP backend
-> stays reachable on `http://<host>:9090` on every interface — bypassing TLS,
-> the proxy's access control, and its logging. Bind to `127.0.0.1` **and** block
-> port 9090 at the firewall for good measure.
+**Use your own domain + certificate.** Edit `/etc/caddy/Caddyfile`, then
+`sudo systemctl reload caddy`. With a domain that resolves to the host and ports
+80/443 reachable, Caddy fetches and renews a **Let's Encrypt** certificate
+automatically — nothing else to configure:
 
-**nginx example:**
+```
+panel.example.com {
+    reverse_proxy 127.0.0.1:9090
+}
+```
+
+To bring **your own certificate** instead of Let's Encrypt, add a `tls` line with
+your cert and key (PEM; the cert should be the fullchain). This is also how you
+use an internal / company CA:
+
+```
+panel.example.com {
+    tls /etc/caddy/certs/panel.crt /etc/caddy/certs/panel.key
+    reverse_proxy 127.0.0.1:9090
+}
+```
+
+Then set, so the panel shows the right agent-install commands:
+
+```bash
+# in /etc/tenodera/tenodera.cnf
+TENODERA_EXTERNAL_URL=https://panel.example.com
+```
+
+> `.deb`/`.rpm` installs don't pull Caddy in automatically — install it the same
+> way (see [caddyserver.com/docs/install](https://caddyserver.com/docs/install))
+> and drop the `Caddyfile` shown above into `/etc/caddy/Caddyfile`.
+
+> ⚠️ The gateway binds `127.0.0.1`, so the plain-HTTP backend is reachable only via
+> the proxy. If you set `TENODERA_BIND_ADDR=0.0.0.0`, **first** enable TLS and
+> remove `TENODERA_ALLOW_UNENCRYPTED=1` (or block port 9090 at the firewall), or
+> you serve the unencrypted panel on every interface.
+
+**Prefer nginx?** Point it at the loopback backend:
 
 ```nginx
 server {
@@ -376,16 +410,6 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_read_timeout 3600s;
-    }
-}
-```
-
-**Caddy example:**
-
-```
-panel.example.com {
-    reverse_proxy localhost:9090 {
-        header_up Host {host}
     }
 }
 ```

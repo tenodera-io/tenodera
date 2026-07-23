@@ -140,6 +140,10 @@ sha256sum --ignore-missing -c SHA256SUMS
 
 Prefer to build from source instead of installing a package? The curl installer
 pulls build dependencies, compiles (~3–4 min), and wires up the systemd services.
+It also **installs Caddy and generates `/etc/caddy/Caddyfile`**, so the panel is
+served over **HTTPS at `https://<host>`** (self-signed cert on a bare IP — accept
+the browser warning; swap in a domain + real cert in the Caddyfile — see
+[DOCS.md → Reverse proxy](docs/DOCS.md)) while the gateway stays on loopback.
 
 Panel host — installs and enrolls the local agent automatically:
 
