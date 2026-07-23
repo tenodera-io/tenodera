@@ -14,7 +14,7 @@
 #
 # The agent connects outbound to the gateway — no SSH keys, no inbound ports needed.
 # First connection: the host enters a pending state. An admin approves it in the panel
-# (Hosts → Pending). Or generate a bootstrap token in Hosts → Tokens to skip approval.
+# (Management → Pending). Or generate a bootstrap token in Management → Tokens to skip approval.
 
 set -euo pipefail
 
@@ -168,7 +168,7 @@ if [ -n "$BOOTSTRAP_TOKEN" ]; then
   TOKEN_LINE="TENODERA_BOOTSTRAP_TOKEN=${BOOTSTRAP_TOKEN}"
   info "Bootstrap token provided — host will be enrolled automatically without pending approval."
 else
-  TOKEN_LINE="# TENODERA_BOOTSTRAP_TOKEN=<optional: generate in panel under Hosts → Tokens>"
+  TOKEN_LINE="# TENODERA_BOOTSTRAP_TOKEN=<optional: generate in panel under Management → Tokens>"
   info "No --token provided — host will enter pending state and require admin approval in the panel."
 fi
 
@@ -185,7 +185,7 @@ TENODERA_GATEWAY_URL=${GATEWAY_URL}
 ${INSECURE_LINE}
 
 # Optional bootstrap token — skip pending approval on first connect.
-# Generate one in the panel under Hosts → Tokens.
+# Generate one in the panel under Management → Tokens.
 ${TOKEN_LINE}
 
 # Optional: pin the gateway id to verify it on first connect (closes the TOFU
@@ -233,6 +233,6 @@ echo "  The agent is connecting to: ${GATEWAY_URL}"
 if [ -n "$BOOTSTRAP_TOKEN" ]; then
   echo "  This host will be enrolled automatically (bootstrap token provided)."
 else
-  echo "  This host will enter pending state — approve it in the panel under Hosts → Pending."
+  echo "  This host will enter pending state — approve it in the panel under Management → Pending."
 fi
 echo ""

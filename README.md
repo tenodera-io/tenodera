@@ -8,12 +8,14 @@ A self-hosted Linux server administration panel with real-time monitoring,
 terminal access, and multi-host management — all from a single web interface.
 
 ```
-Browser ──WSS──> Gateway (:9090) <──WS── tenodera-agent (remote host)
-                                 <──WS── tenodera-agent (localhost)
+Browser ─────────HTTPS──┐
+                        ▼
+Remote agents ──WSS──> Caddy (:443) ──> Gateway (127.0.0.1:9090) <──WS── local agent
 ```
 
-No open inbound ports on managed hosts.
-Each agent connects outbound to the gateway over a persistent WebSocket.
+The gateway stays private on loopback; the installer sets up a Caddy reverse
+proxy that serves the panel over HTTPS. Managed hosts open **no inbound ports** —
+each agent connects outbound over a persistent WebSocket.
 
 [![CI](https://github.com/tenodera-io/tenodera/actions/workflows/ci.yml/badge.svg)](https://github.com/tenodera-io/tenodera/actions/workflows/ci.yml)
 ![MIT License](https://img.shields.io/badge/license-MIT-blue)
@@ -73,25 +75,13 @@ sudo dnf install \
   https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 ```
 
-The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, the
-service account, and the data dir), enables and starts the gateway on **loopback**
-(`127.0.0.1:9090`), and starts the local agent. It then **installs the latest
-[Caddy](https://caddyserver.com) and writes `/etc/caddy/Caddyfile`**, so the panel
-is served over **HTTPS at `https://<panel-host>`** while the gateway itself stays
-private on loopback. Out of the box Caddy uses a self-signed (internal-CA)
-certificate on the host's IPs — accept the browser warning on a LAN, and swap in a
-domain + real certificate in the Caddyfile when ready (see
-[DOCS.md → Reverse proxy](docs/DOCS.md)).
+The package sets up everything: config, service account, the gateway (loopback),
+the local agent, and the Caddy HTTPS reverse proxy (installed a few seconds after
+`apt`/`dnf` finishes — it needs network access).
 
-> The Caddy step runs just after install via a one-shot `tenodera-caddy-setup`
-> service (a package can't install another package inline), so it needs network
-> access and appears a few seconds after `apt`/`dnf` finishes. If it can't run
-> (no network, unsupported distro), the panel stays on loopback — reach it over an
-> SSH tunnel (`ssh -L 9090:127.0.0.1:9090 <panel-host>`, then open
-> `http://localhost:9090`) and run `sudo systemctl start tenodera-caddy-setup`
-> later, or front it with your own TLS proxy.
-
-Log in with any PAM system user that has `sudo` privileges.
+Open **`https://<panel-host>`**, accept the self-signed-certificate warning, and
+log in with any PAM system user that has `sudo` privileges. Own domain /
+certificate and fallbacks: [DOCS.md → Reverse proxy](docs/DOCS.md).
 
 ### 2. Managed hosts
 
@@ -110,10 +100,8 @@ sudo apt install ./tenodera-agent_amd64.deb
 sudo dnf install https://github.com/tenodera-io/tenodera/releases/latest/download/tenodera-agent-x86_64.rpm
 ```
 
-Then point the agent at your panel and start it. Use the panel's HTTPS address
-through its Caddy reverse proxy — **the bare host, with no `:9090`** (port 9090 is
-the panel's internal loopback-only gateway, not reachable by agents). Add the
-insecure line only while the proxy uses the installer's self-signed cert:
+Point the agent at the panel's HTTPS address — **the bare host, no `:9090`** —
+and start it:
 
 ```bash
 sudo sed -i 's|^TENODERA_GATEWAY_URL=.*|TENODERA_GATEWAY_URL=https://<panel-host>|' /etc/tenodera/agent.cnf
@@ -121,9 +109,9 @@ echo 'TENODERA_AGENT_ACCEPT_INSECURE=1' | sudo tee -a /etc/tenodera/agent.cnf   
 sudo systemctl enable --now tenodera-agent
 ```
 
-The agent connects outbound — no inbound ports needed. On first connect it waits
-for approval; go to **Management → Pending** in the panel and click **Approve**.
-To skip approval, generate a bootstrap token in **Management → Tokens**.
+On first connect the host waits for approval — **Management → Pending →
+Approve** in the panel. To skip approval, pass a bootstrap token from
+**Management → Tokens** (set `TENODERA_BOOTSTRAP_TOKEN` in `agent.cnf`).
 
 > arm64 / aarch64: swap `amd64` → `arm64` (.deb) and `x86_64` → `aarch64` (.rpm).
 > For a specific version, replace `latest` with the tag, e.g.
@@ -144,12 +132,9 @@ sha256sum --ignore-missing -c SHA256SUMS
 
 ### 4. Install from source (curl, optional)
 
-Prefer to build from source instead of installing a package? The curl installer
-pulls build dependencies, compiles (~3–4 min), and wires up the systemd services.
-It also **installs Caddy and generates `/etc/caddy/Caddyfile`**, so the panel is
-served over **HTTPS at `https://<host>`** (self-signed cert on a bare IP — accept
-the browser warning; swap in a domain + real cert in the Caddyfile — see
-[DOCS.md → Reverse proxy](docs/DOCS.md)) while the gateway stays on loopback.
+Prefer building from source? The curl installer pulls build dependencies,
+compiles (~3–4 min), and sets up the same thing as the packages (services +
+Caddy proxy).
 
 Panel host — installs and enrolls the local agent automatically:
 
@@ -157,23 +142,16 @@ Panel host — installs and enrolls the local agent automatically:
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera.sh | sudo bash
 ```
 
-Managed hosts connect to the panel **through Caddy over HTTPS**. `--insecure`
-accepts the installer's default self-signed certificate — **drop it** once the
-panel uses a real cert/domain:
+Managed hosts (`--insecure` accepts the default self-signed cert; add
+`--token <token>` from **Management → Tokens** to skip approval):
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
   | sudo bash -s -- --gateway https://<panel-host> --insecure
 ```
 
-Unattended (skip approval) — pass a bootstrap token from **Management → Tokens**:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/tenodera-io/tenodera/main/tenodera-agent.sh \
-  | sudo bash -s -- --gateway https://<panel-host> --insecure --token <token>
-```
-
-> See [DOCS.md](docs/DOCS.md) for TLS setup, configuration reference, and more.
+> Full manual — configuration reference, reverse proxy / TLS, troubleshooting:
+> [DOCS.md](docs/DOCS.md).
 
 ## Uninstall
 
@@ -207,7 +185,7 @@ Tenodera is intentionally **not distributed as a Docker image**. Running it insi
 - **Setuid helper** — PAM authentication and PTY user-switching run through a dedicated `tenodera-pam-helper` binary that must be setuid root. Standard Docker security (`no-new-privileges`, user namespace remapping) prevents setuid binaries from working. The only workaround is `--privileged`, which removes container isolation entirely.
 - **Host system access** — Tenodera's purpose is to manage the OS it runs on (systemd units, packages, users, network, storage). A container doing this would need to mount `/sys`, `/proc`, `/etc`, `/var`, the systemd D-Bus socket, and more — making `--privileged` unavoidable and containerization pointless.
 
-For production deployments, install directly on the host using the installer above and **enable TLS** (`TENODERA_TLS_CERT` / `TENODERA_TLS_KEY` in `/etc/tenodera/tenodera.cnf`). See [DOCS.md](docs/DOCS.md) for the full TLS setup guide, [SECURITY.md](.github/SECURITY.md) for the security controls, and [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the trust model and what is implemented versus planned.
+For production deployments, install directly on the host using the installer above — HTTPS is handled by the bundled Caddy reverse proxy (put a real domain + certificate in the Caddyfile). See [DOCS.md](docs/DOCS.md) for configuration, [SECURITY.md](.github/SECURITY.md) for the security controls, and [THREAT_MODEL.md](docs/THREAT_MODEL.md) for the trust model and what is implemented versus planned.
 
 ## Screenshots
 
