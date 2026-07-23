@@ -9,6 +9,36 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Security
+- **Package installs bind to loopback by default (secure default).** The `.deb`/
+  `.rpm` installers now ship `TENODERA_BIND_ADDR=127.0.0.1` instead of `0.0.0.0`,
+  so a fresh install runs plain HTTP but is reachable **only from the panel host**
+  — no longer exposed on every interface until hardened. Reach it over an SSH
+  tunnel (`ssh -L 9090:127.0.0.1:9090 <host>`); to serve it to the network, front
+  it with a TLS reverse proxy or enable TLS and change the bind. `README`, `DOCS`,
+  `SECURITY` and `THREAT_MODEL` updated accordingly.
+- **Optional gateway-id pinning closes the first-connect (TOFU) window.** Set
+  `TENODERA_GATEWAY_ID` in the agent config to the gateway's id (read it on the
+  panel host from `/var/lib/tenodera-gw/gateway-id`) and the agent verifies the
+  gateway presents that id before trusting it on first connect — refusing a
+  mismatch as a possible MITM instead of pinning whatever answers first. Without
+  it, behaviour is unchanged (plain trust-on-first-use). The commented option is
+  shipped in the agent config template (deb/rpm/source installer).
+- **Releases ship a signed SBOM.** Every release now includes a CycloneDX
+  software bill of materials (`tenodera-sbom.cdx.json`) enumerating every Rust and
+  npm dependency, generated from source in CI and **checksummed + signed** in the
+  same `SHA256SUMS` as the packages. Feed it to Grype / Trivy / Dependency-Track
+  to audit what a release contains. (`cargo-deny` advisory/licence scanning already
+  runs on every push.)
+- **Bootstrap tokens are scrubbed from the agent after enrollment.** Once an agent
+  has enrolled and its Ed25519 key is pinned on the gateway, the token is never
+  needed again. The agent now removes the `TENODERA_BOOTSTRAP_TOKEN` line from
+  `/etc/tenodera/agent.cnf` on its first successful handshake, so a leftover —
+  possibly multi-use — token can't be replayed later to enroll a rogue agent.
+  Commented lines and the rest of the config are left untouched; the removal is
+  best-effort and never fatal. Closes the "bootstrap tokens persist on the agent"
+  residual risk in THREAT_MODEL §6.
+
 ## [0.2.13] - 2026-07-23
 
 ### Performance

@@ -23,6 +23,11 @@ Release artifacts (`.deb` / `.rpm`, amd64 and arm64) are checksummed in a
 the packages came from this project's release pipeline and were not tampered with
 in transit.
 
+Each release also ships a **CycloneDX SBOM** — `tenodera-sbom.cdx.json`,
+enumerating every Rust and npm dependency — checksummed in the same `SHA256SUMS`,
+so it is covered by the signature too. Feed it to your own scanner (Grype, Trivy,
+Dependency-Track, …) to audit what a release contains.
+
 Public key:
 
 ```
@@ -105,7 +110,7 @@ Each agent generates a persistent Ed25519 key pair on first start. Authenticatio
 
 **Bootstrap tokens:** single-use or TTL-bound tokens used for unattended enrollment. A token can optionally be bound to a specific hostname. Re-enroll tokens allow key rotation for already-enrolled hosts.
 
-> **The token persists on the agent.** `tenodera-agent.sh --token <value>` writes `TENODERA_BOOTSTRAP_TOKEN=…` into `/etc/tenodera/agent.cnf` and it is **not** removed after enrollment (the agent only needs it once — its Ed25519 key is pinned on first connect). Treat it as a bearer secret: prefer **single-use, short-TTL, hostname-bound** tokens so a leftover value is already spent, and delete the line once the host is enrolled. Never leave one long-lived, multi-use token sitting in every host's `agent.cnf`.
+> **The token is scrubbed after enrollment.** `tenodera-agent.sh --token <value>` writes `TENODERA_BOOTSTRAP_TOKEN=…` into `/etc/tenodera/agent.cnf`; the agent **removes that line on its first successful handshake** (it only needs the token once — its Ed25519 key is pinned on first connect), so a leftover multi-use token is not left on an enrolled host. It is still a bearer secret before that first connection (visible in the installer command / config), so prefer **single-use, short-TTL, hostname-bound** tokens and revoke after use.
 
 ### Authorization
 
@@ -167,8 +172,8 @@ The agent binary is installed root-owned (mode `0755`, no setuid bit) and runs a
 
 These are not handled by the software itself and remain the operator's responsibility:
 
-- **Know the two TLS defaults.** In code, TLS is mandatory and the gateway binds to `127.0.0.1:9090`. But the **package installer ships `/etc/tenodera/tenodera.cnf` with `TENODERA_BIND_ADDR=0.0.0.0` and `TENODERA_ALLOW_UNENCRYPTED=1`** so the panel is reachable right after install — i.e. **plain HTTP on all interfaces**. Configure TLS (or a reverse proxy) and remove `TENODERA_ALLOW_UNENCRYPTED=1` before exposing the panel anywhere untrusted
-- **Use a reverse proxy** (nginx, Caddy) in front of the gateway for TLS termination, access logging, and DDoS mitigation — and when you do, set `TENODERA_BIND_ADDR=127.0.0.1` so the plain-HTTP backend is reachable only via the proxy. Leaving the shipped `0.0.0.0` bind with `TENODERA_ALLOW_UNENCRYPTED=1` exposes the unencrypted backend directly on `:9090`, bypassing the proxy's TLS, access control and logging
+- **The panel is loopback-only by default.** The package installer ships `/etc/tenodera/tenodera.cnf` with `TENODERA_BIND_ADDR=127.0.0.1` and `TENODERA_ALLOW_UNENCRYPTED=1` — a fresh install runs plain HTTP but is reachable **only from the panel host**. Reach it over an SSH tunnel (`ssh -L 9090:127.0.0.1:9090 <host>`, then open `http://localhost:9090`) until you set it up for the network
+- **To expose it, put a reverse proxy in front** (nginx, Caddy) for TLS termination, access logging and rate limiting — the loopback bind means the plain-HTTP backend is reachable only via the proxy. If you instead bind `0.0.0.0`, **first** configure TLS (`TENODERA_TLS_CERT`/`TENODERA_TLS_KEY`) and remove `TENODERA_ALLOW_UNENCRYPTED=1`, or you will serve the unencrypted panel on every interface
 - **Restrict network access** — expose the panel port only to trusted networks or via VPN, and block direct access to `9090` at the firewall when fronted by a proxy; the agent connects outbound and needs no inbound port
 - **Use strong system passwords** — authentication relies on PAM/system accounts; password strength is determined by the OS PAM configuration
 - **Rotate TLS certificates** — the installer can generate a self-signed cert for testing, but use a CA-signed certificate in production

@@ -77,8 +77,18 @@ The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, the
 service account, and the data dir), enables and starts the gateway on port 9090,
 and starts the local agent.
 
-Open `http://<host>:9090` and log in with any PAM system user that has `sudo`
-privileges.
+By default the gateway binds to **loopback only** (`127.0.0.1`), so a fresh
+install is not exposed on the network. Reach it over an SSH tunnel:
+
+```bash
+ssh -L 9090:127.0.0.1:9090 <panel-host>
+# then open http://localhost:9090 in your browser
+```
+
+Log in with any PAM system user that has `sudo` privileges. To serve the panel to
+the network, front it with a TLS reverse proxy (recommended) or set
+`TENODERA_BIND_ADDR=0.0.0.0` **after** enabling TLS — see
+[DOCS.md](docs/DOCS.md) and [SECURITY.md](.github/SECURITY.md).
 
 ### 2. Managed hosts
 

@@ -31,6 +31,10 @@ TENODERA_GATEWAY_URL=http://127.0.0.1:9090
 
 # Optional bootstrap token to skip pending-approval on first connect:
 # TENODERA_BOOTSTRAP_TOKEN=<token>
+
+# Optional: pin the gateway id to verify it on first connect (closes the TOFU
+# window). Read it on the panel host: sudo cat /var/lib/tenodera-gw/gateway-id
+# TENODERA_GATEWAY_ID=<gateway-id>
 CFG
     chmod 640 %{_sysconfdir}/tenodera/agent.cnf
 fi

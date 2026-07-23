@@ -180,6 +180,10 @@ ${INSECURE_LINE}
 # Optional bootstrap token — skip pending approval on first connect.
 # Generate one in the panel under Hosts → Tokens.
 ${TOKEN_LINE}
+
+# Optional: pin the gateway id to verify it on first connect (closes the TOFU
+# window). Read it on the panel host: sudo cat /var/lib/tenodera-gw/gateway-id
+# TENODERA_GATEWAY_ID=<gateway-id>
 EOF
 
 chmod 600 "${CONF_DIR}/agent.cnf"

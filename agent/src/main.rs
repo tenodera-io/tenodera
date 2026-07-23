@@ -122,8 +122,23 @@ async fn run_session(
         }
         Some(_) => {}
         None => {
+            // First connection. If the operator pinned the expected gateway id
+            // out-of-band (TENODERA_GATEWAY_ID), verify it before trusting — this
+            // closes the trust-on-first-use MITM window. Without it we fall back to
+            // plain TOFU: pin whatever answers first.
+            if let Some(expected) = &config.expected_gateway_id
+                && expected != &gateway_id
+            {
+                anyhow::bail!(
+                    "gateway_id {gateway_id} does not match the configured TENODERA_GATEWAY_ID {expected} — refusing first-connect enrollment (possible MITM)"
+                );
+            }
             identity.save_gateway_id(&gateway_id)?;
-            tracing::info!(%gateway_id, "gateway_id pinned (first enrollment)");
+            if config.expected_gateway_id.is_some() {
+                tracing::info!(%gateway_id, "gateway_id pinned (verified against TENODERA_GATEWAY_ID)");
+            } else {
+                tracing::info!(%gateway_id, "gateway_id pinned (first enrollment, TOFU)");
+            }
         }
     }
 
@@ -180,6 +195,14 @@ async fn run_session(
     };
 
     tracing::info!(gateway_version, fingerprint = %identity.fingerprint(), "handshake complete");
+
+    // Enrollment succeeded and our key is now pinned on the gateway — a bootstrap
+    // token (if we used one) is single-use in practice. Scrub it from the config
+    // so a leftover, possibly multi-use, token can't be replayed to enroll a rogue
+    // agent later. No-op on reconnects once it's gone.
+    if config.bootstrap_token.is_some() {
+        crate::config::scrub_bootstrap_token();
+    }
 
     // ── Normal operation ──────────────────────────────────────────────────────
     let (out_tx, mut out_rx) = mpsc::channel::<Message>(256);

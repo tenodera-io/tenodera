@@ -221,12 +221,17 @@ These are real and not yet closed. Listing them is the point of this document.
 
 - **No external audit.** The controls above are implemented and tested, but have
   not been independently reviewed. Release artifacts *are* checksummed and signed
-  (`SHA256SUMS` + minisign — see SECURITY.md); **reproducible builds and an SBOM**
-  are still on the roadmap (see the supply-chain item below).
-- **First-connection trust (TOFU).** The agent pins the gateway on first
-  contact. An active MITM present at that exact first connection could pin
-  itself. Mitigate by performing first enrollment over a trusted network and/or
-  using bootstrap tokens delivered out-of-band.
+  (`SHA256SUMS` + minisign — see SECURITY.md), and every release now ships a
+  **CycloneDX SBOM** of its dependencies (checksummed and signed with the rest);
+  **reproducible builds** are still on the roadmap (see the supply-chain item below).
+- **First-connection trust (TOFU) — now closable.** The agent pins the gateway's
+  id on first contact; an active MITM present at that exact first connection could
+  otherwise pin itself. To close the window, set **`TENODERA_GATEWAY_ID`** in the
+  agent's config to the gateway's id (read it on the panel host from
+  `/var/lib/tenodera-gw/gateway-id`) — the agent verifies the presented id against
+  it before trusting, and **refuses a mismatch as a possible MITM** instead of
+  pinning. Without it the agent falls back to plain TOFU; either way, prefer first
+  enrollment over a trusted network and/or out-of-band bootstrap tokens.
 - **Host enrollment is authorised by the admin role, not per-host sudo.** Every
   action *on* a managed host — writes and reads alike, now including SSH access
   management and the Security page (fail2ban/SELinux/AppArmor) — runs as the
@@ -252,15 +257,19 @@ These are real and not yet closed. Listing them is the point of this document.
   system info, DNS, packages, systemd timers, cron *system* files, and public
   certificate metadata) — it exposes nothing a normal user couldn't already read, so
   brokering it would add cost without changing what anyone can see.
-- **Bootstrap tokens are bearer secrets, and persist on the agent.** Anyone
-  holding a valid, unexpired, non-exhausted token can enroll an agent. The token
-  is written to `/etc/tenodera/agent.cnf` by the installer and is **not** removed
-  after enrollment (the agent only needs it once — its key is pinned on first
-  connect). A leftover *multi-use* token therefore stays usable. Scope them
-  tightly (short TTL, `max_uses=1`, hostname binding), delete the line after the
-  host is enrolled, and revoke after use.
+- **Bootstrap tokens are bearer secrets.** Anyone holding a valid, unexpired,
+  non-exhausted token can enroll an agent. The installer writes it to
+  `/etc/tenodera/agent.cnf`; the agent now **scrubs that line on its first
+  successful handshake** — its Ed25519 key is pinned on first connect, so the
+  token is never needed again — so a leftover, possibly multi-use, token is not
+  left sitting on an enrolled host. The window is narrowed but not zero: the token
+  is still exposed in the installer command / config before that first connection,
+  and remains if the agent never enrolls. Still scope them tightly (short TTL,
+  `max_uses=1`, hostname binding) and revoke after use.
 - **Dependency supply chain.** Rust and npm dependencies are trusted transitively.
-  An SBOM and reproducible builds are planned to narrow this.
+  Each release ships a CycloneDX **SBOM** (`tenodera-sbom.cdx.json`) enumerating
+  them, and CI runs `cargo-deny` (advisories + licence policy) on every push;
+  **reproducible builds** are still planned to close the gap further.
 
 ---
 
@@ -282,11 +291,12 @@ These are real and not yet closed. Listing them is the point of this document.
 | Per-user sudo brokering for SSH access management and the Security page (fail2ban/SELinux/AppArmor) — run as the operator, the host's `sudo` adjudicates | **Implemented** |
 | Host enrollment / token approval gated by the admin role on the gateway (control-plane action, no per-host sudo to consult) | **By design** |
 | TLS mandatory in **code** (gateway refuses to start unencrypted, binds `127.0.0.1`) | **Implemented** |
-| ⚠️ but the **package installer** ships `TENODERA_ALLOW_UNENCRYPTED=1` + bind `0.0.0.0` for first-run reachability — so a fresh package install is plain HTTP on all interfaces until hardened | **Shipped opt-out — harden before exposing** |
+| Package installer binds **`127.0.0.1`** by default (loopback only) with `TENODERA_ALLOW_UNENCRYPTED=1` — a fresh install is plain HTTP but reachable only from the panel host (SSH-tunnel or reverse-proxy to reach it); enable TLS and change the bind before exposing on the network | **Secure default (loopback)** |
 | Rate limiting, CSRF, CSP, security headers, audit log | **Implemented** |
 | External security audit | **Planned** |
 | Signed release checksums (`SHA256SUMS` + minisign) | **Implemented** |
-| Reproducible builds + SBOM | **Planned** |
+| CycloneDX SBOM shipped with every release (checksummed + signed) | **Implemented** |
+| Reproducible builds | **Planned** |
 | Per-host session scoping / full gateway→agent authorization | **Planned** |
 | arm64 / aarch64 packages (`.deb` arm64, `.rpm` aarch64) | **Implemented** — built by release CI alongside amd64/x86_64 |
 
