@@ -1528,6 +1528,9 @@ directly (see [§4.2 TLS setup](#42-tls-setup)).
 
 ### Installed from packages
 
+**Keep configuration and enrolled hosts** (so a reinstall or upgrade resumes
+where it left off):
+
 ```bash
 # Debian / Ubuntu (panel host: both; managed host: just tenodera-agent)
 sudo apt remove tenodera tenodera-agent
@@ -1535,6 +1538,33 @@ sudo apt remove tenodera tenodera-agent
 # Fedora / RHEL
 sudo dnf remove tenodera tenodera-agent
 ```
+
+This removes the binaries, systemd units and UI assets. It **keeps**
+`/etc/tenodera/` (configuration), `/var/lib/tenodera-gw/` (the gateway's identity
+and enrolled-host registry), `/var/lib/tenodera/` (the agent's key and pinned
+gateway id), the audit log, and the `tenodera-gw` service account.
+
+**Remove everything, leave nothing behind:**
+
+```bash
+# Debian / Ubuntu
+sudo apt purge tenodera tenodera-agent
+
+# Fedora / RHEL — rpm has no "purge"; remove, then clear config + state by hand
+sudo dnf remove tenodera tenodera-agent
+sudo rm -rf /etc/tenodera /var/lib/tenodera-gw /var/lib/tenodera /var/log/tenodera_audit.log
+sudo userdel tenodera-gw
+```
+
+> ⚠️ Purging drops the gateway's identity (`gateway-id`) and the host registry.
+> A rebuilt panel gets a **new** identity, and every already-enrolled agent will
+> then refuse to connect with `gateway_id mismatch` (its pinned id no longer
+> matches — see [§15](#15-troubleshooting)). Back up `/var/lib/tenodera-gw/` if you
+> intend to restore the same panel.
+
+**Upgrades never remove any of this** — `apt install`/`dnf upgrade` of a newer
+package runs the upgrade path, not the removal path, so configuration, the
+gateway identity and enrolled hosts survive untouched.
 
 Caddy (and `/etc/caddy/Caddyfile`) is left in place — remove it separately if
 nothing else uses it (`sudo apt remove caddy` / `sudo dnf remove caddy`).
@@ -1598,6 +1628,46 @@ After editing `agent.cnf`, always restart:
 ```bash
 sudo systemctl restart tenodera-agent
 ```
+
+### Agent refuses to connect: `gateway_id mismatch`
+
+```
+connection failed — error=gateway_id mismatch: pinned=<old> got=<new>
+ — possible MITM, refusing connection
+```
+
+The agent pins the gateway's identity on first contact (TOFU) in
+`/var/lib/tenodera/gateway-id`. The gateway's identity lives in
+`/var/lib/tenodera-gw/gateway-id` on the panel host. If that file is deleted —
+by `apt purge`, a manual `rm -rf /var/lib/tenodera-gw`, or rebuilding the panel
+from scratch — the gateway generates a **new** identity, and every enrolled agent
+refuses to connect. The agent cannot tell "my admin rebuilt the panel" from "the
+gateway was swapped", so it fails closed.
+
+This is a fleet-wide effect: **rebuilding a panel locks out every agent** until
+each one's pin is cleared or updated.
+
+Fix on each agent host — clear the stale pin and let it re-pin (keep `agent.key`,
+that is the host's own identity):
+
+```bash
+sudo rm -f /var/lib/tenodera/gateway-id
+sudo systemctl restart tenodera-agent
+```
+
+Or pin explicitly instead of relying on first-contact — read the current id on the
+panel (`sudo cat /var/lib/tenodera-gw/gateway-id`) and set it in `agent.cnf`:
+
+```bash
+TENODERA_GATEWAY_ID=<gateway-id>
+```
+
+> A bootstrap token does **not** help here: the pin is checked during the
+> `Challenge`, before enrollment, so the agent never reaches the point of using
+> the token.
+>
+> To avoid this entirely, **back up `/var/lib/tenodera-gw/`** (identity + host
+> registry) and restore it onto the rebuilt panel. Normal upgrades never touch it.
 
 ### Agent not appearing under Management → Pending
 
