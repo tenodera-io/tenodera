@@ -681,14 +681,26 @@ struct HostListEntry {
     os_id: Option<String>,
 }
 
-async fn hosts_list(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+async fn hosts_list(
+    State(state): State<Arc<AppState>>,
+    headers: axum::http::HeaderMap,
+) -> Json<serde_json::Value> {
     let config = hosts_config::load().await;
     let online = state.agent_registry.online_host_ids().await;
+    // The local panel host connects over loopback, so its stored IP is a
+    // best-effort guess (default-route interface). Prefer the address the
+    // operator actually browsed to (Host header), which is unambiguous.
+    let browsed_ip = crate::auth::host_header_ip(&headers).map(|ip| ip.to_string());
     let mut hosts = Vec::with_capacity(config.hosts.len());
     for h in &config.hosts {
         let is_online = online.contains(&h.id);
         let remote_ip = if is_online {
-            state.agent_registry.get_remote_ip(&h.id).await
+            let stored = state.agent_registry.get_remote_ip(&h.id).await;
+            if h.is_local {
+                browsed_ip.clone().or(stored)
+            } else {
+                stored
+            }
         } else {
             None
         };

@@ -9,6 +9,20 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Fixed
+- **Host IPs showed `127.0.0.1` behind the reverse proxy.** With the gateway on
+  loopback and agents connecting through Caddy, the gateway saw every connection's
+  source address as the proxy (`127.0.0.1`), so the Management page and the top bar
+  labelled every host `127.0.0.1`. Remote agents are now resolved from the proxy's
+  `X-Forwarded-For` / `X-Real-IP` — trusted **only** from a loopback peer, so a
+  direct client cannot spoof it — and the same resolution feeds the login
+  rate-limiter and audit client IP. The local panel host, which connects over
+  loopback, is labelled with the address the operator actually browses to (the
+  request `Host` header) rather than an arbitrary local interface, since a
+  multi-homed host has several IPs and routing heuristics pick the wrong one.
+
+## [0.3.0] - 2026-07-23
+
 ### Added
 - **The source installer sets up an HTTPS reverse proxy (Caddy) automatically.**
   `tenodera.sh` now installs the latest Caddy (from its official repo, apt/dnf/

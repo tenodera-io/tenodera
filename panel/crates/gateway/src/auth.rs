@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 
 use axum::extract::ConnectInfo;
@@ -10,14 +10,70 @@ use crate::AppState;
 use crate::pam;
 use crate::session::Role;
 
-/// Extract client `SocketAddr` regardless of how it was injected.
+/// Resolve the real client IP behind a trusted local reverse proxy.
 ///
-/// - **Plaintext mode** — `axum::serve` with `into_make_service_with_connect_info`
-///   populates `ConnectInfo<SocketAddr>` natively.
-/// - **TLS mode** — our accept loop injects it via `axum::Extension(ConnectInfo(addr))`.
+/// The gateway binds loopback by default and is fronted by a reverse proxy
+/// (Caddy), so the socket peer of every browser/agent connection is `127.0.0.1`.
+/// When the peer is loopback, honour the proxy's `X-Forwarded-For` / `X-Real-IP`
+/// to recover the original client IP. Forwarded headers are trusted **only** from
+/// a loopback peer, so a client connecting directly cannot spoof them.
+pub(crate) fn real_client_ip(peer: IpAddr, headers: &HeaderMap) -> IpAddr {
+    if !peer.is_loopback() {
+        return peer;
+    }
+    // `X-Forwarded-For: client, proxy1, ...` — the leftmost is the origin client.
+    if let Some(xff) = headers.get("x-forwarded-for").and_then(|h| h.to_str().ok())
+        && let Some(first) = xff.split(',').next()
+        && let Ok(ip) = first.trim().parse::<IpAddr>()
+    {
+        return ip;
+    }
+    if let Some(xri) = headers.get("x-real-ip").and_then(|h| h.to_str().ok())
+        && let Ok(ip) = xri.trim().parse::<IpAddr>()
+    {
+        return ip;
+    }
+    peer
+}
+
+/// Best-effort IP the browser actually used to reach the panel, taken from the
+/// request `Host` (or `X-Forwarded-Host`) header.
 ///
-/// This extractor tries the native path first, then falls back to Extension.
-pub(crate) struct ClientAddr(SocketAddr);
+/// The gateway binds loopback and is fronted by a reverse proxy, so it cannot
+/// tell which of its several local IPs the operator browses to (routing/`hostname`
+/// heuristics pick the default-route interface, which is often the wrong one on a
+/// multi-homed host). The Host header is exactly the address the operator typed,
+/// so we use it to label the local panel host in the UI. Returns `None` for a
+/// non-IP host (a domain) or a loopback address, so callers fall back to the
+/// stored IP.
+pub(crate) fn host_header_ip(headers: &HeaderMap) -> Option<IpAddr> {
+    for name in ["host", "x-forwarded-host"] {
+        let Some(raw) = headers.get(name).and_then(|h| h.to_str().ok()) else {
+            continue;
+        };
+        let v = raw.split(',').next().unwrap_or(raw).trim();
+        let ip = v
+            .parse::<SocketAddr>()
+            .map(|s| s.ip())
+            .ok()
+            .or_else(|| v.parse::<IpAddr>().ok())
+            .or_else(|| {
+                v.rsplit_once(':')
+                    .and_then(|(a, _)| a.parse::<IpAddr>().ok())
+            });
+        if let Some(ip) = ip
+            && !ip.is_loopback()
+        {
+            return Some(ip);
+        }
+    }
+    None
+}
+
+/// Extract the client IP, resolving `X-Forwarded-For` behind a loopback proxy
+/// (see [`real_client_ip`]). Works in both plaintext mode (native `ConnectInfo`)
+/// and TLS mode (our accept loop injects it via `axum::Extension`).
+pub(crate) struct ClientAddr(IpAddr);
 
 impl<S: Send + Sync> axum::extract::FromRequestParts<S> for ClientAddr {
     type Rejection = StatusCode;
@@ -26,20 +82,20 @@ impl<S: Send + Sync> axum::extract::FromRequestParts<S> for ClientAddr {
         parts: &mut axum::http::request::Parts,
         state: &S,
     ) -> Result<Self, Self::Rejection> {
-        // Try native ConnectInfo (plaintext mode)
-        if let Ok(ConnectInfo(addr)) =
+        // Try native ConnectInfo (plaintext mode), then Extension (TLS mode).
+        let peer = if let Ok(ConnectInfo(addr)) =
             ConnectInfo::<SocketAddr>::from_request_parts(parts, state).await
         {
-            return Ok(Self(addr));
-        }
-        // Fallback: Extension (TLS mode)
-        if let Ok(axum::Extension(ConnectInfo(addr))) =
+            addr
+        } else if let Ok(axum::Extension(ConnectInfo(addr))) =
             axum::Extension::<ConnectInfo<SocketAddr>>::from_request_parts(parts, state).await
         {
-            return Ok(Self(addr));
-        }
-        tracing::error!("could not extract client address from request");
-        Err(StatusCode::INTERNAL_SERVER_ERROR)
+            addr
+        } else {
+            tracing::error!("could not extract client address from request");
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        };
+        Ok(Self(real_client_ip(peer.ip(), &parts.headers)))
     }
 }
 
@@ -112,7 +168,7 @@ pub async fn login(
     ClientAddr(addr): ClientAddr,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>, (StatusCode, Json<LoginError>)> {
-    let client_ip = addr.ip();
+    let client_ip = addr;
 
     // Check rate limit before doing any work
     if state.login_limiter.is_limited(client_ip).await {
