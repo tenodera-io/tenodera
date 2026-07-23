@@ -1,0 +1,42 @@
+#!/bin/sh
+set -e
+
+# `remove` keeps configuration and data so a reinstall (or an interrupted
+# upgrade) picks up where it left off; `purge` is the "leave nothing behind"
+# path. Note /etc/tenodera is shared with the tenodera-agent package, so only
+# this package's own files are removed from it — never the whole directory.
+
+case "$1" in
+    remove|purge)
+        # Package-owned UI content. dpkg removes the files it tracks, but leaves
+        # the directory if anything else ended up there (e.g. a manual deploy).
+        rm -rf /usr/share/tenodera
+        ;;
+esac
+
+if [ "$1" = "purge" ]; then
+    # Gateway configuration (this package's files only).
+    rm -f /etc/tenodera/tenodera.cnf
+    rm -rf /etc/tenodera/tls
+    rmdir /etc/tenodera 2>/dev/null || true
+
+    # Gateway state: instance identity (gateway-id) and the enrolled-host registry.
+    rm -rf /var/lib/tenodera-gw
+
+    # Audit trail — kept on remove (forensics), dropped on purge.
+    rm -f /var/log/tenodera_audit.log
+
+    # Service account created by preinst.
+    if getent passwd tenodera-gw >/dev/null 2>&1; then
+        userdel tenodera-gw >/dev/null 2>&1 || true
+    fi
+    if getent group tenodera-gw >/dev/null 2>&1; then
+        groupdel tenodera-gw >/dev/null 2>&1 || true
+    fi
+fi
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+fi
+
+exit 0

@@ -1,0 +1,23 @@
+#!/bin/sh
+set -e
+
+# `remove` keeps the agent's config and identity so a reinstall reconnects
+# without re-enrolling; `purge` removes them. /etc/tenodera is shared with the
+# tenodera panel package, so only agent.cnf is removed from it.
+
+if [ "$1" = "purge" ]; then
+    rm -f /etc/tenodera/agent.cnf
+    rmdir /etc/tenodera 2>/dev/null || true
+
+    # Agent state: Ed25519 identity key and the pinned gateway id. Removing these
+    # means the host re-enrolls (and re-pins) on its next connection.
+    rm -rf /var/lib/tenodera
+
+    rm -f /var/log/tenodera_audit.log
+fi
+
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+fi
+
+exit 0

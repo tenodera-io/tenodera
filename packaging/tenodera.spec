@@ -115,6 +115,14 @@ fi
 # so avoid the double restart the with-restart variant would cause. (Do not name
 # rpm macros in comments here — rpm expands them even inside shell comments.)
 %systemd_postun tenodera.service
+if [ "$1" = 0 ]; then
+    # Full uninstall (not an upgrade): drop leftover package-owned UI content —
+    # rpm removes the files it tracks but leaves the directory if anything else
+    # ended up there. Configuration and state (/etc/tenodera, /var/lib/tenodera-gw)
+    # are deliberately kept so a reinstall keeps working; rpm has no purge, so
+    # remove those by hand or with: tenodera.sh --uninstall
+    rm -rf /usr/share/tenodera
+fi
 
 %files
 %{_bindir}/tenodera-gateway

@@ -259,6 +259,7 @@ package-deb: build
 	@install -m 755 ../packaging/deb/tenodera.preinst $(PKGDIR)/DEBIAN/preinst
 	@install -m 755 ../packaging/deb/tenodera.postinst $(PKGDIR)/DEBIAN/postinst
 	@install -m 755 ../packaging/deb/tenodera.prerm $(PKGDIR)/DEBIAN/prerm
+	@install -m 755 ../packaging/deb/tenodera.postrm $(PKGDIR)/DEBIAN/postrm
 	@dpkg-deb --build $(PKGDIR) tenodera_$(VERSION)_$(DEB_ARCH).deb
 	@rm -rf $(PKGDIR)
 	@echo "✓ Package: tenodera_$(VERSION)_$(DEB_ARCH).deb"

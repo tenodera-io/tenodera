@@ -10,6 +10,30 @@ Each tagged release also has auto-generated notes on the
 ## [Unreleased]
 
 ### Fixed
+- **Uninstalling now actually cleans up.** The `.deb` packages shipped no `postrm`
+  at all, so even `apt purge` left configuration, gateway/agent state, the audit
+  log and the `tenodera-gw` service account behind, and `/usr/share/tenodera` could
+  linger. Both packages now ship a `postrm`:
+  - **`apt remove`** clears the package's UI content and keeps configuration and
+    state (`/etc/tenodera`, `/var/lib/tenodera-gw`, `/var/lib/tenodera`, audit log,
+    service account) so a reinstall resumes where it left off.
+  - **`apt purge`** removes all of it, leaving nothing behind. Each package only
+    touches its own files under the shared `/etc/tenodera`, so purging the panel
+    never deletes a still-installed agent's config.
+  - `.rpm` full uninstall clears leftover UI content (rpm has no purge — the
+    manual/scripted path is documented).
+  - `tenodera.sh --uninstall` now also removes the `tenodera-gw` account and the
+    Caddyfile it generated (Caddy itself is left installed).
+  **Upgrades are unaffected** — they run the upgrade path, so configuration, the
+  gateway identity and enrolled hosts survive untouched (verified).
+
+### Documentation
+- DOCS §14 documents remove vs. purge semantics and what each keeps; §15 adds a
+  `gateway_id mismatch` entry — rebuilding a panel gives it a new identity and
+  locks out every enrolled agent until each one's pinned id is cleared or set
+  explicitly (a bootstrap token does not help; back up `/var/lib/tenodera-gw/`).
+
+### Fixed
 - **The local panel agent auto-enrolls again on a fresh install.** An earlier
   IP-display fix relabelled every loopback connection with the host's primary IP
   *before* the enrollment decision, so the panel's own agent — which connects over
