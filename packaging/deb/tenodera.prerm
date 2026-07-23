@@ -7,6 +7,9 @@ if [ "$1" = "remove" ] || [ "$1" = "deconfigure" ]; then
     if [ -d /run/systemd/system ]; then
         systemctl stop tenodera.service || true
         systemctl disable tenodera.service || true
+        # Drop the one-shot Caddy-setup unit's enablement symlink (Caddy itself,
+        # and any Caddyfile, are left in place — they are the operator's proxy).
+        systemctl disable tenodera-caddy-setup.service || true
     fi
 fi
 

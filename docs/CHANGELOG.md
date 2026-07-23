@@ -9,6 +9,21 @@ Each tagged release also has auto-generated notes on the
 
 ## [Unreleased]
 
+### Added
+- **`.deb`/`.rpm` installs now set up the Caddy reverse proxy automatically too.**
+  Previously only the source/curl installer installed Caddy; package installs left
+  the panel on loopback and asked you to add a proxy by hand. A package can't
+  install another package inline (the outer `dpkg`/`dnf` lock is held), so the
+  panel package now ships a one-shot `tenodera-caddy-setup.service` that runs just
+  after install — it waits out the package-manager lock, installs the latest Caddy
+  from its official repo, writes `/etc/caddy/Caddyfile`, starts it, then disables
+  itself. Re-run any time with `sudo systemctl start tenodera-caddy-setup`. So a
+  fresh `.deb`/`.rpm` panel host is reachable at **`https://<host>`** out of the
+  box, with only the certificate left to you (self-signed internal-CA by default;
+  swap in a domain + real cert in the Caddyfile). The generated Caddyfile now lists
+  **every non-loopback IP of the host**, so the panel answers on whichever
+  interface you browse to on a multi-homed machine.
+
 ### Fixed
 - **Host IPs showed `127.0.0.1` behind the reverse proxy.** With the gateway on
   loopback and agents connecting through Caddy, the gateway saw every connection's

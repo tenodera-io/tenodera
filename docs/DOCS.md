@@ -11,7 +11,7 @@
 4. [Panel Configuration](#4-panel-configuration)
    - 4.1 [Gateway config reference](#41-gateway-config-reference)
    - 4.2 [TLS setup](#42-tls-setup)
-   - 4.3 [Reverse proxy (nginx / Caddy)](#43-reverse-proxy-nginx--caddy)
+   - 4.3 [Reverse proxy (Caddy)](#43-reverse-proxy-caddy)
 5. [Agent Configuration](#5-agent-configuration)
    - 5.1 [Agent config reference](#51-agent-config-reference)
    - 5.2 [HTTPS / TLS for agents](#52-https--tls-for-agents)
@@ -322,7 +322,7 @@ TENODERA_TLS_CERT=/etc/ssl/your-domain/fullchain.pem
 TENODERA_TLS_KEY=/etc/ssl/your-domain/privkey.pem
 ```
 
-The gateway starts as root, reads the cert and key, then drops privileges to the `tenodera-gw` service user — the same pattern as nginx and Apache. No permission changes to your existing certificates are required.
+The gateway starts as root, reads the cert and key, then drops privileges to the `tenodera-gw` service user — the same well-worn pattern used by other TLS-terminating services. No permission changes to your existing certificates are required.
 
 Restart after editing:
 
@@ -350,17 +350,24 @@ echo 'systemctl restart tenodera' | sudo tee /etc/letsencrypt/renewal-hooks/depl
 sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/tenodera.sh
 ```
 
-### 4.3 Reverse proxy (nginx / Caddy)
+### 4.3 Reverse proxy (Caddy)
 
-The gateway binds `127.0.0.1` by default (plain HTTP on loopback), and the
-**source/curl installer installs the latest [Caddy](https://caddyserver.com) and
-writes `/etc/caddy/Caddyfile`** so the panel is served over **HTTPS on the
-network** while the backend stays private. Out of the box Caddy uses its internal
-CA on the host's IP, so a browser warns about an untrusted certificate — expected
-on a LAN; click through. The generated file:
+The gateway binds `127.0.0.1` by default (plain HTTP on loopback), and **every
+installer — the source/curl script *and* the `.deb`/`.rpm` packages — installs the
+latest [Caddy](https://caddyserver.com) and writes `/etc/caddy/Caddyfile`** so the
+panel is served over **HTTPS on the network** while the backend stays private.
+(The packages do this through a one-shot `tenodera-caddy-setup.service` that runs
+just after install, since a package can't install another package inline; it
+disables itself once done. Re-run it any time with
+`sudo systemctl start tenodera-caddy-setup`.)
+
+Out of the box Caddy uses its **internal CA** on the host's IP addresses, so a
+browser warns about an untrusted certificate — expected on a LAN; click through.
+The generated file lists every non-loopback IP of the host, so the panel answers
+on whichever interface you browse to:
 
 ```
-<host-ip> {
+10.0.2.15, 192.168.56.10 {          # every non-loopback IPv4 of the host
     tls internal
     reverse_proxy 127.0.0.1:9090
 }
@@ -395,36 +402,15 @@ Then set, so the panel shows the right agent-install commands:
 TENODERA_EXTERNAL_URL=https://panel.example.com
 ```
 
-> `.deb`/`.rpm` installs don't pull Caddy in automatically — install it the same
-> way (see [caddyserver.com/docs/install](https://caddyserver.com/docs/install))
-> and drop the `Caddyfile` shown above into `/etc/caddy/Caddyfile`.
+If Caddy could not be installed automatically (no network at install time, or an
+unsupported distro), the panel simply stays on loopback — install Caddy later from
+[caddyserver.com/docs/install](https://caddyserver.com/docs/install) and run
+`sudo systemctl start tenodera-caddy-setup` to write the Caddyfile and start it.
 
 > ⚠️ The gateway binds `127.0.0.1`, so the plain-HTTP backend is reachable only via
 > the proxy. If you set `TENODERA_BIND_ADDR=0.0.0.0`, **first** enable TLS and
 > remove `TENODERA_ALLOW_UNENCRYPTED=1` (or block port 9090 at the firewall), or
 > you serve the unencrypted panel on every interface.
-
-**Prefer nginx?** Point it at the loopback backend:
-
-```nginx
-server {
-    listen 443 ssl;
-    server_name panel.example.com;
-
-    ssl_certificate     /etc/letsencrypt/live/panel.example.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/panel.example.com/privkey.pem;
-
-    location / {
-        proxy_pass http://127.0.0.1:9090;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_read_timeout 3600s;
-    }
-}
-```
 
 ---
 
@@ -1546,10 +1532,12 @@ Host OS (bare metal or VM)
 ├── tenodera-gateway    (systemd service, drops to tenodera-gw after bind)
 ├── tenodera-pam-helper (setuid root, spawned by gateway for auth)
 ├── tenodera-agent      (systemd service, connects outbound to gateway)
-└── nginx / Caddy       (optional reverse proxy for TLS termination)
+└── Caddy               (reverse proxy for TLS termination — installed automatically)
 ```
 
-For TLS, either configure the gateway directly (see [§4.2 TLS setup](#42-tls-setup)) or place nginx or Caddy in front of it (see [§4.3 Reverse proxy](#43-reverse-proxy-nginx--caddy)).
+For TLS, either let the installer's Caddy reverse proxy terminate it (the default —
+see [§4.3 Reverse proxy](#43-reverse-proxy-caddy)) or configure the gateway
+directly (see [§4.2 TLS setup](#42-tls-setup)).
 
 ---
 

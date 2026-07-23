@@ -171,6 +171,10 @@ ok "Tenodera installed successfully!"
 
 CONF_DIR="/etc/tenodera"
 GW_IP=$(hostname -I | awk '{print $1}')
+# Every non-loopback IPv4 of the host, so the panel answers on whichever
+# interface the operator browses to (a multi-homed host has several IPs).
+SITE_ADDRS=$(hostname -I | tr ' ' '\n' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | grep -v '^127\.' | paste -sd, - | sed 's/,/, /g')
+[ -n "$SITE_ADDRS" ] || SITE_ADDRS=":443"
 
 # ── Reverse proxy (Caddy) — HTTPS on the network; gateway stays on loopback ───
 # The gateway binds 127.0.0.1, so install Caddy (latest, from its official repo)
@@ -218,7 +222,7 @@ if install_caddy; then
 #
 # Then: sudo systemctl reload caddy .  See DOCS.md -> Reverse proxy.
 
-${GW_IP} {
+${SITE_ADDRS} {
     tls internal
     reverse_proxy 127.0.0.1:9090
 }

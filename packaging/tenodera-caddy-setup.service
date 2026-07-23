@@ -1,0 +1,17 @@
+[Unit]
+Description=Tenodera one-shot Caddy reverse-proxy setup
+Documentation=https://github.com/tenodera-io/tenodera
+# Needs the network to reach Caddy's package repo. Runs once after install and
+# disables itself on success (see the ExecStart script).
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/bin/tenodera-setup-caddy
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/tenodera-setup-caddy
+# The script waits out the package-manager lock and downloads Caddy.
+TimeoutStartSec=900
+
+[Install]
+WantedBy=multi-user.target

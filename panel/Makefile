@@ -248,6 +248,9 @@ package-deb: build
 	@# The unit ships with /usr/local/bin (source install); packages use /usr/bin.
 	@sed 's|/usr/local/bin/|/usr/bin/|g' systemd/tenodera.service > $(PKGDIR)/lib/systemd/system/tenodera.service
 	@chmod 644 $(PKGDIR)/lib/systemd/system/tenodera.service
+	@# One-shot Caddy reverse-proxy setup (installs Caddy + Caddyfile post-install).
+	@install -m 755 ../packaging/tenodera-setup-caddy.sh $(PKGDIR)/usr/bin/tenodera-setup-caddy
+	@install -m 644 ../packaging/tenodera-caddy-setup.service $(PKGDIR)/lib/systemd/system/tenodera-caddy-setup.service
 	@install -m 644 logrotate/tenodera $(PKGDIR)/etc/logrotate.d/tenodera
 	@# The .deb targets Debian/Ubuntu, which use common-auth/common-account —
 	@# not system-auth (that variant, in pam.d/tenodera, ships in the .rpm).
@@ -271,6 +274,7 @@ package-rpm: build
 	@# logrotate/ and pam.d/ files are both named 'tenodera'; rename in SOURCES.
 	@cp target/release/tenodera-gateway target/release/tenodera-pam-helper ~/rpmbuild/SOURCES/
 	@sed 's|/usr/local/bin/|/usr/bin/|g' systemd/tenodera.service > ~/rpmbuild/SOURCES/tenodera.service
+	@cp ../packaging/tenodera-setup-caddy.sh ../packaging/tenodera-caddy-setup.service ~/rpmbuild/SOURCES/
 	@cp logrotate/tenodera ~/rpmbuild/SOURCES/tenodera.logrotate
 	@cp pam.d/tenodera ~/rpmbuild/SOURCES/tenodera.pam
 	@rm -rf ~/rpmbuild/SOURCES/ui-dist && cp -r ui/dist ~/rpmbuild/SOURCES/ui-dist

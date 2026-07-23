@@ -74,21 +74,24 @@ sudo dnf install \
 ```
 
 The panel package configures itself (creates `/etc/tenodera/tenodera.cnf`, the
-service account, and the data dir), enables and starts the gateway on
-**loopback** (`127.0.0.1:9090`), and starts the local agent.
+service account, and the data dir), enables and starts the gateway on **loopback**
+(`127.0.0.1:9090`), and starts the local agent. It then **installs the latest
+[Caddy](https://caddyserver.com) and writes `/etc/caddy/Caddyfile`**, so the panel
+is served over **HTTPS at `https://<panel-host>`** while the gateway itself stays
+private on loopback. Out of the box Caddy uses a self-signed (internal-CA)
+certificate on the host's IPs — accept the browser warning on a LAN, and swap in a
+domain + real certificate in the Caddyfile when ready (see
+[DOCS.md → Reverse proxy](docs/DOCS.md)).
 
-By default the gateway binds to **loopback only** (`127.0.0.1`), so a fresh
-install is not exposed on the network. Reach it over an SSH tunnel:
+> The Caddy step runs just after install via a one-shot `tenodera-caddy-setup`
+> service (a package can't install another package inline), so it needs network
+> access and appears a few seconds after `apt`/`dnf` finishes. If it can't run
+> (no network, unsupported distro), the panel stays on loopback — reach it over an
+> SSH tunnel (`ssh -L 9090:127.0.0.1:9090 <panel-host>`, then open
+> `http://localhost:9090`) and run `sudo systemctl start tenodera-caddy-setup`
+> later, or front it with your own TLS proxy.
 
-```bash
-ssh -L 9090:127.0.0.1:9090 <panel-host>
-# then open http://localhost:9090 in your browser
-```
-
-Log in with any PAM system user that has `sudo` privileges. To serve the panel to
-the network, front it with a TLS reverse proxy (recommended) or set
-`TENODERA_BIND_ADDR=0.0.0.0` **after** enabling TLS — see
-[DOCS.md](docs/DOCS.md) and [SECURITY.md](.github/SECURITY.md).
+Log in with any PAM system user that has `sudo` privileges.
 
 ### 2. Managed hosts
 
