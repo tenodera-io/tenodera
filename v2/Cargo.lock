@@ -1491,6 +1491,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "tenodera-bridge"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "tenodera-server"
 version = "0.1.0"
 dependencies = [

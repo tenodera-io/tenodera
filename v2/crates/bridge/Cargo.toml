@@ -1,0 +1,8 @@
+[package]
+name = "tenodera-bridge"
+version = "0.1.0"
+edition = "2021"
+description = "Tenodera v2 bridge — runs as the operator on a managed host; executes typed operations."
+
+[dependencies]
+serde_json = "1"
