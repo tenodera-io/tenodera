@@ -104,6 +104,7 @@ async fn main() -> anyhow::Result<()> {
             post(ops::service_restart),
         )
         .route("/api/audit/verify", get(audit::verify_handler))
+        .layer(axum::middleware::from_fn(security_headers))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
@@ -112,6 +113,31 @@ async fn main() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
+}
+
+/// Attach conservative security headers and a per-request id to every response.
+async fn security_headers(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::http::HeaderValue;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let mut res = next.run(req).await;
+    let h = res.headers_mut();
+    h.insert(
+        "x-content-type-options",
+        HeaderValue::from_static("nosniff"),
+    );
+    h.insert("x-frame-options", HeaderValue::from_static("DENY"));
+    h.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
+    h.insert(
+        "cross-origin-opener-policy",
+        HeaderValue::from_static("same-origin"),
+    );
+    if let Ok(v) = HeaderValue::from_str(&request_id) {
+        h.insert("x-request-id", v);
+    }
+    res
 }
 
 /// The single-page control panel (served same-origin so /api/* needs no CORS).
