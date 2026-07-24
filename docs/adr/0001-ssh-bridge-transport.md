@@ -70,9 +70,10 @@ server (no root) --SSH--> sshd --> tenodera-bridge (as user) --> sudo/polkit -->
 
 ## Open questions (must be resolved before Phase 2 code)
 
-1. **Key model:** SSH **certificate authority** with short-lived host+user certs
-   (recommended — trust one CA, no per-host key copying, built-in expiry) vs. central
-   per-host keys in PostgreSQL.
+1. ~~**Key model:** SSH certificate authority vs. central per-host keys.~~
+   **RESOLVED → [ADR-0003](0003-host-enrollment-ssh-ca.md): SSH certificate
+   authority** (short-lived user certs, hosts trust one CA — no per-host key
+   copying). Validated by a live spike on .10 → .11 (2026-07-24).
 2. **Inbound `:22`:** accept as a documented requirement, and/or provide an optional
    **reverse-tunnel** mode for hosts that cannot accept inbound SSH.
 3. **Bridge channel:** run the control protocol as a **length-framed** channel, ideally
