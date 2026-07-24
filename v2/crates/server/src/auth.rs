@@ -294,5 +294,11 @@ pub async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Status
 
 /// GET /api/me — protected; proves the `Auth` extractor end to end.
 pub async fn me(auth: Auth) -> Json<serde_json::Value> {
-    Json(serde_json::json!({ "user_id": auth.user_id, "username": auth.username }))
+    let mut permissions: Vec<&String> = auth.permissions.iter().collect();
+    permissions.sort();
+    Json(serde_json::json!({
+        "user_id": auth.user_id,
+        "username": auth.username,
+        "permissions": permissions,
+    }))
 }

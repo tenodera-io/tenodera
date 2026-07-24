@@ -59,6 +59,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = AppState { pool };
     let app = Router::new()
+        .route("/", get(index))
         .route("/health", get(health))
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/oidc", post(oidc::login_oidc))
@@ -80,6 +81,11 @@ async fn main() -> anyhow::Result<()> {
         .with_graceful_shutdown(shutdown_signal())
         .await?;
     Ok(())
+}
+
+/// The single-page control panel (served same-origin so /api/* needs no CORS).
+async fn index() -> axum::response::Html<&'static str> {
+    axum::response::Html(include_str!("../web/index.html"))
 }
 
 /// Readiness + DB round-trip: reports the schema is applied and reachable.
