@@ -30,8 +30,47 @@ fn main() {
         .unwrap_or_else(|| serde_json::json!({}));
 
     match op {
+        // Read — the bridge runs it directly as the operator (no escalation).
         "service.status" => service_status(&args),
+        // Mutating — the operator may not touch privileged state; forward the typed
+        // op verbatim to the root op-helper via one NOPASSWD sudoers rule (ADR-0005).
+        "service.start" | "service.stop" | "service.restart" => forward_to_helper(&req),
         other => emit(serde_json::json!({ "ok": false, "error": format!("unknown op: {other}") })),
+    }
+}
+
+/// Path to the root-owned op-helper (installed out of band; ADR-0004/0005).
+const OP_HELPER: &str = "/usr/local/bin/tenodera-op-helper";
+
+/// Forward the typed operation to `sudo -n op-helper` and relay its typed result.
+/// The bridge never builds the privileged command itself — the helper does, from
+/// its own allow-list.
+fn forward_to_helper(req: &serde_json::Value) {
+    use std::io::Write;
+    let mut child = match Command::new("sudo")
+        .args(["-n", OP_HELPER])
+        .env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return emit_err(&format!("could not launch op-helper: {e}")),
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(req.to_string().as_bytes());
+    }
+    match child.wait_with_output() {
+        Ok(out) if out.status.success() => {
+            print!("{}", String::from_utf8_lossy(&out.stdout));
+        }
+        Ok(out) => emit_err(&format!(
+            "op-helper failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )),
+        Err(e) => emit_err(&format!("op-helper wait: {e}")),
     }
 }
 

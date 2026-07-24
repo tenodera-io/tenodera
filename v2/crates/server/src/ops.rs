@@ -6,11 +6,11 @@
 //! running it, a `job_results` row when it finishes, and an entry in the
 //! hash-chain audit log (ADR-0007). So an operation is an accountable, replayable
 //! event — not a transient request. RBAC is the narrowing gate on top of the
-//! host's own sudo/HBAC authority.
+//! host's own sudo/HBAC authority: reads need `service.view`, mutations need
+//! `service.manage` (and on the host go through the root op-helper).
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
 use axum::Json;
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -19,6 +19,8 @@ use sqlx::Row;
 use crate::auth::{Auth, DEFAULT_ORG};
 use crate::{audit, ssh, AppState};
 
+type Reply = (StatusCode, Json<serde_json::Value>);
+
 /// Grant-binding fingerprint: SHA-256 over canonical (operation, args). serde_json
 /// key-sorts maps, so this is stable for equal argument sets (ADR-0004/0005).
 fn args_hash(operation: &str, args: &serde_json::Value) -> Vec<u8> {
@@ -26,26 +28,44 @@ fn args_hash(operation: &str, args: &serde_json::Value) -> Vec<u8> {
     Sha256::digest(canon.as_bytes()).to_vec()
 }
 
-/// POST /api/hosts/{id}/service.status — requires `service.view`.
-pub async fn service_status(
+fn unit_of(body: &serde_json::Value) -> String {
+    body.get("unit")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+// POST /api/hosts/{id}/service.{status,start,stop,restart}
+pub async fn service_status(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
+    run_op(a, s, h, "service.status", "service.view", &unit_of(&b)).await
+}
+pub async fn service_start(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
+    run_op(a, s, h, "service.start", "service.manage", &unit_of(&b)).await
+}
+pub async fn service_stop(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
+    run_op(a, s, h, "service.stop", "service.manage", &unit_of(&b)).await
+}
+pub async fn service_restart(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
+    run_op(a, s, h, "service.restart", "service.manage", &unit_of(&b)).await
+}
+
+/// Shared pipeline: RBAC gate → resolve host + principal → durable job → run over
+/// SSH+bridge → persist result → hash-chain audit → reply.
+async fn run_op(
     auth: Auth,
     State(state): State<AppState>,
     Path(host_id): Path<String>,
-    Json(body): Json<serde_json::Value>,
-) -> impl IntoResponse {
-    let unit = body
-        .get("unit")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    if auth.require("service.view").is_err() {
+    operation: &str,
+    required: &str,
+    unit: &str,
+) -> Reply {
+    if auth.require(required).is_err() {
         audit::record(
             &state.pool,
-            "service.status",
+            operation,
             Some(&auth.user_id),
             None,
-            &unit,
+            unit,
             "denied",
             "failed",
             json!({ "host_id": host_id }),
@@ -96,8 +116,8 @@ pub async fn service_status(
         );
     };
 
-    let op = json!({ "v": 1, "op": "service.status", "args": { "unit": unit } });
-    let ah = args_hash("service.status", &op["args"]);
+    let op = json!({ "v": 1, "op": operation, "args": { "unit": unit } });
+    let ah = args_hash(operation, &op["args"]);
 
     // Durable job row (state=running) before we touch the host.
     let job_id: Option<String> = sqlx::query_scalar(
@@ -105,12 +125,13 @@ pub async fn service_status(
             (id, organization_id, actor_user_id, host_id, operation, args, args_hash, state)
          VALUES
             (gen_random_uuid(), ($1)::uuid, ($2)::uuid, ($3)::uuid,
-             'service.status', ($4)::jsonb, $5, 'running')
+             $4, ($5)::jsonb, $6, 'running')
          RETURNING id::text",
     )
     .bind(DEFAULT_ORG)
     .bind(&auth.user_id)
     .bind(&host_id)
+    .bind(operation)
     .bind(op["args"].to_string())
     .bind(&ah)
     .fetch_optional(&state.pool)
@@ -119,31 +140,27 @@ pub async fn service_status(
     .flatten();
 
     // Run it over SSH+bridge and classify the outcome.
-    let (state_name, success, response, error_code): (
-        &str,
-        bool,
-        serde_json::Value,
-        Option<String>,
-    ) = match ssh::run_operation(&hostname, port, &principal, &op).await {
-        Ok(res) => {
-            if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
-                ("succeeded", true, res, None)
-            } else {
-                let ec = res
-                    .get("error")
-                    .and_then(|v| v.as_str())
-                    .map(str::to_string)
-                    .or(Some("operation_failed".into()));
-                ("failed", false, res, ec)
+    let (state_name, success, response, error_code): (&str, bool, serde_json::Value, Option<String>) =
+        match ssh::run_operation(&hostname, port, &principal, &op).await {
+            Ok(res) => {
+                if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                    ("succeeded", true, res, None)
+                } else {
+                    let ec = res
+                        .get("error")
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                        .or(Some("operation_failed".into()));
+                    ("failed", false, res, ec)
+                }
             }
-        }
-        Err(e) => (
-            "failed",
-            false,
-            json!({ "ok": false, "error": e }),
-            Some("transport".into()),
-        ),
-    };
+            Err(e) => (
+                "failed",
+                false,
+                json!({ "ok": false, "error": e }),
+                Some("transport".into()),
+            ),
+        };
 
     // Finalize the job + record its result (best-effort — never mask the outcome).
     if let Some(ref jid) = job_id {
@@ -170,10 +187,10 @@ pub async fn service_status(
 
     audit::record(
         &state.pool,
-        "service.status",
+        operation,
         Some(&auth.user_id),
         Some(&host_id),
-        &unit,
+        unit,
         "allowed",
         if success { "succeeded" } else { "failed" },
         json!({ "job_id": job_id, "state": state_name }),

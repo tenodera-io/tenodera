@@ -1,0 +1,8 @@
+[package]
+name = "tenodera-op-helper"
+version = "0.1.0"
+edition = "2021"
+description = "Tenodera v2 op-helper — the ONLY thing run as root: executes typed operations, never a shell (ADR-0004/0005)."
+
+[dependencies]
+serde_json = "1"
