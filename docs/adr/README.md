@@ -12,11 +12,12 @@ that tell us it's done. ADRs are append-only — supersede, don't rewrite.
 | [0004](0004-identity-and-credential-model.md) | User identity & credential model | Accepted |
 | [0005](0005-typed-operation-protocol.md) | Typed operation protocol & root-owned helper | Accepted (direction) |
 | [0006](0006-rbac.md) | Role-based access control (RBAC) | Accepted (direction) |
+| [0007](0007-audit-event-storage.md) | Audit & event storage (hash-chain) | Accepted (direction) |
 
 Background:
 [TENODERA_V2.md](../architecture/TENODERA_V2.md) (target architecture) ·
 [SSH_BRIDGE_RETROSPECTIVE.md](../architecture/SSH_BRIDGE_RETROSPECTIVE.md) (why the
 previous SSH bridge was abandoned and what v2 must answer).
 
-Planned next ADRs (not yet written): audit & event storage (hash-chain, signed
-checkpoints, retention/export).
+The foundation ADR set (0001–0007) is complete. Further ADRs will be written per
+subsystem as Phase-2 code lands (e.g. inventory model, terminal/PTY subsystem).
