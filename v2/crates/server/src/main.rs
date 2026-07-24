@@ -92,23 +92,25 @@ async fn index() -> axum::response::Html<&'static str> {
     axum::response::Html(include_str!("../web/index.html"))
 }
 
-/// Readiness + DB round-trip: reports the schema is applied and reachable.
-async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
-    let orgs: i64 = sqlx::query_scalar("SELECT count(*) FROM organizations")
+/// Readiness: a real DB round-trip. Returns 503 when the database is unreachable
+/// so a load balancer / orchestrator stops routing to a control plane that can't
+/// serve (and can't fail closed on jobs/audit).
+async fn health(
+    State(state): State<AppState>,
+) -> (axum::http::StatusCode, Json<serde_json::Value>) {
+    match sqlx::query_scalar::<_, i64>("SELECT count(*) FROM organizations")
         .fetch_one(&state.pool)
         .await
-        .unwrap_or(-1);
-    let tables: i64 =
-        sqlx::query_scalar("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")
-            .fetch_one(&state.pool)
-            .await
-            .unwrap_or(-1);
-    Json(serde_json::json!({
-        "status": "ok",
-        "db": if orgs >= 0 { "connected" } else { "error" },
-        "organizations": orgs,
-        "tables": tables,
-    }))
+    {
+        Ok(orgs) => (
+            axum::http::StatusCode::OK,
+            Json(serde_json::json!({ "status": "ok", "db": "connected", "organizations": orgs })),
+        ),
+        Err(_) => (
+            axum::http::StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({ "status": "degraded", "db": "unreachable" })),
+        ),
+    }
 }
 
 async fn shutdown_signal() {

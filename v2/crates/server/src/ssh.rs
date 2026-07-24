@@ -10,9 +10,14 @@
 //! uses TOFU host-key acceptance. Host-key pinning from PostgreSQL (ADR-0003) and a
 //! native transport come later.
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use tokio::process::Command;
+
+/// Hard ceiling on a single SSH operation (connect + bridge run).
+const SSH_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Path to the bridge on managed hosts (installed there out of band for now).
 const REMOTE_BRIDGE: &str = "/usr/local/bin/tenodera-bridge";
@@ -118,6 +123,8 @@ pub async fn run_operation(
     tokio::fs::create_dir_all(&tmp)
         .await
         .map_err(|e| e.to_string())?;
+    // Private scratch dir — certs/keys/known_hosts must not be world-readable.
+    let _ = tokio::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o700)).await;
     let pubkey_src = PathBuf::from(format!("{}.pub", key.display()));
     let pubkey = tmp.join("id.pub");
     tokio::fs::copy(&pubkey_src, &pubkey)
@@ -154,20 +161,34 @@ pub async fn run_operation(
         return Err(format!("write known_hosts: {e}"));
     }
 
-    // Connect and run the bridge, feeding it the operation on stdin.
+    // Connect and run the bridge, feeding it the operation on stdin. The client is
+    // pinned to our own options only — the server user's ~/.ssh/config must not
+    // influence the connection, and no agent/X11/port forwarding is allowed.
     let target = format!("{principal}@{host}");
     let mut child = Command::new("ssh")
         .args([
+            "-F",
+            "/dev/null",
             "-i",
             &key.display().to_string(),
             "-o",
             &format!("CertificateFile={}", cert.display()),
+            "-o",
+            "IdentitiesOnly=yes",
             "-o",
             "BatchMode=yes",
             "-o",
             "StrictHostKeyChecking=yes",
             "-o",
             &format!("UserKnownHostsFile={}", known.display()),
+            "-o",
+            "ClearAllForwardings=yes",
+            "-o",
+            "ForwardAgent=no",
+            "-o",
+            "ForwardX11=no",
+            "-o",
+            "RequestTTY=no",
             "-o",
             "ConnectTimeout=8",
             "-p",
@@ -178,6 +199,7 @@ pub async fn run_operation(
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
+        .kill_on_drop(true)
         .spawn()
         .map_err(|e| format!("ssh spawn: {e}"))?;
 
@@ -186,11 +208,14 @@ pub async fn run_operation(
         let _ = stdin.write_all(op.to_string().as_bytes()).await;
         let _ = stdin.shutdown().await;
     }
-    let out = child
-        .wait_with_output()
-        .await
-        .map_err(|e| format!("ssh wait: {e}"))?;
+    // Bounded: on timeout the future is dropped and kill_on_drop terminates ssh.
+    let outcome = tokio::time::timeout(SSH_TIMEOUT, child.wait_with_output()).await;
     let _ = tokio::fs::remove_dir_all(&tmp).await;
+    let out = match outcome {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return Err(format!("ssh wait: {e}")),
+        Err(_) => return Err("ssh operation timed out".into()),
+    };
 
     if !out.status.success() {
         return Err(format!(
