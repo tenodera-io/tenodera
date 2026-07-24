@@ -13,19 +13,21 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 use sqlx::Row;
+use std::time::{SystemTime, UNIX_EPOCH};
+use tenodera_protocol as proto;
+use uuid::Uuid;
 
 use crate::auth::{Auth, DEFAULT_ORG};
 use crate::{audit, ssh, AppState};
 
 type Reply = (StatusCode, Json<serde_json::Value>);
 
-/// Grant-binding fingerprint: SHA-256 over canonical (operation, args). serde_json
-/// key-sorts maps, so this is stable for equal argument sets (ADR-0004/0005).
-fn args_hash(operation: &str, args: &serde_json::Value) -> Vec<u8> {
-    let canon = json!([operation, args]).to_string();
-    Sha256::digest(canon.as_bytes()).to_vec()
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 fn unit_of(body: &serde_json::Value) -> String {
@@ -49,20 +51,76 @@ fn requires_step_up(operation: &str) -> bool {
 }
 
 // POST /api/hosts/{id}/service.{status,start,stop,restart}
-pub async fn service_status(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
-    run_op(a, s, h, "service.status", "service.view", &unit_of(&b), None).await
+pub async fn service_status(
+    a: Auth,
+    s: State<AppState>,
+    h: Path<String>,
+    b: Json<serde_json::Value>,
+) -> Reply {
+    run_op(
+        a,
+        s,
+        h,
+        "service.status",
+        "service.view",
+        &unit_of(&b),
+        None,
+    )
+    .await
 }
-pub async fn service_start(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
+pub async fn service_start(
+    a: Auth,
+    s: State<AppState>,
+    h: Path<String>,
+    b: Json<serde_json::Value>,
+) -> Reply {
     let (unit, reauth) = (unit_of(&b), reauth_of(&b));
-    run_op(a, s, h, "service.start", "service.manage", &unit, reauth.as_deref()).await
+    run_op(
+        a,
+        s,
+        h,
+        "service.start",
+        "service.manage",
+        &unit,
+        reauth.as_deref(),
+    )
+    .await
 }
-pub async fn service_stop(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
+pub async fn service_stop(
+    a: Auth,
+    s: State<AppState>,
+    h: Path<String>,
+    b: Json<serde_json::Value>,
+) -> Reply {
     let (unit, reauth) = (unit_of(&b), reauth_of(&b));
-    run_op(a, s, h, "service.stop", "service.manage", &unit, reauth.as_deref()).await
+    run_op(
+        a,
+        s,
+        h,
+        "service.stop",
+        "service.manage",
+        &unit,
+        reauth.as_deref(),
+    )
+    .await
 }
-pub async fn service_restart(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
+pub async fn service_restart(
+    a: Auth,
+    s: State<AppState>,
+    h: Path<String>,
+    b: Json<serde_json::Value>,
+) -> Reply {
     let (unit, reauth) = (unit_of(&b), reauth_of(&b));
-    run_op(a, s, h, "service.restart", "service.manage", &unit, reauth.as_deref()).await
+    run_op(
+        a,
+        s,
+        h,
+        "service.restart",
+        "service.manage",
+        &unit,
+        reauth.as_deref(),
+    )
+    .await
 }
 
 /// Shared pipeline: RBAC gate → resolve host + principal → durable job → run over
@@ -182,8 +240,19 @@ async fn run_op(
         .collect::<Vec<_>>()
         .join("\n");
 
-    let op = json!({ "v": 1, "op": operation, "args": { "unit": unit } });
-    let ah = args_hash(operation, &op["args"]);
+    // Typed operation — one source of truth for the op and its argument hash.
+    let operation_obj = match proto::Operation::from_key(operation, unit) {
+        Some(o) => o,
+        None => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({ "error": "unknown operation" })),
+            )
+        }
+    };
+    let mutating = operation_obj.is_mutating();
+    let ah = operation_obj.hash().to_vec();
+    let args_json = json!({ "unit": unit }).to_string();
 
     // Fail-closed: a durable job MUST exist before we touch the host. If we can't
     // persist the intent, we refuse to act — no silent mutation without a record.
@@ -199,7 +268,7 @@ async fn run_op(
     .bind(&auth.user_id)
     .bind(&host_id)
     .bind(operation)
-    .bind(op["args"].to_string())
+    .bind(&args_json)
     .bind(&ah)
     .fetch_one(&state.pool)
     .await
@@ -208,8 +277,14 @@ async fn run_op(
         Err(e) => {
             tracing::error!(error = %e, operation, "refusing to act: could not persist job");
             audit::record(
-                &state.pool, operation, Some(&auth.user_id), Some(&host_id), unit,
-                "denied", "failed", json!({ "reason": "job_persist_failed" }),
+                &state.pool,
+                operation,
+                Some(&auth.user_id),
+                Some(&host_id),
+                unit,
+                "denied",
+                "failed",
+                json!({ "reason": "job_persist_failed" }),
             )
             .await;
             return (
@@ -219,17 +294,78 @@ async fn run_op(
         }
     };
 
+    // Build the typed request. A MUTATION carries a short-lived, control-plane-
+    // signed ExecutionGrant bound to this job/actor/host/operation; the op-helper
+    // refuses to act without it. If signing is unavailable, fail closed.
+    let now = unix_now();
+    let (Ok(job_uuid), Ok(host_uuid)) = (Uuid::parse_str(&job_id), Uuid::parse_str(&host_id))
+    else {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": "internal id error" })),
+        );
+    };
+    let grant = if mutating {
+        let level = if operation_obj.requires_step_up() {
+            proto::AuthenticationLevel::StepUp
+        } else {
+            proto::AuthenticationLevel::Standard
+        };
+        match crate::signer::issue_grant(
+            job_uuid,
+            &principal,
+            host_uuid,
+            &operation_obj,
+            level,
+            now,
+        ) {
+            Some(g) => Some(g),
+            None => {
+                let _ = sqlx::query("UPDATE jobs SET state = 'failed' WHERE id = ($1)::uuid")
+                    .bind(&job_id)
+                    .execute(&state.pool)
+                    .await;
+                audit::record(
+                    &state.pool,
+                    operation,
+                    Some(&auth.user_id),
+                    Some(&host_id),
+                    unit,
+                    "denied",
+                    "failed",
+                    json!({ "reason": "grant_signing_unavailable", "job_id": job_id }),
+                )
+                .await;
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": "grant signing unavailable" })),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let request = proto::OperationRequest {
+        version: proto::PROTOCOL_VERSION,
+        request_id: Uuid::new_v4(),
+        job_id: job_uuid,
+        actor: principal.clone(),
+        deadline: now + crate::signer::GRANT_TTL_SECS,
+        operation: operation_obj,
+        grant,
+    };
+    let op_wire = serde_json::to_value(&request).unwrap_or_else(|_| json!({}));
+
     // Run it over SSH+bridge and classify the outcome. On a transport error we
     // cannot know whether a MUTATION took effect, so it is `outcome_unknown`
     // (never silently "failed"/"succeeded", and not eligible for auto-retry);
     // a read is idempotent, so a transport error is just a failure.
-    let mutating = operation != "service.status";
     let (state_name, success, response, error_code): (
         &str,
         Option<bool>,
         serde_json::Value,
         Option<String>,
-    ) = match ssh::run_operation(&hostname, port, &principal, &op, &known_hosts).await {
+    ) = match ssh::run_operation(&hostname, port, &principal, &op_wire, &known_hosts).await {
         Ok(res) => {
             if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                 ("succeeded", Some(true), res, None)
@@ -266,7 +402,11 @@ async fn run_op(
              (SELECT created_at FROM jobs WHERE id = ($1)::uuid), now(), $4, ($5)::jsonb)",
     )
     .bind(&job_id)
-    .bind(if success == Some(true) { Some(0) } else { None::<i32> })
+    .bind(if success == Some(true) {
+        Some(0)
+    } else {
+        None::<i32>
+    })
     .bind(success)
     .bind(&error_code)
     .bind(response.to_string())

@@ -1730,6 +1730,7 @@ name = "tenodera-bridge"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "tenodera-protocol",
 ]
 
 [[package]]
@@ -1737,6 +1738,7 @@ name = "tenodera-op-helper"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "tenodera-protocol",
 ]
 
 [[package]]
@@ -1770,9 +1772,11 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx",
+ "tenodera-protocol",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

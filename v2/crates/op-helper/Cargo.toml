@@ -6,3 +6,4 @@ description = "Tenodera v2 op-helper — the ONLY thing run as root: executes ty
 
 [dependencies]
 serde_json = "1"
+tenodera-protocol = { path = "../protocol" }

@@ -7,10 +7,23 @@
 //! a job, actor, host, argument hash, and deadline, so the helper can refuse
 //! anything the control plane did not authorize.
 
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+use ed25519_dalek::{Signature, Signer, Verifier};
+pub use ed25519_dalek::{SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
+
+/// Load an Ed25519 signing key from a 32-byte hex seed (control plane / signer).
+pub fn signing_key_from_hex(s: &str) -> Option<SigningKey> {
+    let bytes: [u8; 32] = from_hex(s.trim()).ok()?.try_into().ok()?;
+    Some(SigningKey::from_bytes(&bytes))
+}
+
+/// Load an Ed25519 verifying key from 32-byte hex (op-helper trusts this key).
+pub fn verifying_key_from_hex(s: &str) -> Option<VerifyingKey> {
+    let bytes: [u8; 32] = from_hex(s.trim()).ok()?.try_into().ok()?;
+    VerifyingKey::from_bytes(&bytes).ok()
+}
 
 /// Bump on any breaking change to the wire structs.
 pub const PROTOCOL_VERSION: u16 = 1;
@@ -120,6 +133,39 @@ impl Operation {
             | Operation::ServiceStart(u)
             | Operation::ServiceStop(u)
             | Operation::ServiceRestart(u) => u.validate(),
+        }
+    }
+
+    /// Build from a wire key + unit (server side). Returns None for unknown keys.
+    pub fn from_key(key: &str, unit: &str) -> Option<Operation> {
+        let u = ServiceUnit {
+            unit: unit.to_string(),
+        };
+        Some(match key {
+            "service.status" => Operation::ServiceStatus(u),
+            "service.start" => Operation::ServiceStart(u),
+            "service.stop" => Operation::ServiceStop(u),
+            "service.restart" => Operation::ServiceRestart(u),
+            _ => return None,
+        })
+    }
+
+    pub fn unit(&self) -> &str {
+        match self {
+            Operation::ServiceStatus(u)
+            | Operation::ServiceStart(u)
+            | Operation::ServiceStop(u)
+            | Operation::ServiceRestart(u) => &u.unit,
+        }
+    }
+
+    /// The `systemctl` verb a MUTATING operation maps to (None for the read).
+    pub fn systemctl_verb(&self) -> Option<&'static str> {
+        match self {
+            Operation::ServiceStatus(_) => None,
+            Operation::ServiceStart(_) => Some("start"),
+            Operation::ServiceStop(_) => Some("stop"),
+            Operation::ServiceRestart(_) => Some("restart"),
         }
     }
 

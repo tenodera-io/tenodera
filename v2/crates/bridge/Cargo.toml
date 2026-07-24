@@ -6,3 +6,4 @@ description = "Tenodera v2 bridge — runs as the operator on a managed host; ex
 
 [dependencies]
 serde_json = "1"
+tenodera-protocol = { path = "../protocol" }
