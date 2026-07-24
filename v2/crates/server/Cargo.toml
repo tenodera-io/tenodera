@@ -1,0 +1,21 @@
+[package]
+name = "tenodera-server"
+version = "0.1.0"
+edition = "2021"
+description = "Tenodera v2 control plane (unprivileged) — API, sessions, RBAC, jobs, audit."
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+axum = "0.8"
+# No TLS backend for now: the dev DB is local. Add runtime-tokio-rustls when the
+# control plane talks to a remote/TLS PostgreSQL (production).
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "postgres",
+    "migrate",
+    "macros",
+] }
+anyhow = "1"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
