@@ -126,7 +126,8 @@ const PAM_SERVICE: &str = "tenodera";
 
 /// Verify a password via the pam-helper (run as root through one NOPASSWD rule).
 /// The server never touches PAM/shadow itself. Any failure = not authenticated.
-async fn pam_authenticate(principal: &str, password: &str) -> bool {
+/// Reused for step-up re-authentication on high-risk operations (ADR-0004 Mode B).
+pub(crate) async fn pam_authenticate(principal: &str, password: &str) -> bool {
     use tokio::io::AsyncWriteExt;
     let mut child = match tokio::process::Command::new("sudo")
         .args(["-n", PAM_HELPER, PAM_SERVICE, principal])

@@ -35,18 +35,34 @@ fn unit_of(body: &serde_json::Value) -> String {
         .to_string()
 }
 
+fn reauth_of(body: &serde_json::Value) -> Option<String> {
+    body.get("reauth")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+/// High-risk (disruptive) operations require fresh step-up re-authentication,
+/// independent of the standing sudo grant (ADR-0004 Mode B).
+fn requires_step_up(operation: &str) -> bool {
+    matches!(operation, "service.stop" | "service.restart")
+}
+
 // POST /api/hosts/{id}/service.{status,start,stop,restart}
 pub async fn service_status(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
-    run_op(a, s, h, "service.status", "service.view", &unit_of(&b)).await
+    run_op(a, s, h, "service.status", "service.view", &unit_of(&b), None).await
 }
 pub async fn service_start(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
-    run_op(a, s, h, "service.start", "service.manage", &unit_of(&b)).await
+    let (unit, reauth) = (unit_of(&b), reauth_of(&b));
+    run_op(a, s, h, "service.start", "service.manage", &unit, reauth.as_deref()).await
 }
 pub async fn service_stop(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
-    run_op(a, s, h, "service.stop", "service.manage", &unit_of(&b)).await
+    let (unit, reauth) = (unit_of(&b), reauth_of(&b));
+    run_op(a, s, h, "service.stop", "service.manage", &unit, reauth.as_deref()).await
 }
 pub async fn service_restart(a: Auth, s: State<AppState>, h: Path<String>, b: Json<serde_json::Value>) -> Reply {
-    run_op(a, s, h, "service.restart", "service.manage", &unit_of(&b)).await
+    let (unit, reauth) = (unit_of(&b), reauth_of(&b));
+    run_op(a, s, h, "service.restart", "service.manage", &unit, reauth.as_deref()).await
 }
 
 /// Shared pipeline: RBAC gate → resolve host + principal → durable job → run over
@@ -58,6 +74,7 @@ async fn run_op(
     operation: &str,
     required: &str,
     unit: &str,
+    reauth: Option<&str>,
 ) -> Reply {
     if auth.require(required).is_err() {
         audit::record(
@@ -115,6 +132,32 @@ async fn run_op(
             Json(json!({ "error": "principal lookup failed" })),
         );
     };
+
+    // Step-up re-auth for high-risk operations (ADR-0004 Mode B): a fresh PAM
+    // check of the operator's own password, independent of the standing grant.
+    if requires_step_up(operation) {
+        let passed = match reauth {
+            Some(pw) => crate::auth::pam_authenticate(&principal, pw).await,
+            None => false,
+        };
+        if !passed {
+            audit::record(
+                &state.pool,
+                operation,
+                Some(&auth.user_id),
+                Some(&host_id),
+                unit,
+                "denied",
+                "failed",
+                json!({ "reason": "step_up_required" }),
+            )
+            .await;
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(json!({ "error": "step-up authentication required", "step_up": true })),
+            );
+        }
+    }
 
     // Pinned host keys (ADR-0003). No trusted key = host not enrolled; refuse to
     // connect rather than trust-on-first-use silently during an operation.
