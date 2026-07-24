@@ -1,10 +1,10 @@
 //! Sessions & authentication (ADR-0002/0004).
 //!
 //! Sessions are DB-backed: only a SHA-256 of the bearer token is stored, with idle
-//! + absolute expiry and server-side revocation. Credentials are verified via PAM
-//! (LDAP/SSSD/FreeIPA through the pam-helper) or OIDC (`oidc.rs`). A dev password
-//! shortcut exists ONLY in a `--features dev-auth` build and is compiled out of
-//! release, so it can never ship as a way in.
+//! and absolute expiry plus server-side revocation. Credentials are verified via
+//! PAM (LDAP/SSSD/FreeIPA through the pam-helper) or OIDC (`oidc.rs`). A dev
+//! password shortcut exists ONLY in a `--features dev-auth` build and is compiled
+//! out of release, so it can never ship as a way in.
 
 use axum::extract::{FromRequestParts, State};
 use axum::http::request::Parts;

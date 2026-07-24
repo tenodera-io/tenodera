@@ -45,11 +45,37 @@ async fn main() -> anyhow::Result<()> {
         .connect(&db_url)
         .await?;
 
-    // sqlx owns the schema: apply any pending migrations from ../../migrations.
-    sqlx::migrate!("../../migrations").run(&pool).await?;
-    tracing::info!("migrations applied");
+    let migrator = sqlx::migrate!("../../migrations");
 
-    // Seed permissions, built-in roles, and dev accounts (ADR-0006).
+    // `tenodera-server migrate` applies pending migrations, then exits. Migrations
+    // are an explicit operator step (ADR-0002) — the serving process never applies
+    // schema changes to a live database on its own.
+    if std::env::args().nth(1).as_deref() == Some("migrate") {
+        migrator.run(&pool).await?;
+        tracing::info!("migrations applied");
+        return Ok(());
+    }
+
+    // Serve mode: refuse to start against a schema that isn't fully migrated.
+    let expected: Vec<i64> = migrator.iter().map(|m| m.version).collect();
+    let applied: Vec<i64> =
+        sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(&pool)
+            .await
+            .unwrap_or_default();
+    let pending: Vec<i64> = expected
+        .into_iter()
+        .filter(|v| !applied.contains(v))
+        .collect();
+    if !pending.is_empty() {
+        tracing::error!(
+            ?pending,
+            "schema is not up to date — run `tenodera-server migrate` first; refusing to start"
+        );
+        anyhow::bail!("pending migrations: {pending:?}");
+    }
+
+    // Seed the permission/role catalog (idempotent app data, not schema; ADR-0006).
     rbac::seed(&pool).await?;
 
     #[cfg(feature = "dev-auth")]
