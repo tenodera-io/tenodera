@@ -5,7 +5,7 @@ edition = "2021"
 description = "Tenodera v2 control plane (unprivileged) — API, sessions, RBAC, jobs, audit."
 
 [dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "fs", "process", "io-util"] }
 axum = "0.8"
 # No TLS backend for now: the dev DB is local. Add runtime-tokio-rustls when the
 # control plane talks to a remote/TLS PostgreSQL (production).

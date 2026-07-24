@@ -9,7 +9,9 @@
 mod audit;
 mod auth;
 mod hosts;
+mod ops;
 mod rbac;
+mod ssh;
 
 use axum::{
     extract::State,
@@ -62,6 +64,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/me", get(auth::me))
         .route("/api/hosts", get(hosts::list).post(hosts::create))
         .route("/api/hosts/{id}", axum::routing::delete(hosts::remove))
+        .route("/api/hosts/{id}/service.status", post(ops::service_status))
         .route("/api/audit/verify", get(audit::verify_handler))
         .with_state(state);
 
