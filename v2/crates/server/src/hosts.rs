@@ -70,6 +70,17 @@ pub async fn create(
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
     if auth.require("host.manage").is_err() {
+        crate::audit::record(
+            &state.pool,
+            "host.create",
+            Some(&auth.user_id),
+            None,
+            "",
+            "denied",
+            "failed",
+            serde_json::json!({ "permission": "host.manage" }),
+        )
+        .await;
         return (
             StatusCode::FORBIDDEN,
             Json(serde_json::json!({ "error": "forbidden" })),
@@ -130,10 +141,21 @@ pub async fn create(
     .await;
 
     match row {
-        Ok(r) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({ "id": r.get::<String, _>("id") })),
-        ),
+        Ok(r) => {
+            let id: String = r.get("id");
+            crate::audit::record(
+                &state.pool,
+                "host.create",
+                Some(&auth.user_id),
+                Some(&id),
+                display_name,
+                "allowed",
+                "succeeded",
+                serde_json::json!({}),
+            )
+            .await;
+            (StatusCode::CREATED, Json(serde_json::json!({ "id": id })))
+        }
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": "could not create host" })),

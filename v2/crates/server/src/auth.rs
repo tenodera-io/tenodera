@@ -138,6 +138,17 @@ pub async fn login(
     let dev_auth = std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1");
     let dev_password = std::env::var("DEV_LOGIN_PASSWORD").unwrap_or_else(|_| "devpass".into());
     if !dev_auth || password != dev_password {
+        crate::audit::record(
+            &state.pool,
+            "login",
+            None,
+            None,
+            username,
+            "denied",
+            "failed",
+            serde_json::json!({ "reason": "invalid_credentials" }),
+        )
+        .await;
         return (
             StatusCode::UNAUTHORIZED,
             Json(serde_json::json!({ "error": "invalid credentials" })),
@@ -186,10 +197,23 @@ pub async fn login(
     .await;
 
     match inserted {
-        Ok(_) => (
-            StatusCode::OK,
-            Json(serde_json::json!({ "token": token, "user": username })),
-        ),
+        Ok(_) => {
+            crate::audit::record(
+                &state.pool,
+                "login",
+                Some(&user_id),
+                None,
+                username,
+                "allowed",
+                "succeeded",
+                serde_json::json!({}),
+            )
+            .await;
+            (
+                StatusCode::OK,
+                Json(serde_json::json!({ "token": token, "user": username })),
+            )
+        }
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": "could not create session" })),

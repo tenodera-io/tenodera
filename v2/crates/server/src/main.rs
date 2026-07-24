@@ -6,6 +6,7 @@
 //! (auth, sessions, RBAC, SSH connection manager, jobs, audit) lands in later
 //! phases.
 
+mod audit;
 mod auth;
 mod hosts;
 mod rbac;
@@ -61,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/me", get(auth::me))
         .route("/api/hosts", get(hosts::list).post(hosts::create))
         .route("/api/hosts/{id}", axum::routing::delete(hosts::remove))
+        .route("/api/audit/verify", get(audit::verify_handler))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
