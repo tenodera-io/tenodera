@@ -18,7 +18,7 @@ use sqlx::Row;
 use crate::AppState;
 
 /// The single default organization until multi-tenant (ADR-0002).
-const DEFAULT_ORG: &str = "00000000-0000-0000-0000-000000000001";
+pub(crate) const DEFAULT_ORG: &str = "00000000-0000-0000-0000-000000000001";
 const IDLE_TIMEOUT: &str = "15 minutes";
 const ABSOLUTE_LIFETIME: &str = "4 hours";
 

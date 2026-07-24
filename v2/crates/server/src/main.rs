@@ -7,6 +7,7 @@
 //! phases.
 
 mod auth;
+mod hosts;
 
 use axum::{
     extract::State,
@@ -63,6 +64,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/auth/login", post(auth::login))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/me", get(auth::me))
+        .route("/api/hosts", get(hosts::list).post(hosts::create))
+        .route("/api/hosts/{id}", axum::routing::delete(hosts::remove))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
