@@ -1,117 +1,131 @@
 # ADR-0004 — User identity & credential model
 
-- **Status:** **Proposed** — core decisions need the product owner's sign-off (marked ⚑).
-- **Date:** 2026-07-24
+- **Status:** **Accepted** (2026-07-24).
 - **Depends on:** [ADR-0003](0003-host-enrollment-ssh-ca.md) (SSH cert principals),
   [ADR-0002](0002-postgresql-control-plane.md) (session/RBAC storage).
+- **Drives:** [ADR-0005](0005-typed-operation-protocol.md) (the typed operations the
+  root-owned helper executes) and the forthcoming RBAC ADR.
 
 ## Context
 
 v0.x: an operator logs in with a **system/PAM account**; the role is derived from
-group membership (`sudo`/`wheel`/…). For every *privileged host operation* the UI
-sends the operator's **sudo password**, which the browser keeps (AES-GCM in a secure
-context) and the agent feeds to `sudo -S`.
+group membership. For every *privileged host operation* the UI sends the operator's
+**sudo password**, which the browser keeps (AES-GCM) and the agent feeds to `sudo -S`.
 
-Two forces pull on v2:
+Two forces pull on v2: (1) **don't hold the sudo password, even encrypted**;
+(2) **the host's `sudo` still demands proof** — in the SSH-cert model the operator is
+authenticated to the host as themselves, but `sudo` asks for a password unless a
+`NOPASSWD` rule applies. The design below resolves this without a broad `NOPASSWD`
+(which would recreate the v0.x "sudo may run `/bin/sh`" problem) and without a
+password store.
 
-1. **"Don't hold the sudo password, even encrypted."** The audit (§8.2) and both
-   external reviews want the password out of browser storage and off the wire on
-   every request. A short-lived **grant** after one authentication is the pattern.
-2. **The host's `sudo` still demands proof.** In the SSH-cert model (ADR-0003) the
-   operator is authenticated *to the host as themselves* by the certificate. But
-   `sudo` on that host will still ask for a password **unless** a `NOPASSWD` rule
-   applies. So "stop sending the password" only works if the host's sudo policy
-   doesn't need one — otherwise the password has to reach `sudo` somehow.
+## Decision
 
-This is the crux of v2's security/UX. Being honest about it now avoids designing a
-grant system that still secretly needs the password everywhere.
+### Identity
+- Authenticate to the control plane via **PAM** (local, LDAP, SSSD, FreeIPA) now.
+  **OIDC ships in the first commercial release** with an **explicit
+  `(issuer, subject) → local principal` mapping** stored in PostgreSQL. **No** default
+  mapping from email or display name. Automatic JIT / group-based mapping is deferred.
+- The resolved local username is the SSH certificate **principal** (ADR-0003) and the
+  user the bridge runs as.
+- **MFA ships in the first commercial release but is delegated to OIDC / PAM /
+  FreeIPA** — Tenodera builds **no** TOTP store of its own. Privileged operations
+  require MFA to have been satisfied; the highest-risk operations require a **fresh
+  MFA step-up** (below).
+- Sessions are stored as **hashed tokens** (SHA-256) with idle + absolute TTLs and
+  server-side revocation; any cached credential is **revoked at session end**.
 
-## Decision (proposed)
+### Authorization: the host decides
+- What an operator may do on a host is decided by that host's **`sudo` policy** and,
+  where used, **FreeIPA rules**. Tenodera RBAC (forthcoming ADR) is a **second gate**
+  on the UI/API surface — both must pass; RBAC never substitutes for the host.
 
-**Identity**
-- The operator authenticates to the control plane via **PAM** (local, LDAP, SSSD,
-  FreeIPA). **OIDC/SAML/MFA are later** (ADR/TENODERA_V2 "Później").
-- The panel identity maps to a **Unix username**, which becomes the SSH certificate
-  **principal** (ADR-0003) and the user the bridge runs as. When the panel identity
-  differs from the local username (federated login), an explicit
-  **identity → local-user mapping** is required and stored in PostgreSQL. ⚑
-- Sessions are stored in PostgreSQL as **hashed tokens** (SHA-256), with idle and
-  absolute TTLs and server-side revocation (ADR-0002).
+> **FreeIPA terminology (precise):**
+> **Sudo Rules** define *which commands* a user may run and *as whom* (`RunAs`).
+> **HBAC** (Host-Based Access Control) governs *access to hosts and PAM services*,
+> including `sshd` and `sudo`. In v2: HBAC gates whether the operator may reach the
+> host and use `sudo`/`sshd` at all; Sudo Rules gate the specific commands — i.e. the
+> Tenodera operation helper — and their `RunAs` target.
 
-**Authorization to act on a host — the host decides, not Tenodera**
-- The boundary for *what an operator may do* on a host is that host's **`sudo`
-  policy** (local sudoers, or FreeIPA/LDAP sudo rules / HBAC via SSSD). Tenodera's
-  own RBAC (ADR-0006, forthcoming) is a **second gate for the UI/API surface**, not
-  a replacement for the host's decision. Both must pass.
+### Credential model
+**Mode A — recommended default: `NOPASSWD` only for a narrow, root-owned Tenodera
+operation helper.**
+- The single `NOPASSWD` grant an operator (or Tenodera principal) receives is to run
+  **one root-owned helper** (`/usr/lib/tenodera/tenodera-op-helper`, working name)
+  that accepts a **typed, validated operation** (ADR-0005) and constructs the concrete
+  privileged action itself.
+- **No wildcard `NOPASSWD`** for `systemctl`, package managers, `tee`, or any shell.
+  There is **no `sh -c`**. The helper is the only thing sudo may run without a
+  password, and the helper does not take arbitrary commands.
+- Result: with Mode A, **no sudo password exists anywhere in Tenodera**, *and* a leaked
+  or misused sudo grant only reaches the helper's typed operations — not a root shell.
 
-**Credential for `sudo` — two modes, `NOPASSWD` preferred** ⚑
-- **Mode A (recommended default): passwordless, per-command sudoers.** Fleets grant
-  the operator (or a Tenodera principal) `NOPASSWD` rules scoped to specific commands
-  / the bridge's file-helper. Then **no sudo password exists in Tenodera at all** —
-  the password never enters the browser, the control plane, or the wire. This is the
-  cleanest realisation of "don't hold the password", and it makes the host's sudoers
-  the single, auditable source of truth. Managed via config management / FreeIPA.
-- **Mode B (fallback): just-in-time re-auth.** For hosts/operations without a
-  `NOPASSWD` rule, prompt for the password **at the moment of the operation**, use it
-  for that one `sudo`, and **discard it** — never persist it, not even encrypted, not
-  across operations. A short-lived server-side **grant** (MAC-signed: user + host +
-  scope + nonce + minutes TTL) can authorise *further* operations within the window
-  **only when Mode A applies** (i.e. the grant carries authorization, never the
-  password). Where a real password is required, each such operation re-prompts.
+**Mode B — first-class, fully supported: just-in-time sudo re-auth.**
+- For hosts/operations where even the helper is not `NOPASSWD`, prompt for the
+  password **at the moment of the operation**, use it once, and **discard it** — never
+  persisted, not encrypted, not cached across operations; any transient credential is
+  revoked at session end. Mode B is a supported path in the first commercial release,
+  not a degraded fallback.
 
-The net effect: **Tenodera stores no long-lived credential.** Either the host is
-`NOPASSWD` (nothing to store) or the password is used once and dropped.
+**Step-up for high-risk operations (independent of `NOPASSWD`).**
+- High-risk operations require **Tenodera step-up authentication** *even under Mode A*
+  — re-auth is a Tenodera control that does not depend on the host's `NOPASSWD`.
+- The authorization it produces is a **grant** that is **short-lived, single-use (or
+  narrowly limited), and bound to `(user, host, exact operation, hash of arguments)`**.
+  A grant authorizes *that one action*, cannot be replayed against a different
+  argument, and never carries a password.
 
 ## Rejected alternatives
 
-- **Keep "encrypt the sudo password in the browser and send it every request"**
-  (v0.x). Password lives in browser storage and on the wire repeatedly; a per-op
-  secret in a control plane is exactly what the audit flagged. Rejected as the
-  default; retained only as the Mode-B fallback *for a single operation*, never
-  persisted.
-- **Cache the password server-side for the grant TTL.** Removes it from the browser
-  but re-creates a plaintext-secret store on the server — the thing we're avoiding.
-  Rejected.
-- **Tenodera-defined roles as the sole authorization** (ignore host sudo). Would make
-  the control plane the security boundary and let a compromised server act as any
-  operator on any host. Rejected — the host must remain the final arbiter.
+- **Broad `NOPASSWD` (e.g. `NOPASSWD: /usr/bin/systemctl *`, package managers, or a
+  shell).** Convenient but recreates the v0.x "sudo may run `/bin/sh`" hole — a
+  misused grant becomes arbitrary root. Rejected in favour of helper-only `NOPASSWD`.
+- **Store the sudo password server-side for a grant window.** Removes it from the
+  browser but rebuilds a plaintext-secret store. Rejected.
+- **Tenodera-defined roles as the sole authorization.** Makes a compromised control
+  plane able to act as any operator. Rejected — the host stays the final arbiter.
+- **A custom TOTP/MFA store.** Duplicates identity-provider function and adds a secret
+  store. Rejected; MFA is delegated to OIDC/PAM/FreeIPA.
 
 ## Consequences
 
-- **Mode A raises an operational requirement:** admins must provision `NOPASSWD`
-  sudo rules (ideally per-command, centrally). This is standard for managed fleets
-  and is *more* auditable, but it is a deployment step Tenodera must document and
-  ideally help generate (a suggested sudoers/HBAC snippet per enabled feature).
-- **Federated identity needs a mapping** to a local user before it can drive an SSH
-  principal and `sudo` — OIDC "jan.kowalski" must resolve to a Unix account on the
-  target host. This constrains how/when OIDC can be enabled.
-- **UX:** Mode A is seamless (no prompts). Mode B re-prompts for genuinely
-  password-required operations — acceptable, and arguably desirable for high-risk
-  actions (proof of presence).
-- Removing the persistent password removes the v0.x `secureStorage`/`su_plain` class
-  of problem entirely on the v2 line.
+- The **root-owned operation helper becomes a central component** — it is where "typed
+  operation → concrete privileged action" happens, with `O_NOFOLLOW`/path/argument
+  validation and no shell. It subsumes the v0.x A2 file-helper and is defined by
+  ADR-0005. Its operation set is the real privilege surface and must be reviewed as
+  carefully as sudoers once was.
+- **Provisioning simplifies**: admins grant **one** narrow sudoers rule (the helper)
+  or one FreeIPA Sudo Rule, instead of many per-command rules — Tenodera should ship a
+  suggested sudoers/HBAC+Sudo-Rule snippet.
+- **UX**: Mode A privileged operations are seamless; Mode B and high-risk step-up
+  prompt (proof of presence) — acceptable and desirable for dangerous actions.
+- **OIDC** cannot drive a host action until its identity is mapped to a local
+  principal; unmapped identities are refused, not guessed.
+- The v0.x persistent-password class of problem (`su_plain`, browser storage) does
+  **not** exist on the v2 line.
 
-## Open questions ⚑ (product owner)
+## Open questions (implementation detail, not blocking)
 
-1. **Is `NOPASSWD` (Mode A) the supported default**, with Mode B as fallback — or must
-   Tenodera support password-required sudo as a first-class path? (Determines whether
-   the grant ever carries a real secret.)
-2. **Federated identity → local user mapping**: manual table, naming convention, or
-   deferred until OIDC lands?
-3. **Grant scope granularity**: per (host, operation-type) vs per (host, resource)?
-4. **Re-auth policy for high-risk operations** even under Mode A (e.g. user deletion,
-   disk format) — always re-prompt regardless of `NOPASSWD`?
-5. **MFA** at control-plane login for the first commercial release, or "Później"?
+1. Exact **classification of "high-risk"** operations that trigger step-up + fresh
+   MFA (candidate list: user/group deletion, disk format/partition, `sshd_config`
+   and authorized_keys changes, firewall flush, package removal of core packages).
+2. Helper's **operation taxonomy and argument schemas** — defined in ADR-0005.
+3. Grant **binding format** and the canonical **argument-hash** definition (which
+   fields, canonicalization) — specified alongside ADR-0005 / the audit ADR.
 
 ## Acceptance criteria
 
-- No sudo/PAM password is ever written to storage (browser, server, or DB) — verified
-  by test and review. (Mode A: none exists; Mode B: used once, then dropped.)
-- A privileged operation succeeds on a `NOPASSWD` host with **no password prompt** and
-  **no secret on the wire**.
-- On a password-required host, the operation prompts once, succeeds, and leaves no
-  residual secret anywhere afterwards.
-- The authorization decision is demonstrably the **host's** (`sudo` denies → operation
-  denied) even when Tenodera RBAC would allow it.
-- A federated identity with no local-user mapping is refused with a clear error, not
-  silently run as the wrong user.
+- No sudo/PAM password is ever written to storage (browser, server, DB) — verified by
+  test and review. Mode A: none exists. Mode B: used once, then dropped; nothing
+  survives session end.
+- On a Mode-A host, a privileged operation runs via the helper with **no password
+  prompt**, and `sudo` may run **only** the helper (verified: `sudo -l` shows the
+  helper and nothing broader; no shell, no wildcard).
+- A high-risk operation is **refused without step-up** even on a Mode-A host, and the
+  issued grant is rejected if replayed with different arguments (argument-hash bound).
+- OIDC login without an explicit `(issuer, subject) → local principal` mapping is
+  refused with a clear error.
+- The authorization decision is demonstrably the **host's** (`sudo`/HBAC denies →
+  operation denied) even when Tenodera RBAC would allow it.
+- MFA is enforced for privileged operations via the external IdP; Tenodera stores no
+  MFA secret.
