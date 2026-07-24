@@ -1,3 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["crates/server", "crates/bridge", "crates/op-helper", "crates/pam-helper"]
+members = [
+    "crates/protocol",
+    "crates/server",
+    "crates/bridge",
+    "crates/op-helper",
+    "crates/pam-helper",
+]
