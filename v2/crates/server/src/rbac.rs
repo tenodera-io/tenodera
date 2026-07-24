@@ -96,6 +96,44 @@ pub async fn seed(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Does `user_id` hold `permission` effective on `host_id`? Honors each role
+/// grant's scope (ADR-0006): `global`, a specific `host`, a host `group`, or a
+/// host `tag` key. This is the enforced check for operations on a specific host —
+/// the coarse `Auth::require` union is only a first-pass / display aid.
+pub async fn allowed_on_host(
+    pool: &PgPool,
+    user_id: &str,
+    permission: &str,
+    host_id: &str,
+) -> bool {
+    sqlx::query_scalar::<_, bool>(
+        "SELECT EXISTS (
+            SELECT 1
+              FROM user_roles ur
+              JOIN role_permissions rp ON rp.role_id = ur.role_id
+             WHERE ur.user_id = ($1)::uuid
+               AND rp.permission = $2
+               AND (
+                    ur.scope_kind = 'global'
+                 OR (ur.scope_kind = 'host'  AND ur.scope_value = $3)
+                 OR (ur.scope_kind = 'group' AND EXISTS (
+                        SELECT 1 FROM host_group_members m
+                         WHERE m.host_id = ($3)::uuid
+                           AND m.host_group_id::text = ur.scope_value))
+                 OR (ur.scope_kind = 'tag'   AND EXISTS (
+                        SELECT 1 FROM hosts h
+                         WHERE h.id = ($3)::uuid AND h.tags ? ur.scope_value))
+               )
+        )",
+    )
+    .bind(user_id)
+    .bind(permission)
+    .bind(host_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(false)
+}
+
 #[cfg(feature = "dev-auth")]
 async fn ensure_dev_user(pool: &PgPool, username: &str, role: &str) -> anyhow::Result<()> {
     sqlx::query(

@@ -134,7 +134,9 @@ async fn run_op(
     unit: &str,
     reauth: Option<&str>,
 ) -> Reply {
-    if auth.require(required).is_err() {
+    // Scope-aware RBAC: the permission must be effective on THIS host (global,
+    // host, group, or tag grant) — not merely held somewhere (ADR-0006).
+    if !crate::rbac::allowed_on_host(&state.pool, &auth.user_id, required, &host_id).await {
         audit::record(
             &state.pool,
             operation,
@@ -143,7 +145,7 @@ async fn run_op(
             unit,
             "denied",
             "failed",
-            json!({ "host_id": host_id }),
+            json!({ "host_id": host_id, "reason": "out_of_scope" }),
         )
         .await;
         return (StatusCode::FORBIDDEN, Json(json!({ "error": "forbidden" })));

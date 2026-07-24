@@ -172,7 +172,7 @@ pub async fn enroll(
     Path(id): Path<String>,
     body: axum::body::Bytes,
 ) -> impl IntoResponse {
-    if auth.require("host.manage").is_err() {
+    if !crate::rbac::allowed_on_host(&state.pool, &auth.user_id, "host.manage", &id).await {
         return (
             StatusCode::FORBIDDEN,
             Json(serde_json::json!({ "error": "forbidden" })),
@@ -340,8 +340,8 @@ pub async fn remove(
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> StatusCode {
-    if let Err(code) = auth.require("host.manage") {
-        return code;
+    if !crate::rbac::allowed_on_host(&state.pool, &auth.user_id, "host.manage", &id).await {
+        return StatusCode::FORBIDDEN;
     }
     // Invalid UUID → the cast errors → treat as not found.
     let res =
