@@ -52,9 +52,10 @@ async fn main() -> anyhow::Result<()> {
     // Seed permissions, built-in roles, and dev accounts (ADR-0006).
     rbac::seed(&pool).await?;
 
+    #[cfg(feature = "dev-auth")]
     if std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1") {
         tracing::warn!(
-            "TENODERA_DEV_AUTH=1 — placeholder password login is ENABLED (not for production)"
+            "dev-auth build + TENODERA_DEV_AUTH=1 — password shortcut ENABLED (never in release)"
         );
     }
 

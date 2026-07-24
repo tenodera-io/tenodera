@@ -87,12 +87,16 @@ pub async fn seed(pool: &PgPool) -> anyhow::Result<()> {
         }
     }
 
-    // Dev accounts + role grants (for exercising the gate; real enrollment later).
-    ensure_dev_user(pool, "admin", "Administrator").await?;
-    ensure_dev_user(pool, "operator", "Operator").await?;
+    // Dev accounts exist ONLY in a dev-auth build — never seeded into a release.
+    #[cfg(feature = "dev-auth")]
+    {
+        ensure_dev_user(pool, "admin", "Administrator").await?;
+        ensure_dev_user(pool, "operator", "Operator").await?;
+    }
     Ok(())
 }
 
+#[cfg(feature = "dev-auth")]
 async fn ensure_dev_user(pool: &PgPool, username: &str, role: &str) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO users (id, organization_id, username, local_principal)

@@ -170,6 +170,18 @@ pub(crate) async fn pam_authenticate(principal: &str, password: &str) -> bool {
     matches!(child.wait().await, Ok(s) if s.success())
 }
 
+/// Dev-only password bypass. Present only under `--features dev-auth`, and even
+/// then inert unless `TENODERA_DEV_AUTH=1`. Compiled out of release builds.
+#[cfg(feature = "dev-auth")]
+fn dev_shortcut(password: &str) -> bool {
+    std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1")
+        && password == std::env::var("DEV_LOGIN_PASSWORD").unwrap_or_else(|_| "devpass".into())
+}
+#[cfg(not(feature = "dev-auth"))]
+fn dev_shortcut(_password: &str) -> bool {
+    false
+}
+
 /// POST /api/auth/login — verifies credentials via PAM (ADR-0004).
 pub async fn login(
     State(state): State<AppState>,
@@ -198,7 +210,13 @@ pub async fn login(
         Ok(Some(r)) => (r.get("id"), r.get("local_principal")),
         Ok(None) => {
             crate::audit::record(
-                &state.pool, "login", None, None, username, "denied", "failed",
+                &state.pool,
+                "login",
+                None,
+                None,
+                username,
+                "denied",
+                "failed",
                 serde_json::json!({ "reason": "unknown_user" }),
             )
             .await;
@@ -215,18 +233,19 @@ pub async fn login(
         }
     };
 
-    // Credentials via PAM (ADR-0004). The dev shortcut is honoured ONLY when
-    // TENODERA_DEV_AUTH=1 (tests/CI); otherwise PAM is authoritative.
-    let dev_auth = std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1");
-    let dev_password = std::env::var("DEV_LOGIN_PASSWORD").unwrap_or_else(|_| "devpass".into());
-    let authenticated = if dev_auth && password == dev_password {
-        true
-    } else {
-        pam_authenticate(&principal, password).await
-    };
+    // Credentials via PAM (ADR-0004). The dev shortcut only exists when the crate
+    // is built with `--features dev-auth`; in a release build it is compiled out,
+    // so PAM is the only path.
+    let authenticated = dev_shortcut(password) || pam_authenticate(&principal, password).await;
     if !authenticated {
         crate::audit::record(
-            &state.pool, "login", Some(&user_id), None, username, "denied", "failed",
+            &state.pool,
+            "login",
+            Some(&user_id),
+            None,
+            username,
+            "denied",
+            "failed",
             serde_json::json!({ "reason": "invalid_credentials" }),
         )
         .await;

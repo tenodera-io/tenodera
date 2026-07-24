@@ -4,6 +4,12 @@ version = "0.1.0"
 edition = "2021"
 description = "Tenodera v2 control plane (unprivileged) — API, sessions, RBAC, jobs, audit."
 
+[features]
+# Compile-time gate for the dev password shortcut + seeded dev accounts. OFF by
+# default so a release binary physically cannot authenticate with devpass or ship
+# admin/operator dev users. Enable only for local/CI: --features dev-auth.
+dev-auth = []
+
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "net", "fs", "process", "io-util"] }
 axum = "0.8"
