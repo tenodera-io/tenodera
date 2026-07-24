@@ -35,6 +35,28 @@ fn new_token() -> (String, Vec<u8>) {
     (token, d)
 }
 
+/// Create a session for an already-authenticated user; returns the bearer token.
+/// Shared by password (PAM) and OIDC login so session policy stays in one place.
+pub(crate) async fn issue_session(pool: &sqlx::PgPool, user_id: &str) -> Option<String> {
+    let (token, token_digest) = new_token();
+    sqlx::query(
+        "INSERT INTO sessions
+            (id, organization_id, user_id, token_sha256, idle_expires_at, absolute_expires_at)
+         VALUES
+            (gen_random_uuid(), ($1)::uuid, ($2)::uuid, $3,
+             now() + ($4)::interval, now() + ($5)::interval)",
+    )
+    .bind(DEFAULT_ORG)
+    .bind(user_id)
+    .bind(&token_digest)
+    .bind(IDLE_TIMEOUT)
+    .bind(ABSOLUTE_LIFETIME)
+    .execute(pool)
+    .await
+    .is_ok()
+    .then_some(token)
+}
+
 fn bearer(headers: &HeaderMap) -> Option<String> {
     headers
         .get("authorization")

@@ -9,6 +9,7 @@
 mod audit;
 mod auth;
 mod hosts;
+mod oidc;
 mod ops;
 mod rbac;
 mod ssh;
@@ -60,6 +61,7 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/health", get(health))
         .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/oidc", post(oidc::login_oidc))
         .route("/api/auth/logout", post(auth::logout))
         .route("/api/me", get(auth::me))
         .route("/api/hosts", get(hosts::list).post(hosts::create))
