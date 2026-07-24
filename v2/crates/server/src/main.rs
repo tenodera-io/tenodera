@@ -6,13 +6,19 @@
 //! (auth, sessions, RBAC, SSH connection manager, jobs, audit) lands in later
 //! phases.
 
-use axum::{extract::State, routing::get, Json, Router};
+mod auth;
+
+use axum::{
+    extract::State,
+    routing::{get, post},
+    Json, Router,
+};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
 #[derive(Clone)]
-struct AppState {
-    pool: PgPool,
+pub(crate) struct AppState {
+    pub(crate) pool: PgPool,
 }
 
 #[tokio::main]
@@ -36,9 +42,27 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("../../migrations").run(&pool).await?;
     tracing::info!("migrations applied");
 
+    // Dev-only seed so there is an account to log in as until real enrollment.
+    sqlx::query(
+        "INSERT INTO users (id, organization_id, username, local_principal)
+         VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'admin', 'admin')
+         ON CONFLICT (organization_id, username) DO NOTHING",
+    )
+    .execute(&pool)
+    .await?;
+
+    if std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1") {
+        tracing::warn!(
+            "TENODERA_DEV_AUTH=1 — placeholder password login is ENABLED (not for production)"
+        );
+    }
+
     let state = AppState { pool };
     let app = Router::new()
         .route("/health", get(health))
+        .route("/api/auth/login", post(auth::login))
+        .route("/api/auth/logout", post(auth::logout))
+        .route("/api/me", get(auth::me))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:8080").await?;
