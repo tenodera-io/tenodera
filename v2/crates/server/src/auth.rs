@@ -1,11 +1,10 @@
-//! Sessions & authentication (Phase 1).
+//! Sessions & authentication (ADR-0002/0004).
 //!
-//! Sessions are DB-backed (ADR-0002): only a SHA-256 of the bearer token is
-//! stored, with idle + absolute expiry and server-side revocation. The credential
-//! check here is a **development placeholder** — real authentication is PAM /
-//! LDAP / SSSD / FreeIPA (and later OIDC), which per ADR-0004 needs its own helper
-//! and lands as a separate subsystem. The placeholder is inert unless
-//! `TENODERA_DEV_AUTH=1` is set, so it can never silently ship as a way in.
+//! Sessions are DB-backed: only a SHA-256 of the bearer token is stored, with idle
+//! + absolute expiry and server-side revocation. Credentials are verified via PAM
+//! (LDAP/SSSD/FreeIPA through the pam-helper) or OIDC (`oidc.rs`). A dev password
+//! shortcut exists ONLY in a `--features dev-auth` build and is compiled out of
+//! release, so it can never ship as a way in.
 
 use axum::extract::{FromRequestParts, State};
 use axum::http::request::Parts;
