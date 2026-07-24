@@ -120,7 +120,34 @@ impl FromRequestParts<AppState> for Auth {
     }
 }
 
-/// POST /api/auth/login — DEV placeholder credential check (see module docs).
+/// Path to the root-owned pam-helper + the PAM service name (ADR-0004).
+const PAM_HELPER: &str = "/usr/local/bin/tenodera-pam-helper";
+const PAM_SERVICE: &str = "tenodera";
+
+/// Verify a password via the pam-helper (run as root through one NOPASSWD rule).
+/// The server never touches PAM/shadow itself. Any failure = not authenticated.
+async fn pam_authenticate(principal: &str, password: &str) -> bool {
+    use tokio::io::AsyncWriteExt;
+    let mut child = match tokio::process::Command::new("sudo")
+        .args(["-n", PAM_HELPER, PAM_SERVICE, principal])
+        .env_clear()
+        .env("PATH", "/usr/sbin:/usr/bin:/sbin:/bin")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(password.as_bytes()).await;
+        let _ = stdin.shutdown().await;
+    }
+    matches!(child.wait().await, Ok(s) if s.success())
+}
+
+/// POST /api/auth/login — verifies credentials via PAM (ADR-0004).
 pub async fn login(
     State(state): State<AppState>,
     Json(req): Json<serde_json::Value>,
@@ -134,39 +161,24 @@ pub async fn login(
         );
     }
 
-    // ── PLACEHOLDER credential verification (replace with PAM, ADR-0004) ──────
-    let dev_auth = std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1");
-    let dev_password = std::env::var("DEV_LOGIN_PASSWORD").unwrap_or_else(|_| "devpass".into());
-    if !dev_auth || password != dev_password {
-        crate::audit::record(
-            &state.pool,
-            "login",
-            None,
-            None,
-            username,
-            "denied",
-            "failed",
-            serde_json::json!({ "reason": "invalid_credentials" }),
-        )
-        .await;
-        return (
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({ "error": "invalid credentials" })),
-        );
-    }
-
-    let user = sqlx::query(
-        "SELECT id::text AS id FROM users
+    // Resolve the account first — we need its local principal to authenticate.
+    // Unknown user and wrong password both return the same 401 (no enumeration).
+    let row = sqlx::query(
+        "SELECT id::text AS id, local_principal FROM users
           WHERE organization_id = ($1)::uuid AND username = $2 AND status = 'active'",
     )
     .bind(DEFAULT_ORG)
     .bind(username)
     .fetch_optional(&state.pool)
     .await;
-
-    let user_id: String = match user {
-        Ok(Some(r)) => r.get("id"),
+    let (user_id, principal): (String, String) = match row {
+        Ok(Some(r)) => (r.get("id"), r.get("local_principal")),
         Ok(None) => {
+            crate::audit::record(
+                &state.pool, "login", None, None, username, "denied", "failed",
+                serde_json::json!({ "reason": "unknown_user" }),
+            )
+            .await;
             return (
                 StatusCode::UNAUTHORIZED,
                 Json(serde_json::json!({ "error": "invalid credentials" })),
@@ -179,6 +191,27 @@ pub async fn login(
             );
         }
     };
+
+    // Credentials via PAM (ADR-0004). The dev shortcut is honoured ONLY when
+    // TENODERA_DEV_AUTH=1 (tests/CI); otherwise PAM is authoritative.
+    let dev_auth = std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1");
+    let dev_password = std::env::var("DEV_LOGIN_PASSWORD").unwrap_or_else(|_| "devpass".into());
+    let authenticated = if dev_auth && password == dev_password {
+        true
+    } else {
+        pam_authenticate(&principal, password).await
+    };
+    if !authenticated {
+        crate::audit::record(
+            &state.pool, "login", Some(&user_id), None, username, "denied", "failed",
+            serde_json::json!({ "reason": "invalid_credentials" }),
+        )
+        .await;
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "invalid credentials" })),
+        );
+    }
 
     let (token, token_digest) = new_token();
     let inserted = sqlx::query(

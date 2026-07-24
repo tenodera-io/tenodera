@@ -1,0 +1,9 @@
+[package]
+name = "tenodera-pam-helper"
+version = "0.1.0"
+edition = "2021"
+description = "Tenodera v2 pam-helper — verifies a control-plane password via PAM; runs privileged, isolates PAM/shadow access from the server."
+
+[dependencies]
+pam = "0.7"
+zeroize = "1"
