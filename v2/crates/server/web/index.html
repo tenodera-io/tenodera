@@ -215,7 +215,14 @@ function hostCard(h) {
 async function runOp(host, op, unit, out) {
   out.classList.remove("hidden"); out.textContent = "…";
   if (op === "enroll") {
-    const r = await api("POST", `/api/hosts/${host.id}/enroll`);
+    // Re-enrolling an already-trusted host requires step-up.
+    let body;
+    if (host.status === "enrolled") {
+      const pw = prompt(`Step-up: re-enter your password to re-enroll ${host.display_name} (replaces its pinned keys)`);
+      if (pw === null) { out.textContent = "cancelled"; return; }
+      body = { reauth: pw };
+    }
+    const r = await api("POST", `/api/hosts/${host.id}/enroll`, body);
     out.textContent = JSON.stringify(r.data, null, 2);
     if (r.status === 200) await loadHosts();
     return;

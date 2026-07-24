@@ -170,6 +170,7 @@ pub async fn enroll(
     auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<String>,
+    body: axum::body::Bytes,
 ) -> impl IntoResponse {
     if auth.require("host.manage").is_err() {
         return (
@@ -177,15 +178,24 @@ pub async fn enroll(
             Json(serde_json::json!({ "error": "forbidden" })),
         );
     }
-    let host = sqlx::query(
-        "SELECT hostname, port FROM hosts
-          WHERE organization_id = ($1)::uuid AND id = ($2)::uuid",
+    // Tolerant body parse: first enroll needs none; re-enroll carries { reauth }.
+    let body: serde_json::Value =
+        serde_json::from_slice(&body).unwrap_or_else(|_| serde_json::json!({}));
+
+    // Host + how many keys are currently pinned (to detect a re-enroll).
+    let row = sqlx::query(
+        "SELECT hostname, port,
+                (SELECT count(*) FROM ssh_host_keys k
+                  WHERE k.host_id = h.id AND k.trusted_at IS NOT NULL AND k.revoked_at IS NULL)
+                AS trusted
+           FROM hosts h
+          WHERE h.organization_id = ($1)::uuid AND h.id = ($2)::uuid",
     )
     .bind(DEFAULT_ORG)
     .bind(&id)
     .fetch_optional(&state.pool)
     .await;
-    let row = match host {
+    let row = match row {
         Ok(Some(r)) => r,
         _ => {
             return (
@@ -196,6 +206,43 @@ pub async fn enroll(
     };
     let hostname: String = row.get("hostname");
     let port: i32 = row.get("port");
+    let already_trusted: i64 = row.get("trusted");
+
+    // Replacing a host's already-pinned identity is high-risk — require fresh
+    // step-up so a hijacked live session can't silently swap the host key.
+    if already_trusted > 0 {
+        let principal: Option<String> =
+            sqlx::query_scalar("SELECT local_principal FROM users WHERE id = ($1)::uuid")
+                .bind(&auth.user_id)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten();
+        let reauth = body.get("reauth").and_then(|v| v.as_str());
+        let ok = match (principal, reauth) {
+            (Some(p), Some(pw)) if !pw.is_empty() => crate::auth::pam_authenticate(&p, pw).await,
+            _ => false,
+        };
+        if !ok {
+            crate::audit::record(
+                &state.pool,
+                "host.enroll",
+                Some(&auth.user_id),
+                Some(&id),
+                &hostname,
+                "denied",
+                "failed",
+                serde_json::json!({ "reason": "step_up_required" }),
+            )
+            .await;
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({
+                    "error": "step-up authentication required to re-enroll", "step_up": true
+                })),
+            );
+        }
+    }
 
     let keys = match ssh::scan_host_keys(&hostname, port).await {
         Ok(k) => k,
@@ -207,13 +254,37 @@ pub async fn enroll(
         }
     };
 
-    // Re-enroll replaces the pinned set for this host.
-    let _ = sqlx::query("DELETE FROM ssh_host_keys WHERE host_id = ($1)::uuid")
-        .bind(&id)
-        .execute(&state.pool)
-        .await;
+    // Transactional swap: revoke the old set (kept as history), pin the new set,
+    // and mark the host enrolled — all or nothing. A partial write can never be
+    // reported as success.
+    let mut tx = match state.pool.begin().await {
+        Ok(t) => t,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": "database error" })),
+            )
+        }
+    };
+    let db_err = || {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": "enrollment failed" })),
+        )
+    };
+    if sqlx::query(
+        "UPDATE ssh_host_keys SET revoked_at = now()
+          WHERE host_id = ($1)::uuid AND revoked_at IS NULL",
+    )
+    .bind(&id)
+    .execute(&mut *tx)
+    .await
+    .is_err()
+    {
+        return db_err();
+    }
     for (algorithm, public_key, fingerprint) in &keys {
-        let _ = sqlx::query(
+        if sqlx::query(
             "INSERT INTO ssh_host_keys
                 (id, host_id, algorithm, fingerprint_sha256, public_key, trusted_at, trusted_by)
              VALUES (gen_random_uuid(), ($1)::uuid, $2, $3, $4, now(), ($5)::uuid)",
@@ -223,13 +294,24 @@ pub async fn enroll(
         .bind(fingerprint)
         .bind(public_key)
         .bind(&auth.user_id)
-        .execute(&state.pool)
-        .await;
+        .execute(&mut *tx)
+        .await
+        .is_err()
+        {
+            return db_err();
+        }
     }
-    let _ = sqlx::query("UPDATE hosts SET status = 'enrolled', updated_at = now() WHERE id = ($1)::uuid")
+    if sqlx::query("UPDATE hosts SET status = 'enrolled', updated_at = now() WHERE id = ($1)::uuid")
         .bind(&id)
-        .execute(&state.pool)
-        .await;
+        .execute(&mut *tx)
+        .await
+        .is_err()
+    {
+        return db_err();
+    }
+    if tx.commit().await.is_err() {
+        return db_err();
+    }
 
     let listed: Vec<serde_json::Value> = keys
         .iter()
@@ -243,7 +325,7 @@ pub async fn enroll(
         &hostname,
         "allowed",
         "succeeded",
-        serde_json::json!({ "keys": listed.len() }),
+        serde_json::json!({ "keys": listed.len(), "re_enroll": already_trusted > 0 }),
     )
     .await;
     (
