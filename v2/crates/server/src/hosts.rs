@@ -12,7 +12,7 @@ use axum::Json;
 use sqlx::Row;
 
 use crate::auth::{Auth, DEFAULT_ORG};
-use crate::AppState;
+use crate::{ssh, AppState};
 
 const MAX_NAME_LEN: usize = 128;
 
@@ -161,6 +161,95 @@ pub async fn create(
             Json(serde_json::json!({ "error": "could not create host" })),
         ),
     }
+}
+
+/// POST /api/hosts/{id}/enroll — scan the host's SSH keys and pin them as trusted
+/// (ADR-0003). This is the explicit, recorded trust-on-first-use; afterwards every
+/// operation connects with `StrictHostKeyChecking=yes` against these keys.
+pub async fn enroll(
+    auth: Auth,
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    if auth.require("host.manage").is_err() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "forbidden" })),
+        );
+    }
+    let host = sqlx::query(
+        "SELECT hostname, port FROM hosts
+          WHERE organization_id = ($1)::uuid AND id = ($2)::uuid",
+    )
+    .bind(DEFAULT_ORG)
+    .bind(&id)
+    .fetch_optional(&state.pool)
+    .await;
+    let row = match host {
+        Ok(Some(r)) => r,
+        _ => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "host not found" })),
+            )
+        }
+    };
+    let hostname: String = row.get("hostname");
+    let port: i32 = row.get("port");
+
+    let keys = match ssh::scan_host_keys(&hostname, port).await {
+        Ok(k) => k,
+        Err(e) => {
+            return (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({ "error": e })),
+            )
+        }
+    };
+
+    // Re-enroll replaces the pinned set for this host.
+    let _ = sqlx::query("DELETE FROM ssh_host_keys WHERE host_id = ($1)::uuid")
+        .bind(&id)
+        .execute(&state.pool)
+        .await;
+    for (algorithm, public_key, fingerprint) in &keys {
+        let _ = sqlx::query(
+            "INSERT INTO ssh_host_keys
+                (id, host_id, algorithm, fingerprint_sha256, public_key, trusted_at, trusted_by)
+             VALUES (gen_random_uuid(), ($1)::uuid, $2, $3, $4, now(), ($5)::uuid)",
+        )
+        .bind(&id)
+        .bind(algorithm)
+        .bind(fingerprint)
+        .bind(public_key)
+        .bind(&auth.user_id)
+        .execute(&state.pool)
+        .await;
+    }
+    let _ = sqlx::query("UPDATE hosts SET status = 'enrolled', updated_at = now() WHERE id = ($1)::uuid")
+        .bind(&id)
+        .execute(&state.pool)
+        .await;
+
+    let listed: Vec<serde_json::Value> = keys
+        .iter()
+        .map(|(algo, _, fp)| serde_json::json!({ "algorithm": algo, "fingerprint": fp }))
+        .collect();
+    crate::audit::record(
+        &state.pool,
+        "host.enroll",
+        Some(&auth.user_id),
+        Some(&id),
+        &hostname,
+        "allowed",
+        "succeeded",
+        serde_json::json!({ "keys": listed.len() }),
+    )
+    .await;
+    (
+        StatusCode::OK,
+        Json(serde_json::json!({ "enrolled": keys.len(), "keys": listed })),
+    )
 }
 
 /// DELETE /api/hosts/{id} — remove a host.

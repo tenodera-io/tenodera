@@ -25,12 +25,85 @@ fn env_path(key: &str) -> Result<PathBuf, String> {
         .map_err(|_| format!("{key} not set"))
 }
 
+/// A scanned SSH host key: (algorithm, "algorithm base64", SHA256 fingerprint).
+pub type HostKey = (String, String, String);
+
+/// known_hosts host token: bare hostname on :22, `[host]:port` otherwise —
+/// matching how OpenSSH keys the entry for the connection.
+pub fn known_hosts_token(host: &str, port: i32) -> String {
+    if port == 22 {
+        host.to_string()
+    } else {
+        format!("[{host}]:{port}")
+    }
+}
+
+/// Scan a host's public SSH keys with `ssh-keyscan` and fingerprint them. Used at
+/// enrollment to pin the keys in PostgreSQL (ADR-0003) — an explicit, recorded
+/// trust-on-first-use, not the silent accept an operation would do.
+pub async fn scan_host_keys(host: &str, port: i32) -> Result<Vec<HostKey>, String> {
+    let scan = Command::new("ssh-keyscan")
+        .args(["-T", "5", "-p", &port.to_string(), host])
+        .output()
+        .await
+        .map_err(|e| format!("ssh-keyscan: {e}"))?;
+    let text = String::from_utf8_lossy(&scan.stdout).into_owned();
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#') && !l.trim().is_empty())
+        .collect();
+    if lines.is_empty() {
+        return Err("no host keys returned (host unreachable or no sshd)".into());
+    }
+
+    // Fingerprint the whole scan in one pass; ssh-keygen -lf emits one line per key
+    // in file order, so we can zip by index with the parsed key lines.
+    let mut nonce = [0u8; 8];
+    getrandom::fill(&mut nonce).map_err(|e| e.to_string())?;
+    let tmp = std::env::temp_dir().join(format!(
+        "tenodera-scan-{}",
+        nonce.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    ));
+    tokio::fs::write(&tmp, &text)
+        .await
+        .map_err(|e| e.to_string())?;
+    let fp_out = Command::new("ssh-keygen")
+        .args(["-l", "-f"])
+        .arg(&tmp)
+        .output()
+        .await
+        .map_err(|e| format!("ssh-keygen: {e}"))?;
+    let _ = tokio::fs::remove_file(&tmp).await;
+    let fps: Vec<String> = String::from_utf8_lossy(&fp_out.stdout)
+        .lines()
+        .filter_map(|l| l.split_whitespace().nth(1).map(str::to_string))
+        .collect();
+
+    let mut keys = Vec::new();
+    for (i, line) in lines.iter().enumerate() {
+        let mut it = line.split_whitespace();
+        let _token = it.next();
+        if let (Some(algo), Some(blob)) = (it.next(), it.next()) {
+            let fingerprint = fps.get(i).cloned().unwrap_or_default();
+            keys.push((algo.to_string(), format!("{algo} {blob}"), fingerprint));
+        }
+    }
+    if keys.is_empty() {
+        return Err("could not parse scanned host keys".into());
+    }
+    Ok(keys)
+}
+
 /// Run `op` on `principal@host:port` via SSH+bridge; return the bridge's JSON.
+/// `known_hosts` must contain the host's **pinned** keys — the connection uses
+/// `StrictHostKeyChecking=yes`, so a key not present (MITM, re-provisioned host)
+/// aborts the connection rather than being silently accepted.
 pub async fn run_operation(
     host: &str,
     port: i32,
     principal: &str,
     op: &serde_json::Value,
+    known_hosts: &str,
 ) -> Result<serde_json::Value, String> {
     let ca = env_path("TENODERA_SSH_CA")?;
     let key = env_path("TENODERA_SSH_KEY")?; // private key; <key>.pub is its public half
@@ -76,6 +149,10 @@ pub async fn run_operation(
     }
     let cert = tmp.join("id-cert.pub");
     let known = tmp.join("known_hosts");
+    if let Err(e) = tokio::fs::write(&known, known_hosts).await {
+        let _ = tokio::fs::remove_dir_all(&tmp).await;
+        return Err(format!("write known_hosts: {e}"));
+    }
 
     // Connect and run the bridge, feeding it the operation on stdin.
     let target = format!("{principal}@{host}");
@@ -88,7 +165,7 @@ pub async fn run_operation(
             "-o",
             "BatchMode=yes",
             "-o",
-            "StrictHostKeyChecking=accept-new",
+            "StrictHostKeyChecking=yes",
             "-o",
             &format!("UserKnownHostsFile={}", known.display()),
             "-o",

@@ -116,6 +116,29 @@ async fn run_op(
         );
     };
 
+    // Pinned host keys (ADR-0003). No trusted key = host not enrolled; refuse to
+    // connect rather than trust-on-first-use silently during an operation.
+    let pinned: Vec<String> = sqlx::query_scalar(
+        "SELECT public_key FROM ssh_host_keys
+          WHERE host_id = ($1)::uuid AND trusted_at IS NOT NULL AND revoked_at IS NULL",
+    )
+    .bind(&host_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    if pinned.is_empty() {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({ "error": "host not enrolled (no trusted host key)" })),
+        );
+    }
+    let token = ssh::known_hosts_token(&hostname, port);
+    let known_hosts = pinned
+        .iter()
+        .map(|pk| format!("{token} {pk}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let op = json!({ "v": 1, "op": operation, "args": { "unit": unit } });
     let ah = args_hash(operation, &op["args"]);
 
@@ -141,7 +164,7 @@ async fn run_op(
 
     // Run it over SSH+bridge and classify the outcome.
     let (state_name, success, response, error_code): (&str, bool, serde_json::Value, Option<String>) =
-        match ssh::run_operation(&hostname, port, &principal, &op).await {
+        match ssh::run_operation(&hostname, port, &principal, &op, &known_hosts).await {
             Ok(res) => {
                 if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
                     ("succeeded", true, res, None)

@@ -64,6 +64,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/me", get(auth::me))
         .route("/api/hosts", get(hosts::list).post(hosts::create))
         .route("/api/hosts/{id}", axum::routing::delete(hosts::remove))
+        .route("/api/hosts/{id}/enroll", post(hosts::enroll))
         .route("/api/hosts/{id}/service.status", post(ops::service_status))
         .route("/api/hosts/{id}/service.start", post(ops::service_start))
         .route("/api/hosts/{id}/service.stop", post(ops::service_stop))
