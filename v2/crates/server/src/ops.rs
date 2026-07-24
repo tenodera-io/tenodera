@@ -185,8 +185,9 @@ async fn run_op(
     let op = json!({ "v": 1, "op": operation, "args": { "unit": unit } });
     let ah = args_hash(operation, &op["args"]);
 
-    // Durable job row (state=running) before we touch the host.
-    let job_id: Option<String> = sqlx::query_scalar(
+    // Fail-closed: a durable job MUST exist before we touch the host. If we can't
+    // persist the intent, we refuse to act — no silent mutation without a record.
+    let job_id: String = match sqlx::query_scalar::<_, String>(
         "INSERT INTO jobs
             (id, organization_id, actor_user_id, host_id, operation, args, args_hash, state)
          VALUES
@@ -200,57 +201,83 @@ async fn run_op(
     .bind(operation)
     .bind(op["args"].to_string())
     .bind(&ah)
-    .fetch_optional(&state.pool)
+    .fetch_one(&state.pool)
     .await
-    .ok()
-    .flatten();
-
-    // Run it over SSH+bridge and classify the outcome.
-    let (state_name, success, response, error_code): (&str, bool, serde_json::Value, Option<String>) =
-        match ssh::run_operation(&hostname, port, &principal, &op, &known_hosts).await {
-            Ok(res) => {
-                if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
-                    ("succeeded", true, res, None)
-                } else {
-                    let ec = res
-                        .get("error")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string)
-                        .or(Some("operation_failed".into()));
-                    ("failed", false, res, ec)
-                }
-            }
-            Err(e) => (
-                "failed",
-                false,
-                json!({ "ok": false, "error": e }),
-                Some("transport".into()),
-            ),
-        };
-
-    // Finalize the job + record its result (best-effort — never mask the outcome).
-    if let Some(ref jid) = job_id {
-        let _ = sqlx::query("UPDATE jobs SET state = $2 WHERE id = ($1)::uuid")
-            .bind(jid)
-            .bind(state_name)
-            .execute(&state.pool)
+    {
+        Ok(id) => id,
+        Err(e) => {
+            tracing::error!(error = %e, operation, "refusing to act: could not persist job");
+            audit::record(
+                &state.pool, operation, Some(&auth.user_id), Some(&host_id), unit,
+                "denied", "failed", json!({ "reason": "job_persist_failed" }),
+            )
             .await;
-        let _ = sqlx::query(
-            "INSERT INTO job_results
-                (id, job_id, exit_code, success, started_at, finished_at, error_code, response)
-             VALUES
-                (gen_random_uuid(), ($1)::uuid, $2, $3,
-                 (SELECT created_at FROM jobs WHERE id = ($1)::uuid), now(), $4, ($5)::jsonb)",
-        )
-        .bind(jid)
-        .bind(if success { Some(0) } else { None::<i32> })
-        .bind(success)
-        .bind(&error_code)
-        .bind(response.to_string())
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({ "error": "could not record job; refusing to act" })),
+            );
+        }
+    };
+
+    // Run it over SSH+bridge and classify the outcome. On a transport error we
+    // cannot know whether a MUTATION took effect, so it is `outcome_unknown`
+    // (never silently "failed"/"succeeded", and not eligible for auto-retry);
+    // a read is idempotent, so a transport error is just a failure.
+    let mutating = operation != "service.status";
+    let (state_name, success, response, error_code): (
+        &str,
+        Option<bool>,
+        serde_json::Value,
+        Option<String>,
+    ) = match ssh::run_operation(&hostname, port, &principal, &op, &known_hosts).await {
+        Ok(res) => {
+            if res.get("ok").and_then(|v| v.as_bool()).unwrap_or(false) {
+                ("succeeded", Some(true), res, None)
+            } else {
+                let ec = res
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+                    .or(Some("operation_failed".into()));
+                ("failed", Some(false), res, ec)
+            }
+        }
+        Err(e) => {
+            let resp = json!({ "ok": false, "error": e });
+            if mutating {
+                ("outcome_unknown", None, resp, Some("transport".into()))
+            } else {
+                ("failed", Some(false), resp, Some("transport".into()))
+            }
+        }
+    };
+
+    // Finalize the job state + record its result.
+    let _ = sqlx::query("UPDATE jobs SET state = $2 WHERE id = ($1)::uuid")
+        .bind(&job_id)
+        .bind(state_name)
         .execute(&state.pool)
         .await;
-    }
+    let _ = sqlx::query(
+        "INSERT INTO job_results
+            (id, job_id, exit_code, success, started_at, finished_at, error_code, response)
+         VALUES
+            (gen_random_uuid(), ($1)::uuid, $2, $3,
+             (SELECT created_at FROM jobs WHERE id = ($1)::uuid), now(), $4, ($5)::jsonb)",
+    )
+    .bind(&job_id)
+    .bind(if success == Some(true) { Some(0) } else { None::<i32> })
+    .bind(success)
+    .bind(&error_code)
+    .bind(response.to_string())
+    .execute(&state.pool)
+    .await;
 
+    let result = match (success, state_name) {
+        (Some(true), _) => "succeeded",
+        (_, "outcome_unknown") => "unknown",
+        _ => "failed",
+    };
     audit::record(
         &state.pool,
         operation,
@@ -258,7 +285,7 @@ async fn run_op(
         Some(&host_id),
         unit,
         "allowed",
-        if success { "succeeded" } else { "failed" },
+        result,
         json!({ "job_id": job_id, "state": state_name }),
     )
     .await;
