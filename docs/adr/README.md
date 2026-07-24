@@ -11,11 +11,12 @@ that tell us it's done. ADRs are append-only — supersede, don't rewrite.
 | [0003](0003-host-enrollment-ssh-ca.md) | Host enrollment & SSH certificate authority | Accepted — transport spike-validated |
 | [0004](0004-identity-and-credential-model.md) | User identity & credential model | Accepted |
 | [0005](0005-typed-operation-protocol.md) | Typed operation protocol & root-owned helper | Accepted (direction) |
+| [0006](0006-rbac.md) | Role-based access control (RBAC) | Accepted (direction) |
 
 Background:
 [TENODERA_V2.md](../architecture/TENODERA_V2.md) (target architecture) ·
 [SSH_BRIDGE_RETROSPECTIVE.md](../architecture/SSH_BRIDGE_RETROSPECTIVE.md) (why the
 previous SSH bridge was abandoned and what v2 must answer).
 
-Planned next ADRs (not yet written): granular RBAC (permission model gating the
-operations) · audit & event storage (hash-chain).
+Planned next ADRs (not yet written): audit & event storage (hash-chain, signed
+checkpoints, retention/export).
