@@ -17,7 +17,14 @@ use crate::AppState;
 const MAX_NAME_LEN: usize = 128;
 
 /// GET /api/hosts — list hosts in the organization.
-pub async fn list(_auth: Auth, State(state): State<AppState>) -> impl IntoResponse {
+pub async fn list(auth: Auth, State(state): State<AppState>) -> impl IntoResponse {
+    if auth.require("host.view").is_err() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "forbidden" })),
+        )
+            .into_response();
+    }
     let rows = sqlx::query(
         "SELECT id::text AS id, display_name, hostname, port, enabled, status, tags::text AS tags
            FROM hosts
@@ -58,10 +65,16 @@ pub async fn list(_auth: Auth, State(state): State<AppState>) -> impl IntoRespon
 
 /// POST /api/hosts — register a host.
 pub async fn create(
-    _auth: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    if auth.require("host.manage").is_err() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": "forbidden" })),
+        );
+    }
     let display_name = body
         .get("display_name")
         .and_then(|v| v.as_str())
@@ -130,10 +143,13 @@ pub async fn create(
 
 /// DELETE /api/hosts/{id} — remove a host.
 pub async fn remove(
-    _auth: Auth,
+    auth: Auth,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> StatusCode {
+    if let Err(code) = auth.require("host.manage") {
+        return code;
+    }
     // Invalid UUID → the cast errors → treat as not found.
     let res =
         sqlx::query("DELETE FROM hosts WHERE organization_id = ($1)::uuid AND id = ($2)::uuid")

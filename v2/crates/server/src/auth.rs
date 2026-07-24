@@ -43,10 +43,24 @@ fn bearer(headers: &HeaderMap) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// An authenticated session (validated inline: not expired, not revoked; touched).
+/// An authenticated session (validated inline: not expired, not revoked; touched),
+/// carrying the user's effective RBAC permissions (ADR-0006).
 pub struct Auth {
     pub user_id: String,
     pub username: String,
+    pub permissions: std::collections::HashSet<String>,
+}
+
+impl Auth {
+    /// Gate a handler on a permission. `Err(FORBIDDEN)` when the user lacks it.
+    /// (Scope filtering — per host/group/tag — is deferred; this is the global set.)
+    pub fn require(&self, permission: &str) -> Result<(), StatusCode> {
+        if self.permissions.contains(permission) {
+            Ok(())
+        } else {
+            Err(StatusCode::FORBIDDEN)
+        }
+    }
 }
 
 impl FromRequestParts<AppState> for Auth {
@@ -79,9 +93,29 @@ impl FromRequestParts<AppState> for Auth {
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
+        let user_id: String = row.get("user_id");
+
+        // Effective permissions = union across the user's role grants (scope-agnostic
+        // for now; ADR-0006 scope filtering lands with the operation router).
+        let perm_rows = sqlx::query(
+            "SELECT DISTINCT rp.permission
+               FROM user_roles ur
+               JOIN role_permissions rp ON rp.role_id = ur.role_id
+              WHERE ur.user_id = ($1)::uuid",
+        )
+        .bind(&user_id)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        let permissions = perm_rows
+            .iter()
+            .map(|r| r.get::<String, _>("permission"))
+            .collect();
+
         Ok(Auth {
-            user_id: row.get("user_id"),
+            user_id,
             username: row.get("username"),
+            permissions,
         })
     }
 }

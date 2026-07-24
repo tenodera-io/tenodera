@@ -8,6 +8,7 @@
 
 mod auth;
 mod hosts;
+mod rbac;
 
 use axum::{
     extract::State,
@@ -43,14 +44,8 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!("../../migrations").run(&pool).await?;
     tracing::info!("migrations applied");
 
-    // Dev-only seed so there is an account to log in as until real enrollment.
-    sqlx::query(
-        "INSERT INTO users (id, organization_id, username, local_principal)
-         VALUES (gen_random_uuid(), '00000000-0000-0000-0000-000000000001', 'admin', 'admin')
-         ON CONFLICT (organization_id, username) DO NOTHING",
-    )
-    .execute(&pool)
-    .await?;
+    // Seed permissions, built-in roles, and dev accounts (ADR-0006).
+    rbac::seed(&pool).await?;
 
     if std::env::var("TENODERA_DEV_AUTH").as_deref() == Ok("1") {
         tracing::warn!(
