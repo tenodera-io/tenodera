@@ -311,14 +311,9 @@ async fn run_op(
         } else {
             proto::AuthenticationLevel::Standard
         };
-        match crate::signer::issue_grant(
-            job_uuid,
-            &principal,
-            host_uuid,
-            &operation_obj,
-            level,
-            now,
-        ) {
+        match crate::signer::issue_grant(job_uuid, &principal, host_uuid, &operation_obj, level)
+            .await
+        {
             Some(g) => Some(g),
             None => {
                 let _ = sqlx::query("UPDATE jobs SET state = 'failed' WHERE id = ($1)::uuid")
@@ -350,7 +345,7 @@ async fn run_op(
         request_id: Uuid::new_v4(),
         job_id: job_uuid,
         actor: principal.clone(),
-        deadline: now + crate::signer::GRANT_TTL_SECS,
+        deadline: now + 120,
         operation: operation_obj,
         grant,
     };

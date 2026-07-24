@@ -1,0 +1,15 @@
+[package]
+name = "tenodera-signer"
+version = "0.1.0"
+edition = "2021"
+description = "Tenodera v2 grant signer — isolates the Ed25519 grant key; signs only for a real running job."
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio", "postgres"] }
+serde_json = "1"
+uuid = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tenodera-protocol = { path = "../protocol" }
